@@ -24,6 +24,7 @@ import type {
 	TranscriptionModelId,
 } from "@/transcription/types";
 import type { ExportOptions } from "@/export";
+import { storageService } from "@/services/storage/service";
 
 export interface BridgeElementRef {
 	trackId: string;
@@ -479,6 +480,19 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
+	"timeline.toggle_source_audio_separation": {
+		description:
+			"Toggle source audio separation on an audio-capable element (e.g. vocals/instrumental).",
+		args: { trackId: "string", elementId: "string" },
+		run: ({ editor, args }) => {
+			editor.timeline.toggleSourceAudioSeparation({
+				trackId: requireString(args.trackId, "trackId"),
+				elementId: requireString(args.elementId, "elementId"),
+			});
+			return { toggled: true };
+		},
+	},
+
 	"timeline.toggle_track_visibility": {
 		description: "Toggle visibility on a whole track.",
 		args: { trackId: "string" },
@@ -578,6 +592,23 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				throw new Error("Failed to insert captions");
 			}
 			return { trackId, captionCount: captions.length };
+		},
+	},
+
+	"media.remove": {
+		description:
+			"Remove media assets from the project. Undoable; timeline elements referencing removed assets may fail to render.",
+		args: { assetIds: "string[]" },
+		run: ({ editor, args }) => {
+			const ids = args.assetIds;
+			if (!Array.isArray(ids) || ids.length === 0) {
+				throw new Error("Missing or invalid argument: assetIds");
+			}
+			editor.media.removeMediaAssets({
+				projectId: editor.project.getActive().metadata.id,
+				ids: ids.map((id) => requireString(id, "assetIds[]")),
+			});
+			return { removed: ids.length };
 		},
 	},
 
@@ -811,6 +842,36 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				name: requireString(args.name, "name"),
 			});
 			return { renamed: true };
+		},
+	},
+
+	"project.list": {
+		description: "List all saved projects (id, name, updatedAt).",
+		run: async () => {
+			const metadata = await storageService.loadAllProjectsMetadata();
+			return {
+				projects: metadata.map((project) => ({
+					id: project.id,
+					name: project.name,
+					updatedAt: project.updatedAt,
+				})),
+			};
+		},
+	},
+
+	"project.open": {
+		description:
+			"Open another saved project in this editor page by id. The bridge session stays connected. Use project.list to discover ids.",
+		args: { projectId: "string" },
+		run: async ({ editor, args }) => {
+			await editor.project.loadProject({
+				id: requireString(args.projectId, "projectId"),
+			});
+			const project = editor.project.getActive();
+			return {
+				projectId: project.metadata.id,
+				projectName: project.metadata.name,
+			};
 		},
 	},
 
