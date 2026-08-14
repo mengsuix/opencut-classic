@@ -7,6 +7,8 @@ import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { effectsRegistry } from "@/effects";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
 import type { Mask, MaskType } from "@/masks/types";
+import type { FreeformPathPoint } from "@/masks/freeform/path";
+import { generateUUID } from "@/utils/id";
 import type { AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
 import { extractTimelineAudio } from "@/media/mediabunny";
@@ -1278,6 +1280,97 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				],
 			});
 			return { updated: true };
+		},
+	},
+
+	"masks.freeform_set_path": {
+		description:
+			"Replace a freeform mask's bezier point path. Each point: { x, y, inX?, inY?, outX?, outY? } — x/y is the anchor, in/out are the bezier handles (default to the anchor for sharp corners). Coordinates are relative to the element, in canvas pixels. Existing points keep their id if provided; new ids are generated otherwise. Closed state is corrected automatically.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			maskId: "string",
+			points: "[{ id?, x, y, inX?, inY?, outX?, outY? }]",
+			closed: "boolean?",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const maskId = requireString(args.maskId, "maskId");
+			const rawPoints = args.points;
+			if (!Array.isArray(rawPoints) || rawPoints.length === 0) {
+				throw new Error("Missing or invalid argument: points");
+			}
+			const points: FreeformPathPoint[] = rawPoints.map((raw) => {
+				const point = raw as Partial<FreeformPathPoint>;
+				if (typeof point?.x !== "number" || typeof point?.y !== "number") {
+					throw new Error("Each point needs numeric x and y");
+				}
+				return {
+					id: typeof point.id === "string" ? point.id : generateUUID(),
+					x: point.x,
+					y: point.y,
+					inX: typeof point.inX === "number" ? point.inX : point.x,
+					inY: typeof point.inY === "number" ? point.inY : point.y,
+					outX: typeof point.outX === "number" ? point.outX : point.x,
+					outY: typeof point.outY === "number" ? point.outY : point.y,
+				};
+			});
+
+			const masks = getElementMasks(editor, trackId, elementId);
+			const target = masks.find((mask) => mask.id === maskId);
+			if (!target) {
+				throw new Error(`Mask not found: ${maskId}`);
+			}
+			if (target.type !== "freeform") {
+				throw new Error(`Mask ${maskId} is not a freeform mask`);
+			}
+			const closed =
+				typeof args.closed === "boolean"
+					? args.closed
+					: target.params.closed && points.length >= 3;
+
+			const nextMasks = masks.map((mask) =>
+				mask.id === maskId && mask.type === "freeform"
+					? { ...mask, params: { ...mask.params, path: points, closed } }
+					: mask,
+			);
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId,
+						elementId,
+						patch: { masks: nextMasks } as never,
+					},
+				],
+			});
+			return { pointCount: points.length, closed };
+		},
+	},
+
+	"masks.freeform_delete_points": {
+		description:
+			"Delete specific points from a freeform mask by point id. The mask's closed state is corrected automatically.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			maskId: "string",
+			pointIds: "string[]",
+		},
+		run: ({ editor, args }) => {
+			const pointIds = args.pointIds;
+			if (!Array.isArray(pointIds) || pointIds.length === 0) {
+				throw new Error("Missing or invalid argument: pointIds");
+			}
+			editor.timeline.deleteFreeformPathMaskPoints({
+				trackId: requireString(args.trackId, "trackId"),
+				elementId: requireString(args.elementId, "elementId"),
+				maskId: requireString(args.maskId, "maskId"),
+				pointIds: pointIds.map((pointId) =>
+					requireString(pointId, "pointIds[]"),
+				),
+			});
+			return { deleted: pointIds.length };
 		},
 	},
 };
