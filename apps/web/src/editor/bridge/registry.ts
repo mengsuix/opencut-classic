@@ -539,6 +539,42 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
+	"scenes.update_bookmark": {
+		description:
+			"Update a bookmark's note, color or duration (seconds) at a given time (seconds).",
+		args: {
+			time: "seconds",
+			updates: "{ note?: string, color?: string, duration?: seconds }",
+		},
+		run: async ({ editor, args }) => {
+			const updates = args.updates as Record<string, unknown> | undefined;
+			if (!updates || typeof updates !== "object") {
+				throw new Error("Missing or invalid argument: updates");
+			}
+			const converted = { ...updates };
+			if (typeof converted.duration === "number") {
+				converted.duration = toTicks(converted.duration);
+			}
+			await editor.scenes.updateBookmark({
+				time: toTicks(requireNumber(args.time, "time")),
+				updates: converted as never,
+			});
+			return { updated: true };
+		},
+	},
+
+	"scenes.move_bookmark": {
+		description: "Move a bookmark from one time to another (seconds).",
+		args: { fromTime: "seconds", toTime: "seconds" },
+		run: async ({ editor, args }) => {
+			await editor.scenes.moveBookmark({
+				fromTime: toTicks(requireNumber(args.fromTime, "fromTime")),
+				toTime: toTicks(requireNumber(args.toTime, "toTime")),
+			});
+			return { moved: true };
+		},
+	},
+
 	"subtitles.transcribe": {
 		description:
 			"Transcribe the timeline audio with the local Whisper model, generate captions and insert them as a new text track. Long-running: the model downloads on first use. Returns the new track id and caption count.",
@@ -686,6 +722,27 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			anchor.click();
 			setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
 			return { success: true, filename: anchor.download };
+		},
+	},
+
+	"export.status": {
+		description:
+			"Get the current export state: whether an export is running and its progress (0-1).",
+		run: ({ editor }) => {
+			const state = editor.project.getExportState();
+			return {
+				isExporting: state.isExporting,
+				progress: state.progress,
+				result: sanitizeJson(state.result),
+			};
+		},
+	},
+
+	"export.cancel": {
+		description: "Cancel the running export.",
+		run: ({ editor }) => {
+			editor.project.cancelExport();
+			return { cancelled: true };
 		},
 	},
 
