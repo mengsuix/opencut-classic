@@ -1,0 +1,3 @@
+[mcp_servers.opencut-editor]
+command = "bun"
+args = ["run", "packages/mcp-server/src/index.ts"]

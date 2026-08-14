@@ -26,3 +26,6 @@ target/
 .cargo-tools/
 
 rust-migration-notes.md
+
+# extra local files
+extra/

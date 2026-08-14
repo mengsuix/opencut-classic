@@ -9,6 +9,7 @@ import { useKeybindingsListener } from "@/actions/use-keybindings";
 import { useKeybindingsStore } from "@/actions/keybindings-store";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditorActions } from "@/actions/use-editor-actions";
+import { useExternalCommandBridge } from "@/editor/bridge/use-external-command-bridge";
 import { loadFontAtlas } from "@/fonts/google-fonts";
 import {
 	initializeGpuRenderer,
@@ -150,5 +151,6 @@ function EditorRuntimeBindings() {
 
 	useEditorActions();
 	useKeybindingsListener();
+	useExternalCommandBridge();
 	return null;
 }

@@ -1,0 +1,16 @@
+{
+	"name": "@opencut/mcp-server",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"start": "bun run src/index.ts"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.18.0",
+		"ws": "^8.18.0"
+	},
+	"devDependencies": {
+		"@types/ws": "^8.18.0"
+	}
+}
