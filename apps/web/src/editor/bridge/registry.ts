@@ -504,6 +504,18 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
+	"timeline.toggle_track_linked_style": {
+		description:
+			"Toggle linked caption style on a text track. While linked, text style edits (font, size, color, background) and transform edits (position, scale, rotate) on one element apply to every element on the track.",
+		args: { trackId: "string" },
+		run: ({ editor, args }) => {
+			editor.timeline.toggleTrackLinkedStyle({
+				trackId: requireString(args.trackId, "trackId"),
+			});
+			return { toggled: true };
+		},
+	},
+
 	"timeline.retime_element": {
 		description:
 			"Set playback speed on a media element. Omit retime (or pass null) to reset to normal speed.",

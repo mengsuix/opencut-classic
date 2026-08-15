@@ -8,7 +8,7 @@ import type {
 	TimelineElement,
 	RetimeConfig,
 } from "@/timeline";
-import { calculateTotalDuration } from "@/timeline";
+import { calculateTotalDuration, expandLinkedTextStyleUpdates } from "@/timeline";
 import { TimelineDragSource } from "@/timeline/drag-source";
 import { findTrackInSceneTracks } from "@/timeline/track-element-update";
 import { lastFrameMediaTime, type MediaTime, ZERO_MEDIA_TIME } from "@/wasm";
@@ -34,6 +34,7 @@ import {
 	RemoveTrackCommand,
 	ToggleTrackMuteCommand,
 	ToggleTrackVisibilityCommand,
+	ToggleTrackLinkedStyleCommand,
 	InsertElementCommand,
 	DeleteElementsCommand,
 	DuplicateElementsCommand,
@@ -184,6 +185,11 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	toggleTrackLinkedStyle({ trackId }: { trackId: string }): void {
+		const command = new ToggleTrackLinkedStyleCommand(trackId);
+		this.editor.command.execute({ command });
+	}
+
 	splitElements({
 		elements,
 		splitTime,
@@ -287,8 +293,13 @@ export class TimelineManager {
 			return;
 		}
 
+		const tracks = this.editor.scenes.getActiveSceneOrNull()?.tracks;
+		const expandedUpdates = tracks
+			? expandLinkedTextStyleUpdates({ tracks, updates })
+			: updates;
+
 		const command = new UpdateElementsCommand({
-			updates,
+			updates: expandedUpdates,
 		});
 		if (pushHistory) {
 			this.editor.command.execute({ command });
@@ -712,8 +723,24 @@ export class TimelineManager {
 			updates: Partial<TimelineElement>;
 		}[];
 	}): void {
+		const committedTracks = this.editor.scenes.getActiveSceneOrNull()?.tracks;
+		const expandedUpdates = committedTracks
+			? expandLinkedTextStyleUpdates({
+					tracks: committedTracks,
+					updates: updates.map(({ trackId, elementId, updates: patch }) => ({
+						trackId,
+						elementId,
+						patch,
+					})),
+				}).map(({ trackId, elementId, patch }) => ({
+					trackId,
+					elementId,
+					updates: patch,
+				}))
+			: updates;
+
 		let changedOverlayCount = 0;
-		for (const { elementId, updates: elementUpdates } of updates) {
+		for (const { elementId, updates: elementUpdates } of expandedUpdates) {
 			const existingOverlay = this.previewOverlay.get(elementId);
 			const changed = Object.entries(elementUpdates).some(([key, value]) => {
 				return !Object.is(
@@ -738,7 +765,6 @@ export class TimelineManager {
 				this.previewOverlay.set(elementId, mergedOverlay);
 			}
 		}
-		const committedTracks = this.editor.scenes.getActiveSceneOrNull()?.tracks;
 		if (!committedTracks) {
 			return;
 		}

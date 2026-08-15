@@ -5,6 +5,7 @@ export * from "./types";
 export * from "./drag";
 export * from "./track-capabilities";
 export * from "./track-element-update";
+export * from "./linked-style-sync";
 export * from "./element-utils";
 export * from "./audio-separation";
 export * from "./zoom-utils";

@@ -44,6 +44,8 @@ export interface TextTrack extends BaseTrack {
 	type: "text";
 	elements: TextElement[];
 	hidden: boolean;
+	/** When true, text style edits on one element propagate to every element on this track (caption-style linking). */
+	linkedStyle?: boolean;
 }
 
 export interface AudioTrack extends BaseTrack {

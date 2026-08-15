@@ -14,18 +14,23 @@ export class AddTrackCommand extends Command {
 	constructor({
 		type,
 		index,
+		linkedStyle,
 	}: {
 		type: TrackType;
 		index?: number;
+		/** Only applies to text tracks: enables caption-style linked styling. */
+		linkedStyle?: boolean;
 	}) {
 		super();
 		this.type = type;
 		this.index = index;
+		this.linkedStyle = linkedStyle;
 		this.trackId = generateUUID();
 	}
 
 	private type: TrackType;
 	private index?: number;
+	private linkedStyle?: boolean;
 
 	execute(): CommandResult | undefined {
 		const editor = EditorCore.getInstance();
@@ -50,6 +55,7 @@ export class AddTrackCommand extends Command {
 						insertIndex,
 						trackId: this.trackId,
 						trackType: this.type,
+						linkedStyle: this.linkedStyle,
 					});
 
 		editor.timeline.updateTracks(updatedTracks);
@@ -97,18 +103,23 @@ function buildOverlayTrackState({
 	insertIndex,
 	trackId,
 	trackType,
+	linkedStyle,
 }: {
 	tracks: SceneTracks;
 	insertIndex: number;
 	trackId: string;
 	trackType: Exclude<TrackType, "audio">;
+	linkedStyle?: boolean;
 }): SceneTracks {
 	const overlayInsertIndex = Math.min(insertIndex, tracks.overlay.length);
 	const newTrack =
 		trackType === "video"
 			? buildEmptyTrack({ id: trackId, type: "video" })
 			: trackType === "text"
-				? buildEmptyTrack({ id: trackId, type: "text" })
+				? {
+						...buildEmptyTrack({ id: trackId, type: "text" }),
+						...(linkedStyle ? { linkedStyle: true } : {}),
+					}
 				: trackType === "graphic"
 					? buildEmptyTrack({ id: trackId, type: "graphic" })
 					: buildEmptyTrack({ id: trackId, type: "effect" });

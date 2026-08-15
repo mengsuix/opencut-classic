@@ -3,10 +3,12 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Delete02Icon,
+	Link02Icon,
 	MagicWand05Icon,
 	MusicNote03Icon,
 	TaskAdd02Icon,
 	TextIcon,
+	Unlink02Icon,
 	ViewIcon,
 	ViewOffSlashIcon,
 	VolumeHighIcon,
@@ -670,6 +672,30 @@ function TrackLabelsPanel({
 											className="flex shrink-0 items-center justify-end gap-2 px-3"
 											style={{ height: `${baseHeight}px` }}
 										>
+											{track.type === "text" && (
+												<span
+													title={
+														track.linkedStyle
+															? "Unlink caption style"
+															: "Link caption style"
+													}
+												>
+													<HugeiconsIcon
+														icon={track.linkedStyle ? Link02Icon : Unlink02Icon}
+														className={cn(
+															"size-4 cursor-pointer",
+															track.linkedStyle
+																? "text-foreground"
+																: "text-muted-foreground",
+														)}
+														onClick={() =>
+															editor.timeline.toggleTrackLinkedStyle({
+																trackId: track.id,
+															})
+														}
+													/>
+												</span>
+											)}
 											{canTrackHaveAudio(track) && (
 												<TrackToggleIcon
 													isOff={track.muted}
