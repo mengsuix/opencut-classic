@@ -9,6 +9,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEditor } from "@/editor/use-editor";
+import { findTrackInSceneTracks } from "@/timeline";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { usePropertiesStore } from "./stores/properties-store";
 import { getPropertiesConfig } from "./registry";
@@ -17,7 +18,7 @@ import { EmptyView } from "./empty-view";
 
 export function PropertiesPanel() {
 	const editor = useEditor();
-	useEditor((e) => e.scenes.getActiveSceneOrNull());
+	const tracks = useEditor((e) => e.timeline.getPreviewTracks());
 	useEditor((e) => e.media.getAssets());
 	const { selectedElements } = useElementSelection();
 	const { activeTabPerType, setActiveTab } = usePropertiesStore();
@@ -42,14 +43,15 @@ export function PropertiesPanel() {
 
 	const mediaAssets = editor.media.getAssets();
 
-	const elementsWithTracks = editor.timeline.getElementsWithTracks({
-		elements: selectedElements,
-	});
-	const elementWithTrack = elementsWithTracks[0];
+	const selectedRef = selectedElements[0];
+	const track = tracks
+		? findTrackInSceneTracks({ tracks, trackId: selectedRef.trackId })
+		: null;
+	const element = track?.elements.find(
+		(candidate) => candidate.id === selectedRef.elementId,
+	);
 
-	if (!elementWithTrack) return null;
-
-	const { element, track } = elementWithTrack;
+	if (!track || !element) return null;
 	const config = getPropertiesConfig({ element, mediaAssets });
 	const visibleTabs = config.tabs;
 

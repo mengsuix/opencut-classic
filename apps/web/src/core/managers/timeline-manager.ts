@@ -726,6 +726,14 @@ export class TimelineManager {
 				const mergedOverlay = {
 					...existingOverlay,
 					...elementUpdates,
+					...(elementUpdates.params
+						? {
+								params: {
+									...existingOverlay?.params,
+									...elementUpdates.params,
+								},
+							}
+						: {}),
 				} as Partial<TimelineElement>;
 				this.previewOverlay.set(elementId, mergedOverlay);
 			}
@@ -782,7 +790,11 @@ export class TimelineManager {
 			const nextElements = track.elements.map((element) => {
 				const overlay = this.previewOverlay.get(element.id);
 				return overlay
-					? ({ ...element, ...overlay } as TimelineElement)
+					? ({
+							...element,
+							...overlay,
+							params: { ...element.params, ...(overlay.params ?? {}) },
+						} as TimelineElement)
 					: element;
 			});
 
