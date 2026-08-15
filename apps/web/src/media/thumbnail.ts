@@ -4,20 +4,24 @@ const THUMBNAIL_MAX_HEIGHT = 720;
 export function thumbnailSize({
 	width,
 	height,
+	maxWidth = THUMBNAIL_MAX_WIDTH,
+	maxHeight = THUMBNAIL_MAX_HEIGHT,
 }: {
 	width: number;
 	height: number;
+	maxWidth?: number;
+	maxHeight?: number;
 }): { width: number; height: number } {
 	const aspectRatio = width / height;
 	let targetWidth = width;
 	let targetHeight = height;
 
-	if (targetWidth > THUMBNAIL_MAX_WIDTH) {
-		targetWidth = THUMBNAIL_MAX_WIDTH;
+	if (targetWidth > maxWidth) {
+		targetWidth = maxWidth;
 		targetHeight = Math.round(targetWidth / aspectRatio);
 	}
-	if (targetHeight > THUMBNAIL_MAX_HEIGHT) {
-		targetHeight = THUMBNAIL_MAX_HEIGHT;
+	if (targetHeight > maxHeight) {
+		targetHeight = maxHeight;
 		targetWidth = Math.round(targetHeight * aspectRatio);
 	}
 
@@ -27,10 +31,14 @@ export function thumbnailSize({
 export function renderThumbnailDataUrl({
 	width,
 	height,
+	maxWidth,
+	maxHeight,
 	draw,
 }: {
 	width: number;
 	height: number;
+	maxWidth?: number;
+	maxHeight?: number;
 	draw: ({
 		context,
 		width,
@@ -41,7 +49,7 @@ export function renderThumbnailDataUrl({
 		height: number;
 	}) => void;
 }): string {
-	const size = thumbnailSize({ width, height });
+	const size = thumbnailSize({ width, height, maxWidth, maxHeight });
 	const canvas = document.createElement("canvas");
 	canvas.width = size.width;
 	canvas.height = size.height;

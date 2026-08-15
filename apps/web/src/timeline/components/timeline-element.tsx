@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useAssetsPanelStore } from "@/components/editor/panels/assets/assets-panel-store";
 import { AudioWaveform, WAVEFORM_GAIN_SAMPLE_COUNT } from "./audio-waveform";
@@ -60,6 +60,8 @@ import {
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { resolveStickerId } from "@/stickers";
 import { buildGraphicPreviewUrl } from "@/graphics";
+import { useVideoFilmstrip } from "@/media/use-video-filmstrip";
+import { getSourceTimeAtClipTime } from "@/retime";
 import Image from "next/image";
 import {
 	ScissorIcon,
@@ -1089,37 +1091,25 @@ function TiledMediaContent({
 	track: TimelineTrack;
 }) {
 	const mediaAssets = useEditor((e) => e.media.getAssets());
-
 	const mediaAsset = mediaAssets.find((asset) => asset.id === element.mediaId);
-	const imageUrl =
-		element.type === "video"
-			? mediaAsset?.thumbnailUrl
-			: (mediaAsset?.thumbnailUrl ?? mediaAsset?.url);
-
-	if (!imageUrl) {
-		return (
-			<span className="text-foreground/80 truncate text-xs">
-				{element.name}
-			</span>
-		);
-	}
-
-	const trackHeight = getTrackHeight({ type: track.type });
-	const tileWidth = trackHeight * THUMBNAIL_ASPECT_RATIO;
 
 	return (
 		<>
-			<div
-				className="absolute inset-0"
-				style={{
-					backgroundColor: "var(--muted)",
-					backgroundImage: `url(${imageUrl})`,
-					backgroundRepeat: "repeat-x",
-					backgroundSize: `${tileWidth}px ${trackHeight}px`,
-					backgroundPosition: "left center",
-					pointerEvents: "none",
-				}}
-			/>
+			{element.type === "video" ? (
+				<VideoFilmstrip
+					mediaId={element.mediaId}
+					file={mediaAsset?.file}
+					fallbackUrl={mediaAsset?.thumbnailUrl}
+					startTime={element.trimStart / TICKS_PER_SECOND}
+					endTime={getVisibleSourceEndSeconds({ element })}
+					tileWidth={getTrackHeight({ type: track.type }) * THUMBNAIL_ASPECT_RATIO}
+				/>
+			) : (
+				<StaticMediaContent
+					imageUrl={mediaAsset?.thumbnailUrl ?? mediaAsset?.url}
+					track={track}
+				/>
+			)}
 			<MediaElementHeader
 				name={mediaAsset?.name}
 				leading={
@@ -1130,6 +1120,140 @@ function TiledMediaContent({
 				hasFade={true}
 			/>
 		</>
+	);
+}
+
+// `trimStart`/`trimEnd` are amounts trimmed off the source, not absolute
+// timestamps: `trimStart + duration*rate + trimEnd == sourceDuration`, so the
+// visible source range ends at `sourceDuration - trimEnd`.
+function getVisibleSourceEndSeconds({
+	element,
+}: {
+	element: VideoElement;
+}): number {
+	if (element.sourceDuration != null) {
+		return (element.sourceDuration - element.trimEnd) / TICKS_PER_SECOND;
+	}
+	const visibleSourceSpan = getSourceTimeAtClipTime({
+		clipTime: element.duration,
+		retime: element.retime,
+	});
+	return (element.trimStart + visibleSourceSpan) / TICKS_PER_SECOND;
+}
+
+// Bounds the decode cost of a single strip; beyond this the tiles just get
+// wider than the target instead of decoding more frames.
+const MAX_FILMSTRIP_FRAMES = 32;
+
+function VideoFilmstrip({
+	mediaId,
+	file,
+	fallbackUrl,
+	startTime,
+	endTime,
+	tileWidth,
+}: {
+	mediaId: string;
+	file?: File;
+	fallbackUrl?: string | null;
+	startTime: number;
+	endTime: number;
+	tileWidth: number;
+}) {
+	const [container, setContainer] = useState<HTMLDivElement | null>(null);
+	const [width, setWidth] = useState(0);
+
+	useEffect(() => {
+		if (!container) {
+			return;
+		}
+		const observer = new ResizeObserver(([entry]) => {
+			if (entry) {
+				setWidth(entry.contentRect.width);
+			}
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	}, [container]);
+
+	// Quantized by tile width: sub-tile width changes never change the count,
+	// so only meaningful zoom/resize steps trigger a regeneration.
+	const frameCount =
+		width > 0 && tileWidth > 0
+			? Math.min(
+					MAX_FILMSTRIP_FRAMES,
+					Math.max(1, Math.round(width / tileWidth)),
+				)
+			: 0;
+
+	const frames = useVideoFilmstrip({
+		mediaId,
+		file,
+		startTime,
+		endTime,
+		frameCount,
+	});
+
+	return (
+		<div
+			ref={setContainer}
+			className="absolute inset-0"
+			style={{ pointerEvents: "none" }}
+		>
+			{frames.length === 0 ? (
+				<StaticMediaContent imageUrl={fallbackUrl} />
+			) : (
+				<div
+					className="absolute inset-0 flex overflow-hidden"
+					style={{ backgroundColor: "var(--muted)" }}
+				>
+					{frames.map((frameUrl, index) => (
+						<div
+							key={index}
+							className="min-w-0 flex-1 bg-cover bg-center"
+							style={
+								frameUrl
+									? { backgroundImage: `url(${frameUrl})` }
+									: undefined
+							}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function StaticMediaContent({
+	imageUrl,
+	track,
+}: {
+	imageUrl?: string | null;
+	track?: TimelineTrack;
+}) {
+	if (!imageUrl) {
+		return null;
+	}
+
+	const trackHeight = track ? getTrackHeight({ type: track.type }) : undefined;
+	const tileWidth = trackHeight
+		? trackHeight * THUMBNAIL_ASPECT_RATIO
+		: undefined;
+
+	return (
+		<div
+			className="absolute inset-0"
+			style={{
+				backgroundColor: "var(--muted)",
+				backgroundImage: `url(${imageUrl})`,
+				backgroundRepeat: "repeat-x",
+				backgroundSize: tileWidth
+					? `${tileWidth}px ${trackHeight}px`
+					: "cover",
+				backgroundPosition: "left center",
+				pointerEvents: "none",
+			}}
+		/>
 	);
 }
 
