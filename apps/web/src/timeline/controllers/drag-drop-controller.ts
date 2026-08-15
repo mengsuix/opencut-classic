@@ -404,7 +404,7 @@ export class DragDropController {
 		commands.push(
 			new RippleShiftElementsCommand({
 				trackId: track.id,
-				afterTime: plan.insertTime,
+				boundary: { direction: "right", afterTime: plan.insertTime },
 				shiftAmount: plan.shiftAmount,
 			}),
 			new InsertElementCommand({

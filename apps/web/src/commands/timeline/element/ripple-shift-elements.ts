@@ -2,33 +2,46 @@ import { EditorCore } from "@/core";
 import { Command } from "@/commands/base-command";
 import type { SceneTracks, TimelineTrack } from "@/timeline";
 import { updateTrackInSceneTracks } from "@/timeline";
-import { addMediaTime, type MediaTime } from "@/wasm";
+import {
+	addMediaTime,
+	maxMediaTime,
+	type MediaTime,
+	subMediaTime,
+	ZERO_MEDIA_TIME,
+} from "@/wasm";
+
+type RippleShiftBoundary =
+	| { direction: "right"; afterTime: MediaTime }
+	| { direction: "left"; beforeTime: MediaTime };
 
 /**
- * Shifts every element on a track starting at or after `afterTime` right by
- * `shiftAmount`, opening room for a ripple insert. Applies the track update
- * directly (like SplitElementsCommand) instead of going through the update
- * pipeline: the pipeline's main-track "earliest element stays at 0" enforce
- * rule would otherwise snap shifted elements back to the timeline start.
+ * Shifts a chain of elements on a track to make room for a ripple edit:
+ * - right: every element starting at or after `afterTime` moves right;
+ * - left: every element starting before `beforeTime` moves left.
+ *
+ * Applies the track update directly (like SplitElementsCommand) instead of
+ * going through the update pipeline: the pipeline's main-track "earliest
+ * element stays at 0" enforce rule would otherwise snap shifted elements
+ * back to the timeline start.
  */
 export class RippleShiftElementsCommand extends Command {
 	private savedState: SceneTracks | null = null;
 	private readonly trackId: string;
-	private readonly afterTime: MediaTime;
+	private readonly boundary: RippleShiftBoundary;
 	private readonly shiftAmount: MediaTime;
 
 	constructor({
 		trackId,
-		afterTime,
+		boundary,
 		shiftAmount,
 	}: {
 		trackId: string;
-		afterTime: MediaTime;
+		boundary: RippleShiftBoundary;
 		shiftAmount: MediaTime;
 	}) {
 		super();
 		this.trackId = trackId;
-		this.afterTime = afterTime;
+		this.boundary = boundary;
 		this.shiftAmount = shiftAmount;
 	}
 
@@ -47,15 +60,7 @@ export class RippleShiftElementsCommand extends Command {
 				({
 					...track,
 					elements: track.elements.map((element) =>
-						element.startTime >= this.afterTime
-							? {
-									...element,
-									startTime: addMediaTime({
-										a: element.startTime,
-										b: this.shiftAmount,
-									}),
-								}
-							: element,
+						this.shiftElement({ element }),
 					),
 				}) as TTrack,
 		});
@@ -69,5 +74,38 @@ export class RippleShiftElementsCommand extends Command {
 			const editor = EditorCore.getInstance();
 			editor.timeline.updateTracks(this.savedState);
 		}
+	}
+
+	private shiftElement<TElement extends TimelineTrack["elements"][number]>({
+		element,
+	}: {
+		element: TElement;
+	}): TElement {
+		if (this.boundary.direction === "right") {
+			if (element.startTime < this.boundary.afterTime) {
+				return element;
+			}
+			return {
+				...element,
+				startTime: addMediaTime({
+					a: element.startTime,
+					b: this.shiftAmount,
+				}),
+			};
+		}
+
+		if (element.startTime >= this.boundary.beforeTime) {
+			return element;
+		}
+		return {
+			...element,
+			startTime: maxMediaTime({
+				a: ZERO_MEDIA_TIME,
+				b: subMediaTime({
+					a: element.startTime,
+					b: this.shiftAmount,
+				}),
+			}),
+		};
 	}
 }

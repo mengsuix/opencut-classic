@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { VideoElement, VideoTrack } from "@/timeline";
-import { planFollowerPush } from "@/ripple";
+import { planFollowerPush, planFollowerPushLeft } from "@/ripple";
 import { mediaTime, ZERO_MEDIA_TIME } from "@/wasm";
 
 function buildVideoElement({
@@ -141,5 +141,60 @@ describe("planFollowerPush", () => {
 			afterTime: mediaTime({ ticks: 60 }),
 			shiftAmount: mediaTime({ ticks: 60 }),
 		});
+	});
+});
+
+describe("planFollowerPushLeft", () => {
+	test("pushes the left chain when the leftward move overlaps it", () => {
+		// A[5,15] B[15,25]: drag B left to 12 → overlap A (end 15 > 12),
+		// shift = 15-12 = 3, boundary = B's original start.
+		const shiftedA = buildVideoElement({ id: "a", startTime: 5, duration: 10 });
+		const movedB = buildVideoElement({ id: "b", startTime: 15, duration: 10 });
+		const plan = planFollowerPushLeft({
+			track: buildTrack([shiftedA, movedB]),
+			anchorElementId: "b",
+			anchorNewStartTime: mediaTime({ ticks: 12 }),
+			anchorOriginalStartTime: mediaTime({ ticks: 15 }),
+			anchorDuration: mediaTime({ ticks: 10 }),
+		});
+
+		expect(plan).toEqual({
+			beforeTime: mediaTime({ ticks: 15 }),
+			shiftAmount: mediaTime({ ticks: 3 }),
+		});
+	});
+
+	test("returns null when the push would cross the timeline start", () => {
+		// A[0,10] B[10,20]: drag B left to 5 → would push A below 0.
+		const plan = planFollowerPushLeft({
+			track: buildTrack([A, B]),
+			anchorElementId: "b",
+			anchorNewStartTime: mediaTime({ ticks: 5 }),
+			anchorOriginalStartTime: mediaTime({ ticks: 10 }),
+			anchorDuration: mediaTime({ ticks: 10 }),
+		});
+
+		expect(plan).toBeNull();
+	});
+
+	test("returns null for rightward moves and non-overlapping leftward moves", () => {
+		const rightward = planFollowerPushLeft({
+			track: buildTrack([A, B]),
+			anchorElementId: "b",
+			anchorNewStartTime: mediaTime({ ticks: 15 }),
+			anchorOriginalStartTime: mediaTime({ ticks: 10 }),
+			anchorDuration: mediaTime({ ticks: 10 }),
+		});
+		expect(rightward).toBeNull();
+
+		const shortA = buildVideoElement({ id: "a", startTime: 0, duration: 5 });
+		const clearLeftward = planFollowerPushLeft({
+			track: buildTrack([shortA, B]),
+			anchorElementId: "b",
+			anchorNewStartTime: mediaTime({ ticks: 8 }),
+			anchorOriginalStartTime: mediaTime({ ticks: 10 }),
+			anchorDuration: mediaTime({ ticks: 10 }),
+		});
+		expect(clearLeftward).toBeNull();
 	});
 });

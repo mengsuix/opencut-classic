@@ -21,7 +21,11 @@ import type { FrameRate } from "opencut-wasm";
 import { computeDropTarget } from "@/timeline/components/drop-target";
 import { getMouseTimeFromClientX } from "@/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
-import { planFollowerPush, planRippleInsert } from "@/ripple";
+import {
+	planFollowerPush,
+	planFollowerPushLeft,
+	planRippleInsert,
+} from "@/ripple";
 import {
 	getTimelineSnapThresholdInTicks,
 	type SnapPoint,
@@ -518,6 +522,9 @@ export class ElementInteractionController {
 		const tracks = scene.getTracks();
 		const zoomLevel = viewport.getZoomLevel();
 
+		const rippleSingle =
+			this.deps.ripple.isEnabled() && drag.moveGroup.members.length === 1;
+
 		const anchorDropTarget = resolveDropTarget({
 			clientX,
 			clientY,
@@ -531,12 +538,23 @@ export class ElementInteractionController {
 				startMouseY: mousedown.origin.y,
 				currentMouseY: clientY,
 			}),
-			rippleInsertEnabled:
-				this.deps.ripple.isEnabled() && drag.moveGroup.members.length === 1,
+			rippleInsertEnabled: rippleSingle,
 		});
 
-		// Ripple insert keeps its drop target as-is — the group-move resolver
-		// can't model "push right side along" and would overflow to new tracks.
+		// Same-track ripple drag uses push semantics (followers keep their
+		// gaps), decided at commit time. Skip the group-move resolver — it
+		// would overflow overlaps to new tracks.
+		if (anchorDropTarget && rippleSingle && !anchorDropTarget.isNewTrack) {
+			const targetTrack = orderedTracks(tracks)[anchorDropTarget.trackIndex];
+			if (targetTrack?.id === mousedown.trackId) {
+				drag.groupMoveResult = null;
+				drag.dropTarget = { ...anchorDropTarget, insertRipple: false };
+				return;
+			}
+		}
+
+		// Cross-track ripple insert keeps its drop target as-is — the
+		// group-move resolver can't model "push right side along".
 		if (anchorDropTarget?.insertRipple) {
 			drag.groupMoveResult = null;
 			drag.dropTarget = anchorDropTarget;
@@ -735,25 +753,24 @@ export class ElementInteractionController {
 			return;
 		}
 
-		// Ripple insert commit: split (if needed), push right, place the element.
-		if (drag.dropTarget?.insertRipple && drag.moveGroup.members.length === 1) {
-			this.commitRippleMove({ mousedown, drag });
-			this.finishSession();
-			return;
+		// Single-element ripple gestures own their commit paths.
+		if (
+			this.deps.ripple.isEnabled() &&
+			drag.moveGroup.members.length === 1
+		) {
+			if (drag.dropTarget?.insertRipple) {
+				this.commitRippleMove({ mousedown, drag });
+				this.finishSession();
+				return;
+			}
+			if (this.commitSameTrackRippleMove({ mousedown, drag })) {
+				this.finishSession();
+				return;
+			}
 		}
 
 		const { moveGroup, groupMoveResult } = drag;
 		if (!groupMoveResult) {
-			this.finishSession();
-			return;
-		}
-
-		// Ripple follower push: same-track rightward drag carries the chain.
-		if (
-			this.deps.ripple.isEnabled() &&
-			moveGroup.members.length === 1 &&
-			this.commitFollowerPush({ mousedown, groupMoveResult })
-		) {
 			this.finishSession();
 			return;
 		}
@@ -832,7 +849,7 @@ export class ElementInteractionController {
 		commands.push(
 			new RippleShiftElementsCommand({
 				trackId: targetTrack.id,
-				afterTime: plan.insertTime,
+				boundary: { direction: "right", afterTime: plan.insertTime },
 				shiftAmount: plan.shiftAmount,
 			}),
 			new MoveElementCommand({
@@ -849,55 +866,130 @@ export class ElementInteractionController {
 		this.deps.command.execute(new BatchCommand(commands));
 	}
 
-	// Commits a follower push when a same-track rightward move overlaps the
-	// right neighbors: the chain shifts right first, then the element lands.
-	// Returns false (caller falls back to the plain move) when not applicable.
-	private commitFollowerPush({
+	// Same-track ripple drag commit: rightward overlap pushes the follower
+	// chain right, leftward overlap pushes the left chain left — gaps are
+	// preserved. Non-overlapping drops resolve as a plain same-track move.
+	// Returns false when the drop targets a different track (caller falls
+	// through to the regular group-move path).
+	private commitSameTrackRippleMove({
 		mousedown,
-		groupMoveResult,
+		drag,
 	}: {
 		mousedown: MousedownSnapshot;
-		groupMoveResult: GroupMoveResult;
+		drag: DragProgress;
 	}): boolean {
-		const anchorMove = groupMoveResult.moves.find(
-			(move) => move.elementId === mousedown.elementId,
-		);
-		if (
-			!anchorMove ||
-			anchorMove.sourceTrackId !== anchorMove.targetTrackId ||
-			groupMoveResult.createTracks.length > 0
-		) {
+		const dropTarget = drag.dropTarget;
+		if (!dropTarget || dropTarget.isNewTrack || dropTarget.insertRipple) {
 			return false;
 		}
 
 		const tracks = this.deps.scene.getTracks();
-		const sourceTrack = orderedTracks(tracks).find(
-			(track) => track.id === anchorMove.sourceTrackId,
+		const targetTrack = orderedTracks(tracks)[dropTarget.trackIndex];
+		if (!targetTrack || targetTrack.id !== mousedown.trackId) {
+			return false;
+		}
+		const anchorElement = targetTrack.elements.find(
+			(element) => element.id === mousedown.elementId,
 		);
-		const anchorElement = sourceTrack?.elements.find(
-			(element) => element.id === anchorMove.elementId,
-		);
-		if (!sourceTrack || !anchorElement) return false;
+		if (!anchorElement) return false;
 
-		const plan = planFollowerPush({
-			track: sourceTrack,
+		const anchorNewStartTime = drag.currentTime;
+		const pushParams = {
+			track: targetTrack,
 			anchorElementId: anchorElement.id,
-			anchorNewStartTime: anchorMove.newStartTime,
+			anchorNewStartTime,
 			anchorOriginalStartTime: mousedown.startElementTime,
 			anchorDuration: anchorElement.duration,
-		});
-		if (!plan) return false;
+		};
+		const placeAnchor = () =>
+			new MoveElementCommand({
+				moves: [
+					{
+						sourceTrackId: mousedown.trackId,
+						targetTrackId: targetTrack.id,
+						elementId: anchorElement.id,
+						newStartTime: anchorNewStartTime,
+					},
+				],
+			});
 
-		this.deps.command.execute(
-			new BatchCommand([
-				new RippleShiftElementsCommand({
-					trackId: sourceTrack.id,
-					afterTime: plan.afterTime,
-					shiftAmount: plan.shiftAmount,
-				}),
-				new MoveElementCommand({ moves: groupMoveResult.moves }),
-			]),
-		);
+		const rightPlan = planFollowerPush(pushParams);
+		if (rightPlan) {
+			this.deps.command.execute(
+				new BatchCommand([
+					new RippleShiftElementsCommand({
+						trackId: targetTrack.id,
+						boundary: {
+							direction: "right",
+							afterTime: rightPlan.afterTime,
+						},
+						shiftAmount: rightPlan.shiftAmount,
+					}),
+					placeAnchor(),
+				]),
+			);
+			return true;
+		}
+
+		const leftPlan = planFollowerPushLeft(pushParams);
+		if (leftPlan) {
+			this.deps.command.execute(
+				new BatchCommand([
+					new RippleShiftElementsCommand({
+						trackId: targetTrack.id,
+						boundary: {
+							direction: "left",
+							beforeTime: leftPlan.beforeTime,
+						},
+						shiftAmount: leftPlan.shiftAmount,
+					}),
+					placeAnchor(),
+				]),
+			);
+			return true;
+		}
+
+		// No push applies — resolve as a plain same-track move; overflowing an
+		// overlap to a new track preserves the pre-ripple behavior.
+		const plainResult =
+			resolveGroupMove({
+				group: drag.moveGroup,
+				tracks,
+				anchorStartTime: anchorNewStartTime,
+				target: {
+					kind: "existingTrack",
+					anchorTargetTrackId: targetTrack.id,
+				},
+			}) ??
+			resolveGroupMove({
+				group: drag.moveGroup,
+				tracks,
+				anchorStartTime: anchorNewStartTime,
+				target: {
+					kind: "newTracks",
+					anchorInsertIndex: dropTarget.trackIndex,
+					newTrackIds: [...drag.reservedNewTrackIds],
+				},
+			});
+		if (!plainResult) return true;
+
+		const didMove = plainResult.moves.some((move) => {
+			const member = drag.moveGroup.members.find(
+				(candidate) => candidate.elementId === move.elementId,
+			);
+			const originalStartTime =
+				mousedown.startElementTime + (member?.timeOffset ?? 0);
+			return (
+				member?.trackId !== move.targetTrackId ||
+				originalStartTime !== move.newStartTime
+			);
+		});
+		if (didMove || plainResult.createTracks.length > 0) {
+			this.deps.timeline.moveElements({
+				moves: plainResult.moves,
+				createTracks: plainResult.createTracks,
+			});
+		}
 		return true;
 	}
 }
