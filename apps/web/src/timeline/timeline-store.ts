@@ -24,7 +24,7 @@ export const useTimelineStore = create<TimelineStore>()(
 				set((state) => ({ snappingEnabled: !state.snappingEnabled }));
 			},
 
-			rippleEditingEnabled: false,
+			rippleEditingEnabled: true,
 
 			toggleRippleEditing: () => {
 				set((state) => ({
@@ -48,6 +48,13 @@ export const useTimelineStore = create<TimelineStore>()(
 		}),
 		{
 			name: "timeline-store",
+			// v1: ripple editing became default-on; drop v0 storage so the old
+			// persisted `rippleEditingEnabled: false` doesn't override it.
+			version: 1,
+			migrate: () => ({
+				snappingEnabled: true,
+				rippleEditingEnabled: true,
+			}),
 			partialize: (state) => ({
 				snappingEnabled: state.snappingEnabled,
 				rippleEditingEnabled: state.rippleEditingEnabled,

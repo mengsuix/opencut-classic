@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useState, type RefObject } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useCommittedRef } from "@/hooks/use-committed-ref";
+import { useTimelineStore } from "@/timeline/timeline-store";
 import {
 	DragDropController,
 	type DragDropConfig,
@@ -20,6 +21,10 @@ export function useTimelineDragDrop({
 	zoomLevel,
 }: UseTimelineDragDropProps) {
 	const editor = useEditor();
+	const rippleEditingEnabled = useTimelineStore(
+		(state) => state.rippleEditingEnabled,
+	);
+	const snappingEnabled = useTimelineStore((state) => state.snappingEnabled);
 
 	const config: DragDropConfig = {
 		zoomLevel,
@@ -37,6 +42,8 @@ export function useTimelineDragDrop({
 		executeCommand: (command) => editor.command.execute({ command }),
 		insertElement: (args) => editor.timeline.insertElement(args),
 		addClipEffect: (args) => editor.timeline.addClipEffect(args),
+		isRippleInsertEnabled: () => rippleEditingEnabled,
+		isSnappingEnabled: () => snappingEnabled,
 	};
 	const configRef = useCommittedRef(config);
 	const [controller] = useState(() => new DragDropController({ configRef }));

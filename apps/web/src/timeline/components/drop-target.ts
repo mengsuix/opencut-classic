@@ -1,6 +1,9 @@
 import type { TimelineTrack, TimelineElement } from "@/timeline";
 import type { ComputeDropTargetParams, DropTarget } from "@/timeline";
-import { resolveTrackPlacement } from "@/timeline/placement";
+import {
+	canElementGoOnTrack,
+	resolveTrackPlacement,
+} from "@/timeline/placement";
 import { TIMELINE_TRACK_GAP_PX } from "./layout";
 import { getTrackHeight } from "./track-layout";
 import {
@@ -114,6 +117,7 @@ export function computeDropTarget({
 	startTimeOverride,
 	excludeElementId,
 	targetElementTypes,
+	rippleInsertEnabled,
 }: ComputeDropTargetParams): DropTarget {
 	const orderedTracks = [...tracks.overlay, tracks.main, ...tracks.audio];
 	const mainTrackIndex = tracks.overlay.length;
@@ -203,7 +207,14 @@ export function computeDropTarget({
 			pixelsPerSecond,
 			zoomLevel,
 		});
-		if (targetElement) {
+		// Replace-on-drop targets an existing element; ripple insert takes
+		// precedence on compatible tracks (replace media is not implemented
+		// yet, and dropping on an occupied span should insert instead of
+		// being swallowed).
+		const shouldRippleInsteadOfReplace =
+			rippleInsertEnabled &&
+			canElementGoOnTrack({ elementType, trackType: track.type });
+		if (targetElement && !shouldRippleInsteadOfReplace) {
 			return {
 				trackIndex,
 				isNewTrack: false,
@@ -228,6 +239,24 @@ export function computeDropTarget({
 	});
 	if (!placementResult) {
 		return fallbackNewTrackDropTarget({ xPosition });
+	}
+
+	// Ripple insert: the span overlaps elements on this compatible track, so
+	// instead of overflowing to a new track, insert at the drop point and
+	// push the right side of the track along the timeline.
+	if (
+		rippleInsertEnabled &&
+		placementResult.kind === "newTrack" &&
+		canElementGoOnTrack({ elementType, trackType: track.type })
+	) {
+		return {
+			trackIndex,
+			isNewTrack: false,
+			insertPosition: null,
+			xPosition,
+			targetElement: EMPTY_TARGET_ELEMENT,
+			insertRipple: true,
+		};
 	}
 
 	if (placementResult.kind === "existingTrack") {

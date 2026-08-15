@@ -465,12 +465,14 @@ export function Timeline() {
 						tracks={tracks}
 						isVisible={isDragOver && !dropTarget?.targetElement}
 						headerHeight={timelineHeaderHeight}
+						zoomLevel={zoomLevel}
 					/>
 					<DragLine
 						dropTarget={isElementDragging ? dragView.dropTarget : null}
 						tracks={tracks}
 						isVisible={isElementDragging}
 						headerHeight={timelineHeaderHeight}
+						zoomLevel={zoomLevel}
 					/>
 
 					<div ref={rulerScrollRef} className="shrink-0 overflow-hidden">

@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState, type RefObject } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useCommittedRef } from "@/hooks/use-committed-ref";
 import { useShiftKey } from "@/hooks/use-shift-key";
+import { useTimelineStore } from "@/timeline/timeline-store";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { registerCanceller } from "@/editor/cancel-interaction";
 import {
@@ -31,6 +32,9 @@ export function useElementInteraction({
 	const editor = useEditor();
 	const isShiftHeldRef = useShiftKey();
 	const selection = useElementSelection();
+	const rippleEditingEnabled = useTimelineStore(
+		(state) => state.rippleEditingEnabled,
+	);
 
 	const deps: ElementInteractionDeps = {
 		viewport: {
@@ -62,6 +66,12 @@ export function useElementInteraction({
 		snap: {
 			isEnabled: () => snappingEnabled,
 			onChange: onSnapPointChange,
+		},
+		ripple: {
+			isEnabled: () => rippleEditingEnabled,
+		},
+		command: {
+			execute: (command) => editor.command.execute({ command }),
 		},
 	};
 	const depsRef = useCommittedRef(deps) as ElementInteractionDepsRef;

@@ -264,6 +264,8 @@ export interface DropTarget {
 	insertPosition: "above" | "below" | null;
 	xPosition: MediaTime;
 	targetElement: { elementId: string; trackId: string } | null;
+	/** When true, dropping inserts at xPosition and pushes elements at/after it right (ripple insert) instead of creating a new track. */
+	insertRipple?: boolean;
 }
 
 export interface ComputeDropTargetParams {
@@ -280,6 +282,7 @@ export interface ComputeDropTargetParams {
 	startTimeOverride?: MediaTime;
 	excludeElementId?: string;
 	targetElementTypes?: string[];
+	rippleInsertEnabled?: boolean;
 }
 
 export interface ClipboardItem {

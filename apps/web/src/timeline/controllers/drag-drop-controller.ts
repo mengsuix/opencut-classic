@@ -14,10 +14,17 @@ import {
 	buildElementFromMedia,
 	buildEffectElement,
 } from "@/timeline/element-utils";
-import { AddTrackCommand, InsertElementCommand } from "@/commands/timeline";
+import {
+	AddTrackCommand,
+	InsertElementCommand,
+	RippleShiftElementsCommand,
+	SplitElementsCommand,
+} from "@/commands/timeline";
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import { computeDropTarget } from "@/timeline/components/drop-target";
+import { planRippleInsert } from "@/ripple";
+import { getTimelineSnapThresholdInTicks } from "@/timeline/snapping";
 import type { TimelineDragSource } from "@/timeline/drag-source";
 import type {
 	TrackType,
@@ -50,6 +57,8 @@ export interface DragDropConfig {
 		asset: ProcessedMediaAsset;
 	}) => Promise<MediaAsset | null>;
 	executeCommand: (command: Command) => void;
+	isRippleInsertEnabled?: () => boolean;
+	isSnappingEnabled?: () => boolean;
 	insertElement: (args: {
 		placement: { mode: "explicit"; trackId: string };
 		element: CreateTimelineElement;
@@ -222,6 +231,7 @@ export class DragDropController {
 			pixelsPerSecond: BASE_TIMELINE_PIXELS_PER_SECOND,
 			zoomLevel: this.config.zoomLevel,
 			targetElementTypes,
+			rippleInsertEnabled: this.config.isRippleInsertEnabled?.() ?? false,
 		});
 
 		const fps = this.config.getActiveProjectFps();
@@ -325,6 +335,11 @@ export class DragDropController {
 		target: DropTarget;
 		trackType: TrackType;
 	}): void {
+		if (target.insertRipple && !target.isNewTrack) {
+			this.executeRippleInsert({ element, target });
+			return;
+		}
+
 		if (target.isNewTrack) {
 			const addTrackCmd = new AddTrackCommand({
 				type: trackType,
@@ -349,6 +364,55 @@ export class DragDropController {
 			placement: { mode: "explicit", trackId: track.id },
 			element,
 		});
+	}
+
+	// Ripple insert: split the element under the insert point (if any), push
+	// the right side of the track right by the inserted duration, then place
+	// the new element — all as one undoable batch.
+	private executeRippleInsert({
+		element,
+		target,
+	}: {
+		element: CreateTimelineElement;
+		target: DropTarget;
+	}): void {
+		const tracks = orderedTracks({ sceneTracks: this.config.getSceneTracks() });
+		const track = tracks[target.trackIndex];
+		if (!track) return;
+
+		const snappingEnabled = this.config.isSnappingEnabled?.() ?? false;
+		const plan = planRippleInsert({
+			track,
+			requestedInsertTime: target.xPosition,
+			elementDuration: element.duration ?? DEFAULT_NEW_ELEMENT_DURATION,
+			snapTolerance: snappingEnabled
+				? getTimelineSnapThresholdInTicks({ zoomLevel: this.config.zoomLevel })
+				: 0,
+		});
+		if (!plan) return;
+
+		const commands: Command[] = [];
+		if (plan.splitElementId) {
+			commands.push(
+				new SplitElementsCommand({
+					elements: [{ trackId: track.id, elementId: plan.splitElementId }],
+					splitTime: plan.insertTime,
+					retainSide: "both",
+				}),
+			);
+		}
+		commands.push(
+			new RippleShiftElementsCommand({
+				trackId: track.id,
+				afterTime: plan.insertTime,
+				shiftAmount: plan.shiftAmount,
+			}),
+			new InsertElementCommand({
+				element: { ...element, startTime: plan.insertTime },
+				placement: { mode: "explicit", trackId: track.id },
+			}),
+		);
+		this.config.executeCommand(new BatchCommand(commands));
 	}
 
 	private executeAssetDrop({
@@ -556,6 +620,8 @@ export class DragDropController {
 						elementDuration: duration,
 						pixelsPerSecond: BASE_TIMELINE_PIXELS_PER_SECOND,
 						zoomLevel: this.config.zoomLevel,
+						rippleInsertEnabled:
+							this.config.isRippleInsertEnabled?.() ?? false,
 					});
 
 					const trackType: TrackType =

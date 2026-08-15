@@ -21,7 +21,18 @@ import type { FrameRate } from "opencut-wasm";
 import { computeDropTarget } from "@/timeline/components/drop-target";
 import { getMouseTimeFromClientX } from "@/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
-import type { SnapPoint } from "@/timeline/snapping";
+import { planFollowerPush, planRippleInsert } from "@/ripple";
+import {
+	getTimelineSnapThresholdInTicks,
+	type SnapPoint,
+} from "@/timeline/snapping";
+import { BatchCommand } from "@/commands";
+import type { Command } from "@/commands/base-command";
+import {
+	MoveElementCommand,
+	RippleShiftElementsCommand,
+	SplitElementsCommand,
+} from "@/commands/timeline";
 import type {
 	DropTarget,
 	ElementRef,
@@ -72,6 +83,14 @@ export interface SnapConfig {
 	onChange?: (snapPoint: SnapPoint | null) => void;
 }
 
+export interface RippleConfig {
+	isEnabled: () => boolean;
+}
+
+export interface CommandExecutor {
+	execute: (command: Command) => void;
+}
+
 export interface ElementInteractionDeps {
 	viewport: ViewportAdapter;
 	input: InputAdapter;
@@ -80,6 +99,8 @@ export interface ElementInteractionDeps {
 	playback: PlaybackReader;
 	timeline: TimelineOps;
 	snap: SnapConfig;
+	ripple: RippleConfig;
+	command: CommandExecutor;
 }
 
 export interface ElementInteractionDepsRef {
@@ -203,6 +224,7 @@ function resolveDropTarget({
 	zoomLevel,
 	snappedTime,
 	verticalDragDirection,
+	rippleInsertEnabled,
 }: {
 	clientX: number;
 	clientY: number;
@@ -213,6 +235,7 @@ function resolveDropTarget({
 	zoomLevel: number;
 	snappedTime: MediaTime;
 	verticalDragDirection: "up" | "down" | null;
+	rippleInsertEnabled: boolean;
 }): DropTarget | null {
 	const containerRect = viewport
 		.getTracksContainerEl()
@@ -243,6 +266,7 @@ function resolveDropTarget({
 		startTimeOverride: snappedTime,
 		excludeElementId: movingElement.id,
 		verticalDragDirection,
+		rippleInsertEnabled,
 	});
 }
 
@@ -507,7 +531,17 @@ export class ElementInteractionController {
 				startMouseY: mousedown.origin.y,
 				currentMouseY: clientY,
 			}),
+			rippleInsertEnabled:
+				this.deps.ripple.isEnabled() && drag.moveGroup.members.length === 1,
 		});
+
+		// Ripple insert keeps its drop target as-is — the group-move resolver
+		// can't model "push right side along" and would overflow to new tracks.
+		if (anchorDropTarget?.insertRipple) {
+			drag.groupMoveResult = null;
+			drag.dropTarget = anchorDropTarget;
+			return;
+		}
 
 		const nextGroupMoveResult = anchorDropTarget
 			? resolveGroupMoveForDrop({
@@ -701,8 +735,25 @@ export class ElementInteractionController {
 			return;
 		}
 
+		// Ripple insert commit: split (if needed), push right, place the element.
+		if (drag.dropTarget?.insertRipple && drag.moveGroup.members.length === 1) {
+			this.commitRippleMove({ mousedown, drag });
+			this.finishSession();
+			return;
+		}
+
 		const { moveGroup, groupMoveResult } = drag;
 		if (!groupMoveResult) {
+			this.finishSession();
+			return;
+		}
+
+		// Ripple follower push: same-track rightward drag carries the chain.
+		if (
+			this.deps.ripple.isEnabled() &&
+			moveGroup.members.length === 1 &&
+			this.commitFollowerPush({ mousedown, groupMoveResult })
+		) {
 			this.finishSession();
 			return;
 		}
@@ -728,4 +779,125 @@ export class ElementInteractionController {
 
 		this.finishSession();
 	};
+
+	// Commits a ripple move: drop on an occupied span splits the element under
+	// the insert point (unless it's the moved element itself), pushes the right
+	// side along by the moved duration, and places the element at the insert
+	// point — one undoable batch.
+	private commitRippleMove({
+		mousedown,
+		drag,
+	}: {
+		mousedown: MousedownSnapshot;
+		drag: DragProgress;
+	}): void {
+		const dropTarget = drag.dropTarget;
+		if (!dropTarget) return;
+
+		const tracks = this.deps.scene.getTracks();
+		const ordered = orderedTracks(tracks);
+		const targetTrack = ordered[dropTarget.trackIndex];
+		const sourceTrack = ordered.find((track) => track.id === mousedown.trackId);
+		const anchorElement = sourceTrack?.elements.find(
+			(element) => element.id === mousedown.elementId,
+		);
+		if (!targetTrack || !anchorElement) return;
+
+		const snapTolerance =
+			this.deps.snap.isEnabled() && !this.deps.input.isShiftHeld()
+				? getTimelineSnapThresholdInTicks({
+						zoomLevel: this.deps.viewport.getZoomLevel(),
+					})
+				: 0;
+		const plan = planRippleInsert({
+			track: targetTrack,
+			requestedInsertTime: dropTarget.xPosition,
+			elementDuration: anchorElement.duration,
+			snapTolerance,
+		});
+		if (!plan) return;
+
+		const commands: Command[] = [];
+		if (plan.splitElementId && plan.splitElementId !== anchorElement.id) {
+			commands.push(
+				new SplitElementsCommand({
+					elements: [
+						{ trackId: targetTrack.id, elementId: plan.splitElementId },
+					],
+					splitTime: plan.insertTime,
+					retainSide: "both",
+				}),
+			);
+		}
+		commands.push(
+			new RippleShiftElementsCommand({
+				trackId: targetTrack.id,
+				afterTime: plan.insertTime,
+				shiftAmount: plan.shiftAmount,
+			}),
+			new MoveElementCommand({
+				moves: [
+					{
+						sourceTrackId: mousedown.trackId,
+						targetTrackId: targetTrack.id,
+						elementId: anchorElement.id,
+						newStartTime: plan.insertTime,
+					},
+				],
+			}),
+		);
+		this.deps.command.execute(new BatchCommand(commands));
+	}
+
+	// Commits a follower push when a same-track rightward move overlaps the
+	// right neighbors: the chain shifts right first, then the element lands.
+	// Returns false (caller falls back to the plain move) when not applicable.
+	private commitFollowerPush({
+		mousedown,
+		groupMoveResult,
+	}: {
+		mousedown: MousedownSnapshot;
+		groupMoveResult: GroupMoveResult;
+	}): boolean {
+		const anchorMove = groupMoveResult.moves.find(
+			(move) => move.elementId === mousedown.elementId,
+		);
+		if (
+			!anchorMove ||
+			anchorMove.sourceTrackId !== anchorMove.targetTrackId ||
+			groupMoveResult.createTracks.length > 0
+		) {
+			return false;
+		}
+
+		const tracks = this.deps.scene.getTracks();
+		const sourceTrack = orderedTracks(tracks).find(
+			(track) => track.id === anchorMove.sourceTrackId,
+		);
+		const anchorElement = sourceTrack?.elements.find(
+			(element) => element.id === anchorMove.elementId,
+		);
+		if (!sourceTrack || !anchorElement) return false;
+
+		const plan = planFollowerPush({
+			track: sourceTrack,
+			anchorElementId: anchorElement.id,
+			anchorNewStartTime: anchorMove.newStartTime,
+			anchorOriginalStartTime: mousedown.startElementTime,
+			anchorDuration: anchorElement.duration,
+		});
+		if (!plan) return false;
+
+		this.deps.command.execute(
+			new BatchCommand([
+				new RippleShiftElementsCommand({
+					trackId: sourceTrack.id,
+					afterTime: plan.afterTime,
+					shiftAmount: plan.shiftAmount,
+				}),
+				new MoveElementCommand({ moves: groupMoveResult.moves }),
+			]),
+		);
+		return true;
+	}
 }
