@@ -17,6 +17,7 @@ import {
 } from "@/wasm";
 import type {
 	ComputeGroupResizeArgs,
+	GroupResizeFollower,
 	GroupResizeMember,
 	GroupResizeResult,
 	GroupResizeUpdate,
@@ -101,16 +102,63 @@ export function computeGroupResize({
 					max: maximumDeltaTime,
 				});
 
+	const updates = members.map((member) =>
+		buildResizeUpdate({
+			member,
+			side,
+			deltaTime: finalDeltaTime,
+		}),
+	);
+	if (side === "right") {
+		updates.push(
+			...buildRipplePushUpdates({ members, deltaTime: finalDeltaTime }),
+		);
+	}
+
 	return {
 		deltaTime: Object.is(finalDeltaTime, -0) ? ZERO_MEDIA_TIME : finalDeltaTime,
-		updates: members.map((member) =>
-			buildResizeUpdate({
-				member,
-				side,
-				deltaTime: finalDeltaTime,
-			}),
-		),
+		updates,
 	};
+}
+
+// Extending past the right neighbor ripples the track: every later element
+// shifts right by the overflow instead of blocking the resize.
+function buildRipplePushUpdates({
+	members,
+	deltaTime,
+}: {
+	members: GroupResizeMember[];
+	deltaTime: MediaTime;
+}): GroupResizeUpdate[] {
+	const overflowByFollower = new Map<
+		string,
+		{ follower: GroupResizeFollower; overflow: MediaTime }
+	>();
+
+	for (const member of members) {
+		if (member.rightNeighborBound === null) continue;
+		const neighborCeiling = subMediaTime({
+			a: member.rightNeighborBound,
+			b: addMediaTime({ a: member.startTime, b: member.duration }),
+		});
+		if (deltaTime <= neighborCeiling) continue;
+		const overflow = subMediaTime({ a: deltaTime, b: neighborCeiling });
+		for (const follower of member.rightFollowers) {
+			const key = `${follower.trackId}:${follower.elementId}`;
+			const existing = overflowByFollower.get(key);
+			if (!existing || overflow > existing.overflow) {
+				overflowByFollower.set(key, { follower, overflow });
+			}
+		}
+	}
+
+	return [...overflowByFollower.values()].map(({ follower, overflow }) => ({
+		trackId: follower.trackId,
+		elementId: follower.elementId,
+		patch: {
+			startTime: addMediaTime({ a: follower.startTime, b: overflow }),
+		},
+	}));
 }
 
 function buildResizeUpdate({
@@ -211,15 +259,11 @@ function getMaximumAllowedDeltaTime({
 		return subMediaTime({ a: member.duration, b: minDuration });
 	}
 
-	const rightNeighborCeiling =
-		member.rightNeighborBound === null
-			? null
-			: subMediaTime({
-					a: member.rightNeighborBound,
-					b: addMediaTime({ a: member.startTime, b: member.duration }),
-				});
+	// The right neighbor is not a hard ceiling: overflowing it ripples the
+	// follower elements right (see buildRipplePushUpdates). Only the source
+	// extent can cap a right-side extension.
 	if (member.sourceDuration == null) {
-		return rightNeighborCeiling;
+		return null;
 	}
 
 	const maximumVisibleSourceSpan = subMediaTime({
@@ -230,13 +274,10 @@ function getMaximumAllowedDeltaTime({
 		member,
 		sourceSpan: maximumVisibleSourceSpan,
 	});
-	const sourceDurationCeiling = subMediaTime({
+	return subMediaTime({
 		a: maximumDuration,
 		b: member.duration,
 	});
-	return rightNeighborCeiling === null
-		? sourceDurationCeiling
-		: minMediaTime({ a: rightNeighborCeiling, b: sourceDurationCeiling });
 }
 
 function getSourceDeltaForClipDelta({

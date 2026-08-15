@@ -109,18 +109,24 @@ export function buildResizeMembers({
 					? elementEnd
 					: maxMediaTime({ a: bound, b: elementEnd });
 			}, null);
-		const rightNeighborBound = otherElements
-			.filter(
-				(el) =>
-					el.startTime >= addMediaTime({ a: element.startTime, b: element.duration }),
-			)
-			.reduce<MediaTime | null>(
-				(bound, el) =>
-					bound === null
-						? el.startTime
-						: minMediaTime({ a: bound, b: el.startTime }),
-				null,
-			);
+		const elementEnd = addMediaTime({
+			a: element.startTime,
+			b: element.duration,
+		});
+		const rightFollowers = otherElements
+			.filter((el) => el.startTime >= elementEnd)
+			.map((el) => ({
+				trackId,
+				elementId: el.id,
+				startTime: el.startTime,
+			}));
+		const rightNeighborBound = rightFollowers.reduce<MediaTime | null>(
+			(bound, el) =>
+				bound === null
+					? el.startTime
+					: minMediaTime({ a: bound, b: el.startTime }),
+			null,
+		);
 
 		return [
 			{
@@ -134,6 +140,7 @@ export function buildResizeMembers({
 				retime: isRetimableElement(element) ? element.retime : undefined,
 				leftNeighborBound,
 				rightNeighborBound,
+				rightFollowers,
 			},
 		];
 	});

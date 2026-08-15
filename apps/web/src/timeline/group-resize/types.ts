@@ -4,6 +4,10 @@ import type { MediaTime } from "@/wasm";
 
 export type ResizeSide = "left" | "right";
 
+export interface GroupResizeFollower extends ElementRef {
+	startTime: MediaTime;
+}
+
 export interface GroupResizeMember extends ElementRef {
 	startTime: MediaTime;
 	duration: MediaTime;
@@ -13,14 +17,15 @@ export interface GroupResizeMember extends ElementRef {
 	retime?: RetimeConfig;
 	leftNeighborBound: MediaTime | null;
 	rightNeighborBound: MediaTime | null;
+	rightFollowers: GroupResizeFollower[];
 }
 
 export interface GroupResizeUpdate extends ElementRef {
 	patch: {
-		trimStart: MediaTime;
-		trimEnd: MediaTime;
-		startTime: MediaTime;
-		duration: MediaTime;
+		trimStart?: MediaTime;
+		trimEnd?: MediaTime;
+		startTime?: MediaTime;
+		duration?: MediaTime;
 	};
 }
 
