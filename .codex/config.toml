@@ -1,3 +1,6 @@
 [mcp_servers.opencut-editor]
 command = "bun"
 args = ["run", "packages/mcp-server/src/index.ts"]
+
+[mcp_servers.opencut-editor.tools.get_editor_state]
+approval_mode = "approve"
