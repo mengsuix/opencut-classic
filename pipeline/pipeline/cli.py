@@ -9,6 +9,7 @@ from pathlib import Path
 from .hotspots.direct import direct_sources
 from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
+from .hotspots.ranking import rank_hotspots
 from .hotspots.tophub import tophub_sources
 from .workflow import run_selected_plans, save_workflow_summary
 
@@ -66,10 +67,10 @@ def cmd_hotspots(args: argparse.Namespace) -> int:
 
     for it in items:
         it.matched_topics = match_topics(it.title, topics)
-    out = [it for it in items if not is_blacklisted(it.title, blacklist)]
+    ranked = rank_hotspots(items, stats)
+    out = [it for it in ranked if not is_blacklisted(it.title, blacklist)]
     if args.mode == "topics":
         out = [it for it in out if it.matched_topics]
-    out.sort(key=lambda it: (-len(it.also_on), it.rank))
 
     fetched_at = datetime.now(timezone.utc)
     result = {

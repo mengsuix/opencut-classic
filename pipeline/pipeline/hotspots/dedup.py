@@ -26,15 +26,25 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return inter / union if union else 0.0
 
 
+def _observations(item: Hotspot) -> list[tuple[str, int, int | None]]:
+    observations = getattr(item, "_observations", None)
+    if observations is None:
+        observations = [(item.platform, item.rank, item.heat)]
+        setattr(item, "_observations", observations)
+    return observations
+
+
 def dedup(items: list[Hotspot], threshold: float = 0.55) -> list[Hotspot]:
     """跨平台去重：相似标题合并到先出现（rank 更小）的条目，平台记入 also_on。"""
     kept: list[tuple[Hotspot, set[str]]] = []
-    for item in sorted(items, key=lambda x: x.rank):
+    for item in sorted(items, key=lambda x: (x.rank, x.platform, x.title, x.id)):
+        _observations(item)
         grams = _bigrams(_normalize(item.title))
         if not grams:
             continue
         dup = next((k for k in kept if _jaccard(k[1], grams) >= threshold), None)
         if dup is not None:
+            _observations(dup[0]).extend(_observations(item))
             if item.platform != dup[0].platform and item.platform not in dup[0].also_on:
                 dup[0].also_on.append(item.platform)
         else:
