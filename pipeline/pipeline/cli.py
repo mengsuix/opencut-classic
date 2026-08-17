@@ -10,12 +10,28 @@ from .hotspots.direct import direct_sources
 from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
 from .hotspots.tophub import tophub_sources
-from .score import latest_file, load_context, load_items, save_result, score_items
 from .workflow import run_selected_plans, save_workflow_summary
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PIPELINE_DIR / "config"
 DATA_DIR = PIPELINE_DIR / "data" / "hotspots"
+
+
+def load_context() -> str:
+    return (CONFIG_DIR / "context.md").read_text(encoding="utf-8")
+
+
+def latest_file(subdir: str) -> Path:
+    files = sorted((PIPELINE_DIR / "data" / subdir).glob("*.json"))
+    if not files:
+        raise FileNotFoundError(
+            f"data/{subdir}/ 下没有数据文件，请先运行 hotspots 阶段"
+        )
+    return files[-1]
+
+
+def load_items(path: Path) -> list[dict]:
+    return json.loads(path.read_text(encoding="utf-8"))["items"]
 
 
 def load_config(name: str, fallback):
@@ -87,21 +103,6 @@ def cmd_hotspots(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_score(args: argparse.Namespace) -> int:
-    src = Path(args.input) if args.input else latest_file("hotspots")
-    print(f"输入: {src}")
-    items = load_items(src)
-    context = load_context()
-    print(f"候选 {len(items)} 条，LLM 打分中…")
-    scored = score_items(items, context, batch_size=args.batch)
-    path = save_result(scored, src)
-    print(f"\nTop {min(args.limit, len(scored))}:")
-    for it in scored[: args.limit]:
-        print(f"  [{it['score']:>2}] {it['platform']}  {it['title']}  — {it['reason']}")
-    print(f"\n已保存: {path}")
-    return 0
-
-
 def cmd_plan(args: argparse.Namespace) -> int:
     src = Path(args.input) if args.input else latest_file("hotspots")
     selected_ids = []
@@ -155,12 +156,6 @@ def main() -> int:
     hot.add_argument("--region", choices=["all", "cn", "global"], default="all")
     hot.add_argument("--limit", type=int, default=20, help="终端展示条数")
     hot.set_defaults(func=cmd_hotspots)
-
-    sc = sub.add_parser("score", help="LLM 依据 config/context.md 给热点打分")
-    sc.add_argument("--input", default=None, help="指定 hotspots JSON 文件，默认取最新")
-    sc.add_argument("--batch", type=int, default=30, help="每批送评分条数")
-    sc.add_argument("--limit", type=int, default=20, help="终端展示条数")
-    sc.set_defaults(func=cmd_score)
 
     pl = sub.add_parser("plan", help="对人工选择的热点运行解构、评委、策划三阶段")
     pl.add_argument("--input", default=None, help="指定 hotspots JSON 文件，默认取最新")
