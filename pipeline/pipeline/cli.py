@@ -10,8 +10,8 @@ from .hotspots.direct import direct_sources
 from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
 from .hotspots.tophub import tophub_sources
-from .plan import make_plans, save_plans
 from .score import latest_file, load_context, load_items, save_result, score_items
+from .workflow import run_selected_plans, save_workflow_summary
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PIPELINE_DIR / "config"
@@ -82,7 +82,7 @@ def cmd_hotspots(args: argparse.Namespace) -> int:
     for it in out[: args.limit]:
         cross = f" +[{','.join(it.also_on)}]" if it.also_on else ""
         topic = f" <{'/'.join(it.matched_topics)}>" if it.matched_topics else ""
-        print(f"  {it.platform}{cross}{topic}  {it.title}")
+        print(f"  [{it.id}] {it.platform}{cross}{topic}  {it.title}")
     print(f"\n已保存: {fname}")
     return 0
 
@@ -103,22 +103,44 @@ def cmd_score(args: argparse.Namespace) -> int:
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    src = Path(args.input) if args.input else latest_file("scores")
+    src = Path(args.input) if args.input else latest_file("hotspots")
+    selected_ids = []
+    for value in args.hotspot_id + args.hotspot_ids:
+        selected_ids.extend(part.strip() for part in value.split(",") if part.strip())
+    selected_ids = list(dict.fromkeys(selected_ids))
+    if not selected_ids:
+        print("必须至少指定一个热点 ID，例如：--hotspot-id weibo:abcdef1234")
+        return 2
+
     print(f"输入: {src}")
     items = load_items(src)
+    by_id = {item.get("id"): item for item in items if item.get("id")}
+    missing = [hotspot_id for hotspot_id in selected_ids if hotspot_id not in by_id]
+    if missing:
+        print(f"找不到热点 ID：{', '.join(missing)}")
+        return 2
+
+    selected = [by_id[hotspot_id] for hotspot_id in selected_ids]
     context = load_context()
-    plans = make_plans(items, context, count=args.count, min_score=args.min_score)
-    if not plans:
-        print("没有满足分数条件的热点（调低 --min-score 或检查打分结果）")
-        return 1
-    path = save_plans(plans, src)
-    for i, p in enumerate(plans):
-        print(f"\n=== 策划 {i + 1}: {p.get('title', '')} ===")
-        print(f"  角度: {p.get('angle', '')}")
-        print(f"  钩子: {p.get('hook', '')}")
-        print(f"  时长: {p.get('duration', '?')}s  平台: {p.get('platform_fit', '?')}  素材: {len(p.get('assets', []))} 项")
+    results, failures = run_selected_plans(
+        selected,
+        context,
+        source_file=src,
+        max_attempts=args.max_attempts,
+        timeout=args.timeout,
+    )
+    path = save_workflow_summary(results, failures, src)
+    for result in results:
+        plan = result["plan"]
+        hotspot = result["hotspot"]
+        print(f"\n=== 策划 [{hotspot['id']}] {plan.get('title', '')} ===")
+        print(f"  角度: {plan.get('angle', '')}")
+        print(f"  钩子: {plan.get('hook', '')}")
+        print(f"  时长: {plan.get('duration', '?')}s  平台: {plan.get('platform_fit', '?')}  素材: {len(plan.get('assets', []))} 项")
+    if failures:
+        print(f"\n失败 {len(failures)} 条；阶段中间产物和错误已保存到 data/plans/<hotspot_id>/")
     print(f"\n已保存: {path}")
-    return 0
+    return 1 if failures else 0
 
 
 def main() -> int:
@@ -140,10 +162,12 @@ def main() -> int:
     sc.add_argument("--limit", type=int, default=20, help="终端展示条数")
     sc.set_defaults(func=cmd_score)
 
-    pl = sub.add_parser("plan", help="对高分热点逐条生成策划案")
-    pl.add_argument("--input", default=None, help="指定 scores JSON 文件，默认取最新")
-    pl.add_argument("--count", type=int, default=3, help="产出策划案条数")
-    pl.add_argument("--min-score", type=int, default=6, help="入选最低分")
+    pl = sub.add_parser("plan", help="对人工选择的热点运行解构、评委、策划三阶段")
+    pl.add_argument("--input", default=None, help="指定 hotspots JSON 文件，默认取最新")
+    pl.add_argument("--hotspot-id", action="append", default=[], help="要策划的热点 ID，可重复指定")
+    pl.add_argument("--hotspot-ids", action="append", default=[], help="逗号分隔的热点 ID")
+    pl.add_argument("--max-attempts", type=int, default=3, help="每个阶段最多尝试次数")
+    pl.add_argument("--timeout", type=int, default=600, help="单次 tcodex 调用超时秒数")
     pl.set_defaults(func=cmd_plan)
 
     args = parser.parse_args()

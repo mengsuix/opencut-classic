@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_elements", "hotspot_elements", "audience", "connection_angles", "style", "content_elements", "must_avoid"],
+  "properties": {
+    "product_elements": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "hotspot_elements": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "audience": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "connection_angles": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["angle", "reason"], "properties": {"angle": {"type": "string"}, "reason": {"type": "string"}}}},
+    "style": {"type": "object", "additionalProperties": false, "required": ["labels", "description"], "properties": {"labels": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "description": {"type": "string", "minLength": 1}}},
+    "content_elements": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "must_avoid": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "angle", "hook", "script", "style", "duration", "platform_fit", "assets"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "angle": {"type": "string", "minLength": 1},
+    "hook": {"type": "string", "minLength": 1},
+    "script": {"type": "string", "minLength": 1},
+    "style": {"type": "object", "additionalProperties": false, "required": ["labels", "description"], "properties": {"labels": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "description": {"type": "string", "minLength": 1}}},
+    "duration": {"type": "integer", "minimum": 30, "maximum": 60},
+    "platform_fit": {"type": "string", "minLength": 1},
+    "assets": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["type", "desc", "source"], "properties": {"type": {"type": "string", "enum": ["screen_record", "web_image", "ai_image", "ai_video", "text_card"]}, "desc": {"type": "string"}, "source": {"type": "string"}}}}
+  }
+}

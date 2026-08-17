@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["score", "score_breakdown", "decision", "reason", "evidence", "uncertainties", "risks"],
+  "properties": {
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "score_breakdown": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["dimension", "score", "reason"], "properties": {"dimension": {"type": "string"}, "score": {"type": "integer", "minimum": 0, "maximum": 10}, "reason": {"type": "string"}}}},
+    "decision": {"type": "string", "enum": ["recommended", "revise", "reject"]},
+    "reason": {"type": "string", "minLength": 1},
+    "evidence": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["claim", "url", "title", "published_at"], "properties": {"claim": {"type": "string"}, "url": {"type": "string"}, "title": {"type": "string"}, "published_at": {"type": "string"}}}},
+    "uncertainties": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}
