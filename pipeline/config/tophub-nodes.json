@@ -1,0 +1,8 @@
+[
+	{ "node": "KqndgxeLl9", "platform": "weibo", "name": "微博·热搜榜" },
+	{ "node": "mproPpoq6O", "platform": "zhihu", "name": "知乎·热榜" },
+	{ "node": "74KvxwokxM", "platform": "bilibili", "name": "哔哩哔哩·全站日榜" },
+	{ "node": "Jb0vmloB1G", "platform": "baidu", "name": "百度·实时热点" },
+	{ "node": "DpQvNABoNE", "platform": "douyin", "name": "抖音·总榜" },
+	{ "node": "x9ozB4KoXb", "platform": "toutiao", "name": "今日头条·头条热榜" }
+]
