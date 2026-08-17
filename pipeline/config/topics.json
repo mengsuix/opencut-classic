@@ -1,14 +1,26 @@
 [
 	{
+		"name": "AI绘画",
+		"keywords": ["AI绘画", "AI画图", "AI生成图片", "文生图", "Flux", "Stable Diffusion", "SD3", "Midjourney", "MJ", "LoRA", "AI头像", "AI写真", "text-to-image", "AI art"]
+	},
+	{
+		"name": "ComfyUI",
+		"keywords": ["ComfyUI", "comfy", "工作流", "workflow", "节点", "ControlNet"]
+	},
+	{
 		"name": "AI视频",
-		"keywords": ["AI视频", "文生视频", "图生视频", "Sora", "可灵", "即梦", "Runway", "Pika", "AI短片", "AI生成视频", "video generation", "AI video"]
+		"keywords": ["AI视频", "文生视频", "图生视频", "Sora", "可灵", "即梦", "Wan2", "HunyuanVideo", "AI短片", "AI生成视频", "video generation", "AI video"]
 	},
 	{
-		"name": "视频剪辑",
-		"keywords": ["剪辑", "视频剪辑", "剪映", "Vlog", "视频编辑", "video editing", "CapCut"]
+		"name": "AI大模型",
+		"keywords": ["大模型", "LLM", "GPT", "Claude", "Qwen", "DeepSeek", "Gemini", "Sora", "开源模型", "AI模型"]
 	},
 	{
-		"name": "内容创作",
-		"keywords": ["自媒体", "短视频运营", "涨粉", "爆款视频", "内容创作", "creator", "YouTuber", "UP主"]
+		"name": "算力GPU",
+		"keywords": ["显卡", "GPU", "4090", "5090", "算力", "显存", "英伟达", "NVIDIA", "H100", "云GPU", "租显卡"]
+	},
+	{
+		"name": "AI应用出圈",
+		"keywords": ["AI生成", "AI神器", "AI工具", "AI网站", "AI教程", "AI赚钱", "AI副业", "AI创作", "AIGC"]
 	}
 ]

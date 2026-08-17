@@ -10,6 +10,8 @@ from .hotspots.direct import direct_sources
 from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
 from .hotspots.tophub import tophub_sources
+from .plan import make_plans, save_plans
+from .score import latest_file, load_context, load_items, save_result, score_items
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PIPELINE_DIR / "config"
@@ -85,6 +87,40 @@ def cmd_hotspots(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_score(args: argparse.Namespace) -> int:
+    src = Path(args.input) if args.input else latest_file("hotspots")
+    print(f"输入: {src}")
+    items = load_items(src)
+    context = load_context()
+    print(f"候选 {len(items)} 条，LLM 打分中…")
+    scored = score_items(items, context, batch_size=args.batch)
+    path = save_result(scored, src)
+    print(f"\nTop {min(args.limit, len(scored))}:")
+    for it in scored[: args.limit]:
+        print(f"  [{it['score']:>2}] {it['platform']}  {it['title']}  — {it['reason']}")
+    print(f"\n已保存: {path}")
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    src = Path(args.input) if args.input else latest_file("scores")
+    print(f"输入: {src}")
+    items = load_items(src)
+    context = load_context()
+    plans = make_plans(items, context, count=args.count, min_score=args.min_score)
+    if not plans:
+        print("没有满足分数条件的热点（调低 --min-score 或检查打分结果）")
+        return 1
+    path = save_plans(plans, src)
+    for i, p in enumerate(plans):
+        print(f"\n=== 策划 {i + 1}: {p.get('title', '')} ===")
+        print(f"  角度: {p.get('angle', '')}")
+        print(f"  钩子: {p.get('hook', '')}")
+        print(f"  时长: {p.get('duration', '?')}s  平台: {p.get('platform_fit', '?')}  素材: {len(p.get('assets', []))} 项")
+    print(f"\n已保存: {path}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="pipeline", description="推广视频批量生产流水线")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -97,6 +133,18 @@ def main() -> int:
     hot.add_argument("--region", choices=["all", "cn", "global"], default="all")
     hot.add_argument("--limit", type=int, default=20, help="终端展示条数")
     hot.set_defaults(func=cmd_hotspots)
+
+    sc = sub.add_parser("score", help="LLM 依据 config/context.md 给热点打分")
+    sc.add_argument("--input", default=None, help="指定 hotspots JSON 文件，默认取最新")
+    sc.add_argument("--batch", type=int, default=30, help="每批送评分条数")
+    sc.add_argument("--limit", type=int, default=20, help="终端展示条数")
+    sc.set_defaults(func=cmd_score)
+
+    pl = sub.add_parser("plan", help="对高分热点逐条生成策划案")
+    pl.add_argument("--input", default=None, help="指定 scores JSON 文件，默认取最新")
+    pl.add_argument("--count", type=int, default=3, help="产出策划案条数")
+    pl.add_argument("--min-score", type=int, default=6, help="入选最低分")
+    pl.set_defaults(func=cmd_plan)
 
     args = parser.parse_args()
     return args.func(args)
