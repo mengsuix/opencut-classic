@@ -1,8 +1,11 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from pipeline.edit_plan import EditPlanInputError, build_agent_prompt, run_edit_plan, scan_directory
+from pipeline.tcodex import TcodexResult
 from pipeline.validation import validate_edit_plan
 
 
@@ -70,6 +73,273 @@ class EditPlanTests(unittest.TestCase):
         plan["scenes"][0]["start_sec"] = 1
         errors = validate_edit_plan(plan, asset_ids={"asset_0001"})
         self.assertTrue(any(error["code"] == "timeline_gap" for error in errors))
+
+    def test_feedback_without_gate_requires_revise_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            requirements = root / "requirements.txt"
+            requirements.write_text("制作一条产品视频。", encoding="utf-8")
+            input_dir = root / "assets"
+            input_dir.mkdir()
+
+            with self.assertRaises(EditPlanInputError):
+                run_edit_plan(input_dir, requirements=requirements, output_dir=root / "out", feedback="没有目标阶段")
+
+    def test_approval_gate_pause_feedback_and_approve(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            requirements = root / "requirements.txt"
+            requirements.write_text("制作一条 10 秒产品视频。", encoding="utf-8")
+            input_dir = root / "assets"
+            input_dir.mkdir()
+            output_dir = root / "out"
+
+            with mock.patch("pipeline.edit_plan.TcodexClient", _FakeTcodexClient):
+                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, stop_after="proposal")
+                self.assertEqual(summary["status"], "awaiting_approval")
+                self.assertEqual(summary["approval"]["stage"], "proposal")
+                self.assertTrue((output_dir / "proposal.json").is_file())
+                self.assertFalse((output_dir / "script.json").exists())
+
+                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir)
+                self.assertEqual(summary["status"], "awaiting_approval")
+                self.assertFalse((output_dir / "script.json").exists())
+
+                summary = run_edit_plan(
+                    input_dir,
+                    requirements=requirements,
+                    output_dir=output_dir,
+                    feedback="方向再聚焦一些",
+                )
+                self.assertEqual(summary["status"], "awaiting_approval")
+                self.assertEqual(len(list((output_dir / "history").glob("proposal-*.json"))), 1)
+                self.assertFalse((output_dir / "script.json").exists())
+
+                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, approve=True)
+                self.assertEqual(summary["status"], "succeeded")
+                plan = json.loads((output_dir / "video-plan.json").read_text(encoding="utf-8"))
+                self.assertTrue(plan["decisions"])
+                self.assertEqual(plan["plan_review"]["approval_status"], "approved")
+
+
+class _FakeTcodexClient:
+    def __init__(self, *, cwd, schema_path, timeout=600, executable=None):
+        self.schema_path = Path(schema_path)
+
+    def run(self, prompt, *, session_id=None, search=False):
+        stage = self.schema_path.stem
+        return TcodexResult(
+            exit_code=0,
+            session_id=session_id or f"session-{stage}",
+            text=json.dumps(_stage_artifact(stage), ensure_ascii=False),
+            stdout="",
+            stderr="",
+            error_events=[],
+        )
+
+
+def _concept(concept_id: str) -> dict:
+    return {
+        "id": concept_id,
+        "title": f"方向 {concept_id}",
+        "hook": "开场钩子",
+        "narrative_structure": "problem_solution",
+        "visual_approach": "屏幕演示",
+        "target_duration_seconds": 10,
+        "key_points": ["要点一", "要点二"],
+        "core_message": "核心信息",
+        "cta": "立即体验",
+        "grounded_in": ["requirement:制作产品视频"],
+        "why_this_works": "贴合需求",
+    }
+
+
+def _stage_artifact(stage: str) -> dict:
+    if stage == "source_media_review":
+        return {
+            "version": "1.0",
+            "files": [],
+            "summary": "输入目录没有可用素材，全部内容需要补充。",
+            "planning_implications": ["所有画面和音频均需列为补充素材"],
+            "reference_policy": {"default_role": "reference_material", "reuse_rule": "没有可复用素材"},
+        }
+    if stage == "proposal":
+        return {
+            "version": "1.0",
+            "concept_options": [_concept("c1"), _concept("c2"), _concept("c3")],
+            "selected_concept": {"concept_id": "c1", "rationale": "最贴合需求"},
+            "production_plan": {
+                "pipeline": "edit-plan",
+                "stages": [{"stage": "compose", "tools": [], "approach": "按方案执行"}],
+                "renderer_family": "screen-demo",
+                "render_runtime": "remotion",
+                "delivery_promise": {
+                    "promise_type": "信息清晰",
+                    "motion_required": False,
+                    "tone_mode": "专业",
+                    "quality_floor": "可读",
+                },
+                "quality_tradeoffs": [],
+                "alternative_paths": [],
+            },
+            "cost_estimate": {"total_estimated_usd": 0, "line_items": [], "budget_verdict": "no_budget_set"},
+            "approval": {"status": "pending"},
+            "format": {"platform": "通用"},
+            "creative_direction": {"tone": "简洁"},
+        }
+    if stage == "script":
+        return {
+            "version": "1.0",
+            "title": "测试视频",
+            "total_duration_seconds": 10,
+            "voice_performance": {
+                "performance_intent": "清晰",
+                "pacing_profile": "conversational",
+                "energy_curve": "平稳",
+                "pause_policy": "句号停顿",
+            },
+            "sections": [
+                {
+                    "id": "sec_1",
+                    "label": "开场",
+                    "text": "这是十秒的开场旁白。",
+                    "start_seconds": 0,
+                    "end_seconds": 10,
+                    "speaker_directions": "",
+                    "delivery_cues": {},
+                    "enhancement_cues": [],
+                    "source_basis": "需求",
+                }
+            ],
+            "factual_notes": [],
+        }
+    if stage == "scene_plan":
+        return {
+            "version": "1.0",
+            "style_playbook": "clean-professional",
+            "scenes": [
+                {
+                    "id": "scene_01",
+                    "type": "text_card",
+                    "description": "标题文字卡",
+                    "start_seconds": 0,
+                    "end_seconds": 5,
+                    "script_section_id": "sec_1",
+                    "framing": "全景",
+                    "movement": "静止",
+                    "transition_in": "无",
+                    "transition_out": "切",
+                    "shot_intent": "建立主题",
+                    "narrative_role": "establish_context",
+                    "information_role": "主题信息",
+                    "hero_moment": False,
+                    "required_assets": [],
+                    "shot_language": {},
+                },
+                {
+                    "id": "scene_02",
+                    "type": "generated",
+                    "description": "生成画面展示结果",
+                    "start_seconds": 5,
+                    "end_seconds": 10,
+                    "script_section_id": "sec_1",
+                    "framing": "中景",
+                    "movement": "推近",
+                    "transition_in": "切",
+                    "transition_out": "无",
+                    "shot_intent": "展示结果",
+                    "narrative_role": "resolution",
+                    "information_role": "结果信息",
+                    "hero_moment": True,
+                    "required_assets": [],
+                    "shot_language": {},
+                },
+            ],
+            "metadata": {"crop_regions": [], "callout_plan": [], "speed_plan": [], "quality_gates": ["检查时间线连续性"]},
+        }
+    if stage == "asset_plan":
+        return {
+            "version": "1.0",
+            "assets": [],
+            "supplemental_assets": [],
+            "cover": {
+                "source": "text_card",
+                "concept": "标题封面",
+                "text_overlay": "测试视频",
+                "style_notes": "简洁",
+                "safe_area_notes": "居中安全区",
+                "reason": "无可用素材",
+                "asset_refs": [],
+                "supplemental_asset_refs": [],
+            },
+            "narration": {"enabled": True, "language": "中文", "tone": "自然", "provider": "待选 TTS", "segments": []},
+            "subtitles": {"enabled": True, "source": "旁白", "style": "白字黑边", "position": "底部", "max_words_per_line": 18},
+            "music": {"source_type": "补充音乐", "mood": "轻快", "track_plan": "全程低音量", "ducking": "旁白时压低"},
+            "chapters": [{"id": "ch_1", "title": "开场", "start_seconds": 0}],
+            "delivery": {
+                "platform": "通用",
+                "aspect_ratio": "16:9",
+                "resolution": "1920x1080",
+                "fps": 30,
+                "codec": "h264",
+                "notes": "高清导出",
+            },
+        }
+    if stage == "edit_decisions":
+        return {
+            "version": "1.0",
+            "renderer_family": "screen-demo",
+            "render_runtime": "remotion",
+            "delivery_promise": "信息清晰",
+            "cuts": [
+                {
+                    "id": "cut_01",
+                    "scene_id": "scene_01",
+                    "source_type": "text",
+                    "source": "标题文字卡",
+                    "in_seconds": 0,
+                    "out_seconds": 5,
+                    "timeline_start": 0,
+                    "timeline_end": 5,
+                    "speed": 1,
+                    "layer": "primary",
+                    "transform": {},
+                    "transition_in": "无",
+                    "transition_out": "切",
+                    "reason": "开场建立主题",
+                },
+                {
+                    "id": "cut_02",
+                    "scene_id": "scene_02",
+                    "source_type": "generate",
+                    "source": "结果画面",
+                    "in_seconds": 0,
+                    "out_seconds": 5,
+                    "timeline_start": 5,
+                    "timeline_end": 10,
+                    "speed": 1,
+                    "layer": "primary",
+                    "transform": {},
+                    "transition_in": "切",
+                    "transition_out": "无",
+                    "reason": "展示结果",
+                },
+            ],
+            "overlays": [],
+            "audio": {},
+            "subtitles": {},
+            "transitions": [],
+            "end_card": {},
+            "metadata": {
+                "crop_keyframes": [],
+                "speed_plan": [],
+                "subtitle_position_overrides": [],
+                "audio_notes": [],
+                "variant_notes": [],
+                "quality_gates": ["检查主轨连续性"],
+            },
+        }
+    raise AssertionError(f"未知阶段：{stage}")
 
 
 def _valid_plan() -> dict:

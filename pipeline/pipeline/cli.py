@@ -11,7 +11,7 @@ from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
 from .hotspots.ranking import rank_hotspots
 from .hotspots.tophub import tophub_sources
-from .edit_plan import DEFAULT_EMPTY_OUTPUT_DIR, EditPlanInputError, run_edit_plan
+from .edit_plan import DEFAULT_EMPTY_OUTPUT_DIR, EDIT_STAGES, EditPlanInputError, run_edit_plan
 from .workflow import run_selected_plans, save_workflow_summary
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
@@ -155,6 +155,10 @@ def cmd_edit_plan(args: argparse.Namespace) -> int:
             max_attempts=args.max_attempts,
             timeout=args.timeout,
             max_agent_input_bytes=args.max_agent_input_bytes,
+            stop_after=args.stop_after,
+            approve=args.approve,
+            feedback=args.feedback,
+            revise_stage=args.revise,
         )
     except EditPlanInputError as exc:
         print(f"输入错误：{exc}", file=sys.stderr)
@@ -163,6 +167,9 @@ def cmd_edit_plan(args: argparse.Namespace) -> int:
     print(f"尝试次数: {summary['attempts']}")
     if summary["errors"]:
         print(f"错误: {len(summary['errors'])} 项", file=sys.stderr)
+    approval = summary.get("approval")
+    if approval:
+        print(f"等待人工审批: {approval['stage']} 阶段；{approval['how_to_continue']}")
     if args.output_dir:
         output_dir = Path(args.output_dir).expanduser()
     elif args.input_dir and args.input_dir.strip():
@@ -171,7 +178,7 @@ def cmd_edit_plan(args: argparse.Namespace) -> int:
     else:
         output_dir = DEFAULT_EMPTY_OUTPUT_DIR
     print(f"已保存: {output_dir.resolve()}")
-    return 0 if summary["status"] == "succeeded" else 1
+    return 0 if summary["status"] in {"succeeded", "awaiting_approval"} else 1
 
 
 def main() -> int:
@@ -202,6 +209,10 @@ def main() -> int:
     ep.add_argument("--max-attempts", type=int, default=3, help="Agent 最多尝试次数")
     ep.add_argument("--timeout", type=int, default=600, help="单次 tcodex 调用超时秒数")
     ep.add_argument("--max-agent-input-bytes", type=int, default=262144, help="Agent 输入最大 UTF-8 字节数")
+    ep.add_argument("--stop-after", choices=EDIT_STAGES, default=None, help="跑完指定阶段后暂停，等待人工审批")
+    ep.add_argument("--approve", action="store_true", help="批准当前等待审批的阶段并继续后续阶段")
+    ep.add_argument("--feedback", default=None, help="人工修订意见；重跑目标阶段后再次等待审批，旧结果归档 history/")
+    ep.add_argument("--revise", choices=EDIT_STAGES, default=None, help="要修订的阶段，配合 --feedback；默认取等待审批的阶段")
     ep.set_defaults(func=cmd_edit_plan)
 
     args = parser.parse_args()

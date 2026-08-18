@@ -10,7 +10,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "title", "hook", "narrative_structure", "visual_approach", "target_duration_seconds", "key_points", "core_message", "cta", "why_this_works"],
+        "required": ["id", "title", "hook", "narrative_structure", "visual_approach", "target_duration_seconds", "key_points", "core_message", "cta", "grounded_in", "why_this_works"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
           "title": {"type": "string", "minLength": 1},
@@ -25,7 +25,7 @@
           "core_message": {"type": "string", "minLength": 1},
           "cta": {"type": "string", "minLength": 1},
           "tone": {"type": "string"},
-          "grounded_in": {"type": "array", "items": {"type": "string"}},
+          "grounded_in": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "why_this_works": {"type": "string", "minLength": 1}
         }
       }

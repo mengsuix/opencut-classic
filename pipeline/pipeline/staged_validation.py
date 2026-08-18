@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from math import isfinite
 from typing import Any
 
@@ -166,6 +167,7 @@ def validate_video_plan(
     if proposal_duration is not None and isinstance(script_duration, (int, float)) and abs(proposal_duration - script_duration) > 0.05:
         errors.append(_error("script.total_duration_seconds", "duration_mismatch", "必须与选中提案的目标时长一致", script_duration))
     _validate_review(value.get("plan_review"), errors)
+    _array_field(value, "decisions", errors)
     _string_array(value, "assumptions", errors, allow_empty=True)
     _string_array(value, "risks", errors, allow_empty=True)
     return errors
@@ -253,7 +255,7 @@ def _source_media_review(
     return errors
 
 
-def _proposal(value: dict, **_: Any) -> list[dict]:
+def _proposal(value: dict, *, asset_ids: set[str], **_: Any) -> list[dict]:
     errors: list[dict] = []
     _version(value, errors)
     options = value.get("concept_options")
@@ -268,6 +270,13 @@ def _proposal(value: dict, **_: Any) -> list[dict]:
             continue
         for field in ["id", "title", "hook", "visual_approach", "core_message", "cta", "why_this_works"]:
             _string(item, field, errors, path=path)
+        grounded = item.get("grounded_in")
+        if not isinstance(grounded, list) or not grounded or any(not isinstance(ref, str) or not ref.strip() for ref in grounded):
+            errors.append(_error(f"{path}.grounded_in", "invalid_array", "必须是非空字符串数组，用 asset:<asset_id> / requirement:<要点> / assumption:<假设> 说明依据", grounded))
+        else:
+            for ref in grounded:
+                if ref.startswith("asset:") and ref.split(":", 1)[1].strip() not in asset_ids:
+                    errors.append(_error(f"{path}.grounded_in", "unknown_asset_ref", "grounded_in 引用了不存在的输入素材", ref))
         _enum(item, "narrative_structure", {"analogy", "problem_solution", "journey", "debate", "myth_busting", "timeline", "comparison", "tutorial", "story", "data_narrative"}, errors, path=path)
         _number(item.get("target_duration_seconds"), f"{path}.target_duration_seconds", errors, minimum=1)
         _string_array(item, "key_points", errors, path=path)
@@ -337,6 +346,13 @@ def _proposal(value: dict, **_: Any) -> list[dict]:
     return errors
 
 
+def _estimated_speech_seconds(text: str) -> float:
+    """按较快旁白语速估算朗读秒数：中文 6 字/秒，英文 3.5 词/秒。"""
+    cjk_chars = sum(1 for char in text if "一" <= char <= "鿿")  # CJK 统一表意文字 U+4E00–U+9FFF
+    words = len(re.findall(r"[A-Za-z0-9]+", text))
+    return cjk_chars / 6.0 + words / 3.5
+
+
 def _script(value: dict, *, expected_duration: float | None = None, **_: Any) -> list[dict]:
     errors: list[dict] = []
     _version(value, errors)
@@ -369,8 +385,19 @@ def _script(value: dict, *, expected_duration: float | None = None, **_: Any) ->
             if section_id in ids:
                 errors.append(_error(f"{path}.id", "duplicate", "脚本段 ID 必须唯一", section_id))
             ids.add(section_id)
-        _number(item.get("start_seconds"), f"{path}.start_seconds", errors, minimum=0)
-        _number(item.get("end_seconds"), f"{path}.end_seconds", errors, minimum=0)
+        start = _number(item.get("start_seconds"), f"{path}.start_seconds", errors, minimum=0)
+        end = _number(item.get("end_seconds"), f"{path}.end_seconds", errors, minimum=0)
+        text = item.get("text")
+        if start is not None and end is not None and end > start and isinstance(text, str):
+            estimated = _estimated_speech_seconds(text)
+            available = end - start
+            if estimated > available * 1.2:
+                errors.append(_error(
+                    f"{path}.text",
+                    "speech_rate_infeasible",
+                    f"按快语速估算约需 {estimated:.1f} 秒，超过段落时长 {available:.1f} 秒；请精简文本或延长段落",
+                    {"estimated_seconds": round(estimated, 2), "available_seconds": round(available, 2)},
+                ))
         _object_field(item, "delivery_cues", errors, path=path)
         _array_field(item, "enhancement_cues", errors, path=path)
     _check_timeline(sections, "sections", "start_seconds", "end_seconds", errors, expected_duration=duration)
@@ -431,6 +458,19 @@ def _scene_plan(
                     _string(asset, "supplemental_id", errors, path=asset_path)
                     if supplemental_ids and isinstance(asset.get("supplemental_id"), str) and asset["supplemental_id"] not in supplemental_ids:
                         errors.append(_error(f"{asset_path}.supplemental_id", "unknown_supplemental_ref", "分镜引用了不存在的补充素材", asset["supplemental_id"]))
+    if len(scenes) >= 4:
+        signatures = {
+            (item.get("type"), item.get("framing"), item.get("movement"))
+            for item in scenes
+            if isinstance(item, dict)
+        }
+        if len(signatures) == 1:
+            errors.append(_error(
+                "scenes",
+                "no_visual_variation",
+                "所有场景的类型/构图/运动完全雷同；必须变化视觉语法，避免成片像幻灯片",
+                {"scene_count": len(scenes)},
+            ))
     _check_timeline(scenes, "scenes", "start_seconds", "end_seconds", errors, expected_duration=expected_duration)
     metadata = value.get("metadata")
     if not isinstance(metadata, dict):

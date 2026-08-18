@@ -103,6 +103,10 @@ def run_edit_plan(
     max_attempts: int = 3,
     timeout: int = 600,
     max_agent_input_bytes: int = DEFAULT_MAX_AGENT_INPUT_BYTES,
+    stop_after: str | None = None,
+    approve: bool = False,
+    feedback: str | None = None,
+    revise_stage: str | None = None,
 ) -> dict:
     if requirements is None or (isinstance(requirements, str) and not requirements.strip()):
         raise EditPlanInputError("必须提供需求文件")
@@ -112,6 +116,16 @@ def run_edit_plan(
         raise EditPlanInputError("timeout 必须大于 0")
     if max_agent_input_bytes < 1:
         raise EditPlanInputError("max_agent_input_bytes 必须大于 0")
+    if stop_after is not None and stop_after not in EDIT_STAGES:
+        raise EditPlanInputError(f"stop_after 必须是以下阶段之一：{', '.join(EDIT_STAGES)}")
+    if revise_stage is not None and revise_stage not in EDIT_STAGES:
+        raise EditPlanInputError(f"revise_stage 必须是以下阶段之一：{', '.join(EDIT_STAGES)}")
+    if approve and feedback:
+        raise EditPlanInputError("approve 与 feedback 不能同时使用")
+    if revise_stage and not feedback:
+        raise EditPlanInputError("revise_stage 必须配合 feedback 使用")
+    if feedback is not None and not feedback.strip():
+        raise EditPlanInputError("feedback 不能为空")
 
     no_input_directory = input_dir is None or (isinstance(input_dir, str) and not input_dir.strip())
     root = _empty_input_dir() if no_input_directory else _resolve_input_dir(input_dir)
@@ -132,6 +146,39 @@ def run_edit_plan(
     state = _load_state(state_path, fingerprint)
     _save_state(state_path, state)
 
+    gate = state.get("gate") if isinstance(state.get("gate"), dict) else None
+    human_feedback: dict[str, dict] = {}
+    if feedback:
+        target = revise_stage or (gate or {}).get("stage")
+        if not isinstance(target, str) or target not in EDIT_STAGES:
+            raise EditPlanInputError("当前没有等待审批的阶段，请用 --revise 指定要修订的阶段")
+        previous = _archive_artifact(destination, target)
+        _reset_stage(state, target)
+        human_feedback[target] = {"note": feedback.strip(), "previous": previous}
+        stop_after = stop_after or target
+        state.pop("gate", None)
+        state["status"] = "pending"
+        _save_state(state_path, state)
+    elif gate and gate.get("status") == "awaiting":
+        if approve:
+            state.pop("gate", None)
+            state.setdefault("gate_history", []).append({
+                "stage": gate.get("stage"),
+                "status": "approved",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _save_state(state_path, state)
+        else:
+            summary = _summary(
+                status="awaiting_approval",
+                manifest=manifest,
+                state=state,
+                requirements_provided=bool(requirements_text),
+                errors=[],
+            )
+            _write_json(destination / "run-summary.json", summary)
+            return summary
+
     artifacts: dict[str, dict] = {}
     try:
         for stage in EDIT_STAGES:
@@ -149,10 +196,24 @@ def run_edit_plan(
                 max_attempts=max_attempts,
                 timeout=timeout,
                 max_agent_input_bytes=max_agent_input_bytes,
+                human_feedback=human_feedback.get(stage),
             )
             artifacts[stage] = result
+            if stage == stop_after:
+                state["gate"] = {"stage": stage, "status": "awaiting", "updated_at": datetime.now(timezone.utc).isoformat()}
+                state.update({"status": "awaiting_approval", "current_stage": stage, "last_errors": []})
+                _save_state(state_path, state)
+                summary = _summary(
+                    status="awaiting_approval",
+                    manifest=manifest,
+                    state=state,
+                    requirements_provided=bool(requirements_text),
+                    errors=[],
+                )
+                _write_json(destination / "run-summary.json", summary)
+                return summary
 
-        plan = _build_video_plan(artifacts)
+        plan = _build_video_plan(artifacts, gate_approvals=_gate_approvals(state))
         plan_errors = _schema_errors("edit_plan_v2", plan)
         if not plan_errors:
             plan_errors = validate_video_plan(plan, asset_ids=asset_ids, asset_catalog=asset_catalog)
@@ -318,6 +379,7 @@ def _run_stage(
     max_attempts: int,
     timeout: int,
     max_agent_input_bytes: int,
+    human_feedback: dict | None = None,
 ) -> dict:
     rules_path = STAGE_RULES[stage]
     schema_path = STAGE_SCHEMAS[stage]
@@ -370,6 +432,7 @@ def _run_stage(
                 artifacts=artifacts,
                 feedback=stage_state.get("last_errors"),
                 max_bytes=max_agent_input_bytes,
+                human_feedback=human_feedback,
             )
         except EditPlanInputError as exc:
             stage_state.update({"status": "failed", "attempt": total_attempt, "last_errors": [{"path": "$", "code": "input_too_large", "message": str(exc)}]})
@@ -418,6 +481,7 @@ def _build_stage_prompt(
     artifacts: dict[str, dict],
     feedback: list[dict] | None,
     max_bytes: int,
+    human_feedback: dict | None = None,
 ) -> str:
     rules = rules_path.read_text(encoding="utf-8")
     payload = {
@@ -431,6 +495,15 @@ def _build_stage_prompt(
         payload["inspection_note"] = "当前工作目录就是输入素材目录；允许只读检查清单中的文件内容和媒体元数据，但不得执行文件、脚本或命令。"
     if not manifest.get("assets"):
         payload["reference_note"] = "没有提供任何已有参考素材；请完全根据需求自主规划，并将所有需要新增的画面、录制、生成内容、音频或图形列为补充素材，不能伪造为 provided。"
+    if human_feedback:
+        revision: dict[str, object] = {
+            "note": human_feedback.get("note", ""),
+            "instruction": "这是人工审核对上一版结果的修订意见；必须在满足阶段规则和 Schema 的前提下据此修订，未提及的设计可保持不变。",
+        }
+        previous = human_feedback.get("previous")
+        if isinstance(previous, dict):
+            revision["previous_result"] = _compact_artifacts({"previous": previous}).get("previous", previous)
+        payload["human_revision_feedback"] = revision
     if feedback:
         payload["validation_feedback"] = feedback
     prompt = (
@@ -512,7 +585,7 @@ def _validate_response(
     return _validate_stage_result(stage, value, asset_ids, asset_catalog, artifacts)
 
 
-def _build_video_plan(artifacts: dict[str, dict]) -> dict:
+def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, str] | None = None) -> dict:
     source_review = artifacts["source_media_review"]
     proposal = artifacts["proposal"]
     script = artifacts["script"]
@@ -541,18 +614,26 @@ def _build_video_plan(artifacts: dict[str, dict]) -> dict:
         + _strings(asset_plan.get("assumptions"))
         + _strings(edit_decisions.get("assumptions"))
     )
+    approvals = gate_approvals or {}
+    files = [item for item in source_review.get("files", []) if isinstance(item, dict)]
+    reviewed = sum(1 for item in files if item.get("reviewed") is True)
+    concepts = [item for item in proposal.get("concept_options", []) if isinstance(item, dict)]
+    sections = [item for item in script.get("sections", []) if isinstance(item, dict)]
+    scenes = [item for item in scene_plan.get("scenes", []) if isinstance(item, dict)]
+    supplemental = [item for item in asset_plan.get("supplemental_assets", []) if isinstance(item, dict)]
+    cuts = [item for item in edit_decisions.get("cuts", []) if isinstance(item, dict)]
     plan_review = {
         "version": "1.0",
         "status": "passed_with_risks" if risks else "passed",
         "human_approval_required": True,
-        "approval_status": proposal.get("approval", {}).get("status", "pending"),
+        "approval_status": approvals.get("proposal") or proposal.get("approval", {}).get("status", "pending"),
         "checks": [
-            {"id": "source_media_review", "status": "passed", "note": "每个输入文件都有审核记录，且仍被标记为参考素材。"},
-            {"id": "concept_options", "status": "passed", "note": "已提供多个创意方向并记录推荐方向。"},
-            {"id": "timecoded_script", "status": "passed", "note": "脚本段落覆盖完整目标时长。"},
-            {"id": "scene_attention", "status": "passed", "note": "分镜包含构图、运动、裁切、提示和速度策略。"},
-            {"id": "supplemental_assets", "status": "passed", "note": "未提供但需要的素材被单独列出。"},
-            {"id": "edit_decisions", "status": "passed", "note": "剪辑决策包含连续时间线、音频、字幕、叠加层和交付运行时。"},
+            {"id": "source_media_review", "status": "passed", "note": f"{reviewed}/{len(files)} 个输入文件完成审核，且仍被标记为参考素材。"},
+            {"id": "concept_options", "status": "passed", "note": f"提供 {len(concepts)} 个创意方向（均含 grounded_in 依据），推荐 {selected_id or '未记录'}。"},
+            {"id": "timecoded_script", "status": "passed", "note": f"{len(sections)} 个段落连续覆盖 0–{script.get('total_duration_seconds')} 秒，语速可行性已校验。"},
+            {"id": "scene_attention", "status": "passed", "note": f"{len(scenes)} 个场景包含构图、运动、裁切、提示和速度策略，视觉多样性已校验。"},
+            {"id": "supplemental_assets", "status": "passed", "note": f"{len(supplemental)} 项补充素材单独列出，未伪装为已提供文件。"},
+            {"id": "edit_decisions", "status": "passed", "note": f"{len(cuts)} 个 cut 构成连续时间线；renderer family/runtime 与提案锁定值一致。"},
         ],
         "unresolved_risks": risks,
         "next_action": "人工审核方案和补充素材清单；确认后再进入素材生成、录制或渲染。",
@@ -573,9 +654,80 @@ def _build_video_plan(artifacts: dict[str, dict]) -> dict:
         "edit_decisions": edit_decisions,
         "delivery": asset_plan.get("delivery", {}),
         "plan_review": plan_review,
+        "decisions": _collect_decisions(proposal, approvals),
         "assumptions": assumptions,
         "risks": risks,
         "artifacts": artifacts,
+    }
+
+
+def _collect_decisions(proposal: dict, gate_approvals: dict[str, str]) -> list[dict]:
+    decisions: list[dict] = []
+    options = [item for item in proposal.get("concept_options", []) if isinstance(item, dict)]
+    selected = proposal.get("selected_concept", {})
+    selected_id = selected.get("concept_id") if isinstance(selected, dict) else None
+    if options and isinstance(selected_id, str):
+        decisions.append({
+            "category": "concept_selection",
+            "subject": "创意方向选择",
+            "selected": selected_id,
+            "options_considered": [
+                {
+                    "option_id": item.get("id"),
+                    "label": item.get("title"),
+                    "outcome": "selected" if item.get("id") == selected_id else "rejected",
+                }
+                for item in options
+            ],
+            "reason": selected.get("rationale", ""),
+        })
+    production = proposal.get("production_plan")
+    if isinstance(production, dict):
+        for key, category in [("renderer_family", "renderer_family_selection"), ("render_runtime", "render_runtime_selection")]:
+            value = production.get(key)
+            if isinstance(value, str) and value:
+                decisions.append({
+                    "category": category,
+                    "subject": key,
+                    "selected": value,
+                    "reason": "提案 production_plan 锁定；下游阶段按此值校验一致性",
+                })
+    for stage, status in gate_approvals.items():
+        decisions.append({
+            "category": "human_approval",
+            "subject": f"{stage} 阶段人工审批",
+            "selected": status,
+            "reason": "人工审批门结果",
+        })
+    return decisions
+
+
+def _archive_artifact(destination: Path, stage: str) -> dict | None:
+    result_path = destination / f"{stage}.json"
+    try:
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    _write_json(destination / "history" / f"{stage}-{stamp}.json", data)
+    return data
+
+
+def _reset_stage(state: dict, stage: str) -> None:
+    stage_state = state["stages"][stage]
+    stage_state.update({"status": "pending", "session_id": None, "last_errors": []})
+    for key in ["upstream_digest", "contract_digest", "result_digest"]:
+        stage_state.pop(key, None)
+
+
+def _gate_approvals(state: dict) -> dict[str, str]:
+    history = state.get("gate_history")
+    if not isinstance(history, list):
+        return {}
+    return {
+        entry["stage"]: entry["status"]
+        for entry in history
+        if isinstance(entry, dict) and isinstance(entry.get("stage"), str) and isinstance(entry.get("status"), str)
     }
 
 
@@ -626,7 +778,7 @@ def _summary(*, status: str, manifest: dict, state: dict, requirements_provided:
     if status == "succeeded":
         output_files.extend(["video-plan.json", "plan-review.json"])
     output_files.append("run-summary.json")
-    return {
+    summary = {
         "schema_version": "1.0",
         "status": status,
         "pipeline": state.get("pipeline"),
@@ -639,6 +791,14 @@ def _summary(*, status: str, manifest: dict, state: dict, requirements_provided:
         "output_files": output_files,
         "errors": errors,
     }
+    gate = state.get("gate")
+    if isinstance(gate, dict):
+        summary["approval"] = {
+            "stage": gate.get("stage"),
+            "status": gate.get("status"),
+            "how_to_continue": f"审核 {gate.get('stage')}.json 后重跑同一命令：加 --approve 继续，或加 --feedback \"修订意见\" 重跑该阶段",
+        }
+    return summary
 
 
 def _input_fingerprint(manifest: dict, requirements: str) -> str:
