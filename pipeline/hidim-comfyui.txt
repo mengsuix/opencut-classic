@@ -22,3 +22,6 @@ ComfyUI玩家、设计师、创作者等
 
 要求：
 1. 暂时无具体要求，项目在/Users/suixmeng/suix/suix-project/infer-web目录，有什么功能需要了解，可以去看代码。
+
+热点引用：
+通过脚本获取热点：bash /Users/suixmeng/suix/suix-project/opencut-classic/pipeline/hotspots.sh，看能否结合一些热点，蹭蹭流量。
