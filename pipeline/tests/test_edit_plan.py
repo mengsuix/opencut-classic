@@ -2,11 +2,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.edit_plan import build_agent_prompt, scan_directory
+from pipeline.edit_plan import EditPlanInputError, build_agent_prompt, run_edit_plan, scan_directory
 from pipeline.validation import validate_edit_plan
 
 
 class EditPlanTests(unittest.TestCase):
+    def test_requirements_are_required(self):
+        with self.assertRaises(EditPlanInputError):
+            run_edit_plan()
+
     def test_scan_keeps_unknown_formats_and_excludes_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -26,6 +30,15 @@ class EditPlanTests(unittest.TestCase):
             self.assertIn("unknown", {asset["kind"] for asset in manifest["assets"]})
             self.assertNotIn("generated/old.json", paths)
             self.assertTrue(any(item["reason"] == "hidden_path" for item in manifest["skipped"]))
+
+    def test_empty_directory_is_valid_reference_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = scan_directory(Path(temporary))
+
+            self.assertEqual(manifest["assets"], [])
+            self.assertEqual(manifest["summary"]["asset_count"], 0)
+            prompt = build_agent_prompt(manifest, "", "阶段规则", max_bytes=5000)
+            self.assertIn("没有提供任何已有参考素材", prompt)
 
     def test_prompt_reports_truncation_without_absolute_paths(self):
         with tempfile.TemporaryDirectory() as temporary:

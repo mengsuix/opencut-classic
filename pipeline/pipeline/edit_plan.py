@@ -13,6 +13,8 @@ from .tcodex import TcodexClient, TcodexResult
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
 PIPELINE_IMPLEMENTATION_VERSION = "reference-aware-edit-plan-2"
 SCHEMA_DIR = PIPELINE_DIR / "config" / "schemas"
+DEFAULT_EMPTY_INPUT_DIR = PIPELINE_DIR / "data" / "edit-plan-empty-input"
+DEFAULT_EMPTY_OUTPUT_DIR = PIPELINE_DIR / "data" / "edit-plans" / "no-assets-video-plan"
 DEFAULT_MAX_AGENT_INPUT_BYTES = 256 * 1024
 MAX_REQUIREMENTS_BYTES = 128 * 1024
 
@@ -94,7 +96,7 @@ class EditPlanStageFailed(RuntimeError):
 
 
 def run_edit_plan(
-    input_dir: str | Path,
+    input_dir: str | Path | None = None,
     *,
     requirements: str | Path | None = None,
     output_dir: str | Path | None = None,
@@ -102,6 +104,8 @@ def run_edit_plan(
     timeout: int = 600,
     max_agent_input_bytes: int = DEFAULT_MAX_AGENT_INPUT_BYTES,
 ) -> dict:
+    if requirements is None or (isinstance(requirements, str) and not requirements.strip()):
+        raise EditPlanInputError("必须通过 --requirements 提供需求文件")
     if max_attempts < 1:
         raise EditPlanInputError("max_attempts 必须大于 0")
     if timeout < 1:
@@ -109,8 +113,13 @@ def run_edit_plan(
     if max_agent_input_bytes < 1:
         raise EditPlanInputError("max_agent_input_bytes 必须大于 0")
 
-    root = _resolve_input_dir(input_dir)
-    destination = _resolve_output_dir(output_dir, root)
+    no_input_directory = input_dir is None or (isinstance(input_dir, str) and not input_dir.strip())
+    root = _empty_input_dir() if no_input_directory else _resolve_input_dir(input_dir)
+    destination = _resolve_output_dir(
+        output_dir,
+        root,
+        default=DEFAULT_EMPTY_OUTPUT_DIR if no_input_directory else None,
+    )
     requirements_text = _load_requirements(requirements)
     manifest = scan_directory(root, excluded_dir=destination)
     asset_ids = {asset["asset_id"] for asset in manifest["assets"]}
@@ -266,6 +275,8 @@ def build_agent_prompt(
             "manifest_truncated": omitted_count > 0,
             "omitted_count": omitted_count,
         }
+        if not catalog:
+            payload["reference_note"] = "没有提供任何已有参考素材；请完全根据需求自主规划，并将所有需要新增的画面、录制、生成内容、音频或图形列为补充素材。"
         if feedback:
             payload["validation_feedback"] = feedback
         return header + json.dumps(payload, ensure_ascii=False, indent=2)
@@ -418,6 +429,8 @@ def _build_stage_prompt(
     }
     if stage == "source_media_review":
         payload["inspection_note"] = "当前工作目录就是输入素材目录；允许只读检查清单中的文件内容和媒体元数据，但不得执行文件、脚本或命令。"
+    if not manifest.get("assets"):
+        payload["reference_note"] = "没有提供任何已有参考素材；请完全根据需求自主规划，并将所有需要新增的画面、录制、生成内容、音频或图形列为补充素材，不能伪造为 provided。"
     if feedback:
         payload["validation_feedback"] = feedback
     prompt = (
@@ -792,6 +805,16 @@ def _load_requirements(value: str | Path | None) -> str:
         raise EditPlanInputError(f"无法读取需求文件：{value}：{exc}") from exc
 
 
+def _empty_input_dir() -> Path:
+    if DEFAULT_EMPTY_INPUT_DIR.exists() and DEFAULT_EMPTY_INPUT_DIR.is_symlink():
+        raise EditPlanInputError("默认空素材目录不能是符号链接")
+    try:
+        DEFAULT_EMPTY_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise EditPlanInputError(f"无法创建默认空素材目录：{exc}") from exc
+    return DEFAULT_EMPTY_INPUT_DIR.resolve()
+
+
 def _resolve_input_dir(value: str | Path) -> Path:
     candidate = Path(value).expanduser()
     if candidate.is_symlink():
@@ -805,8 +828,8 @@ def _resolve_input_dir(value: str | Path) -> Path:
     return root
 
 
-def _resolve_output_dir(value: str | Path | None, root: Path) -> Path:
-    candidate = Path(value).expanduser() if value else root.parent / f"{root.name}-video-plan"
+def _resolve_output_dir(value: str | Path | None, root: Path, *, default: Path | None = None) -> Path:
+    candidate = Path(value).expanduser() if value else (default or root.parent / f"{root.name}-video-plan")
     if candidate.exists() and candidate.is_symlink():
         raise EditPlanInputError("输出目录不能是符号链接")
     destination = candidate.resolve()
