@@ -105,7 +105,7 @@ def run_edit_plan(
     max_agent_input_bytes: int = DEFAULT_MAX_AGENT_INPUT_BYTES,
 ) -> dict:
     if requirements is None or (isinstance(requirements, str) and not requirements.strip()):
-        raise EditPlanInputError("必须通过 --requirements 提供需求文件")
+        raise EditPlanInputError("必须提供需求文件")
     if max_attempts < 1:
         raise EditPlanInputError("max_attempts 必须大于 0")
     if timeout < 1:
