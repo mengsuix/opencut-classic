@@ -1,16 +1,16 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "concept_options", "selected_concept", "production_plan", "cost_estimate", "approval", "format", "creative_direction"],
+  "required": ["version", "concept_options", "selected_concept", "production_plan", "cost_estimate", "approval", "format", "creative_direction", "assumptions", "risks"],
   "properties": {
-    "version": {"const": "1.0"},
+    "version": {"type": "string", "const": "1.0"},
     "concept_options": {
       "type": "array",
       "minItems": 3,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "title", "hook", "narrative_structure", "visual_approach", "target_duration_seconds", "key_points", "core_message", "cta", "grounded_in", "why_this_works"],
+        "required": ["id", "title", "hook", "narrative_structure", "visual_approach", "suggested_playbook", "target_audience", "target_platform", "target_duration_seconds", "key_points", "core_message", "cta", "tone", "grounded_in", "why_this_works"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
           "title": {"type": "string", "minLength": 1},
@@ -33,7 +33,7 @@
     "selected_concept": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["concept_id", "rationale"],
+      "required": ["concept_id", "rationale", "modifications"],
       "properties": {
         "concept_id": {"type": "string", "minLength": 1},
         "rationale": {"type": "string", "minLength": 1},
@@ -43,7 +43,7 @@
     "production_plan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pipeline", "stages", "renderer_family", "render_runtime", "delivery_promise", "quality_tradeoffs", "alternative_paths"],
+      "required": ["pipeline", "playbook", "stages", "renderer_family", "render_runtime", "delivery_promise", "quality_tradeoffs", "alternative_paths"],
       "properties": {
         "pipeline": {"type": "string", "minLength": 1},
         "playbook": {"type": "string"},
@@ -53,10 +53,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["stage", "tools", "approach"],
+            "required": ["stage", "tools", "approach", "fallback_if_unavailable"],
             "properties": {
               "stage": {"type": "string", "minLength": 1},
-              "tools": {"type": "array", "items": {"type": "object"}},
+              "tools": {"type": "array", "items": {"type": "string"}},
               "approach": {"type": "string", "minLength": 1},
               "fallback_if_unavailable": {"type": "string"}
             }
@@ -67,7 +67,7 @@
         "delivery_promise": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["promise_type", "motion_required", "tone_mode", "quality_floor"],
+          "required": ["promise_type", "motion_required", "source_required", "tone_mode", "quality_floor", "approved_fallback"],
           "properties": {
             "promise_type": {"type": "string", "minLength": 1},
             "motion_required": {"type": "boolean"},
@@ -77,18 +77,18 @@
             "approved_fallback": {"type": ["string", "null"]}
           }
         },
-        "quality_tradeoffs": {"type": "array", "items": {"type": "object"}},
-        "alternative_paths": {"type": "array", "items": {"type": "object"}}
+        "quality_tradeoffs": {"type": "array", "items": {"type": "string"}},
+        "alternative_paths": {"type": "array", "items": {"type": "string"}}
       }
     },
     "cost_estimate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total_estimated_usd", "line_items", "budget_verdict"],
+      "required": ["total_estimated_usd", "line_items", "budget_cap_usd", "budget_verdict", "savings_options"],
       "properties": {
         "total_estimated_usd": {"type": "number", "minimum": 0},
-        "line_items": {"type": "array", "items": {"type": "object"}},
-        "budget_cap_usd": {"type": "number", "minimum": 0},
+        "line_items": {"type": "array", "items": {"type": "string"}},
+        "budget_cap_usd": {"type": ["number", "null"]},
         "budget_verdict": {"type": "string", "enum": ["within_budget", "near_limit", "over_budget", "no_budget_set"]},
         "savings_options": {"type": "array", "items": {"type": "string"}}
       }
@@ -96,15 +96,32 @@
     "approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status"],
+      "required": ["status", "user_notes", "approved_budget_usd"],
       "properties": {
         "status": {"type": "string", "enum": ["pending", "approved", "approved_with_changes", "rejected"]},
         "user_notes": {"type": "string"},
-        "approved_budget_usd": {"type": "number", "minimum": 0}
+        "approved_budget_usd": {"type": ["number", "null"]}
       }
     },
-    "format": {"type": "object"},
-    "creative_direction": {"type": "object"},
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "aspect_ratio", "delivery_notes"],
+      "properties": {
+        "platform": {"type": "string"},
+        "aspect_ratio": {"type": "string"},
+        "delivery_notes": {"type": "string"}
+      }
+    },
+    "creative_direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["labels", "description"],
+      "properties": {
+        "labels": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": "string"}
+      }
+    },
     "assumptions": {"type": "array", "items": {"type": "string"}},
     "risks": {"type": "array", "items": {"type": "string"}}
   }

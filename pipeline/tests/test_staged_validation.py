@@ -1,15 +1,46 @@
+import json
 import unittest
 
-from pipeline.edit_plan import _schema_errors
+from pipeline.edit_plan import EDIT_STAGES, STAGE_SCHEMAS, _schema_errors
 from pipeline.staged_validation import validate_artifact
 
 
 class StagedValidationTests(unittest.TestCase):
     def test_each_stage_schema_rejects_missing_required_fields(self):
-        for stage in ["source_media_review", "proposal", "script", "scene_plan", "asset_plan", "edit_decisions"]:
+        for stage in EDIT_STAGES:
             with self.subTest(stage=stage):
                 errors = _schema_errors(stage, {})
                 self.assertTrue(any(error["code"] == "schema_required" for error in errors))
+
+    def test_stage_schemas_are_strict_compliant(self):
+        def walk(node, path, problems):
+            if isinstance(node, dict):
+                if "type" not in node and "$ref" not in node:
+                    problems.append(f"{path or '$'}: 缺 type")
+                if node.get("type") == "object" or "properties" in node:
+                    if node.get("additionalProperties") is not False:
+                        problems.append(f"{path or '$'}: additionalProperties 必须为 false")
+                    properties = node.get("properties")
+                    if isinstance(properties, dict) and sorted(node.get("required") or []) != sorted(properties.keys()):
+                        problems.append(f"{path or '$'}: required 必须恰好包含 properties 的所有键")
+                if node.get("type") == "array" and "items" not in node:
+                    problems.append(f"{path or '$'}: 数组必须声明 items")
+                for key, value in node.items():
+                    if key == "properties" and isinstance(value, dict):
+                        for prop, sub in value.items():
+                            walk(sub, f"{path}.{prop}" if path else prop, problems)
+                    else:
+                        walk(value, f"{path}.{key}" if path else key, problems)
+            elif isinstance(node, list):
+                for index, value in enumerate(node):
+                    walk(value, f"{path}[{index}]", problems)
+
+        for stage in EDIT_STAGES:
+            with self.subTest(stage=stage):
+                schema = json.loads(STAGE_SCHEMAS[stage].read_text(encoding="utf-8"))
+                problems = []
+                walk(schema, "", problems)
+                self.assertEqual(problems, [], "tcodex 上游要求 OpenAI strict 结构化输出")
 
     def test_edit_decisions_allow_overlay_over_primary_track(self):
         errors = validate_artifact(
@@ -108,6 +139,8 @@ def _script(text: str) -> dict:
             "pacing_profile": "conversational",
             "energy_curve": "平稳",
             "pause_policy": "句号停顿",
+            "sample_section_id": "",
+            "provider_notes": {"provider": "", "voice": "", "notes": ""},
         },
         "sections": [
             {
@@ -117,12 +150,16 @@ def _script(text: str) -> dict:
                 "start_seconds": 0,
                 "end_seconds": 10,
                 "speaker_directions": "",
-                "delivery_cues": {},
+                "delivery_cues": {"pace": "", "emphasis": "", "notes": ""},
                 "enhancement_cues": [],
                 "source_basis": "需求",
+                "source_ref": "",
+                "pronunciation_guides": [],
             }
         ],
         "factual_notes": [],
+        "assumptions": [],
+        "risks": [],
     }
 
 
@@ -143,7 +180,8 @@ def _scene(scene_id: str, start: int, end: int) -> dict:
         "information_role": "功能信息",
         "hero_moment": False,
         "required_assets": [],
-        "shot_language": {},
+        "shot_language": {"shot_size": "", "camera_angle": "", "notes": ""},
+        "overlay_notes": "",
     }
 
 
@@ -153,6 +191,8 @@ def _scene_plan(scenes: list) -> dict:
         "style_playbook": "clean-professional",
         "scenes": scenes,
         "metadata": {"crop_regions": [], "callout_plan": [], "speed_plan": [], "quality_gates": ["检查时间线"]},
+        "assumptions": [],
+        "risks": [],
     }
 
 
@@ -163,10 +203,14 @@ def _concept(concept_id: str, grounded_in: list | None = None) -> dict:
         "hook": "开场钩子",
         "narrative_structure": "problem_solution",
         "visual_approach": "屏幕演示",
+        "suggested_playbook": "",
+        "target_audience": "",
+        "target_platform": "",
         "target_duration_seconds": 10,
         "key_points": ["要点一", "要点二"],
         "core_message": "核心信息",
         "cta": "立即体验",
+        "tone": "",
         "grounded_in": ["requirement:制作产品视频"] if grounded_in is None else grounded_in,
         "why_this_works": "贴合需求",
     }
@@ -176,25 +220,36 @@ def _proposal() -> dict:
     return {
         "version": "1.0",
         "concept_options": [_concept("c1"), _concept("c2"), _concept("c3")],
-        "selected_concept": {"concept_id": "c1", "rationale": "最贴合需求"},
+        "selected_concept": {"concept_id": "c1", "rationale": "最贴合需求", "modifications": []},
         "production_plan": {
             "pipeline": "edit-plan",
-            "stages": [{"stage": "compose", "tools": [], "approach": "按方案执行"}],
+            "playbook": "",
+            "stages": [{"stage": "compose", "tools": [], "approach": "按方案执行", "fallback_if_unavailable": ""}],
             "renderer_family": "screen-demo",
             "render_runtime": "remotion",
             "delivery_promise": {
                 "promise_type": "信息清晰",
                 "motion_required": False,
+                "source_required": False,
                 "tone_mode": "专业",
                 "quality_floor": "可读",
+                "approved_fallback": None,
             },
             "quality_tradeoffs": [],
             "alternative_paths": [],
         },
-        "cost_estimate": {"total_estimated_usd": 0, "line_items": [], "budget_verdict": "no_budget_set"},
-        "approval": {"status": "pending"},
-        "format": {},
-        "creative_direction": {},
+        "cost_estimate": {
+            "total_estimated_usd": 0,
+            "line_items": [],
+            "budget_cap_usd": None,
+            "budget_verdict": "no_budget_set",
+            "savings_options": [],
+        },
+        "approval": {"status": "pending", "user_notes": "", "approved_budget_usd": None},
+        "format": {"platform": "通用", "aspect_ratio": "16:9", "delivery_notes": ""},
+        "creative_direction": {"labels": [], "description": ""},
+        "assumptions": [],
+        "risks": [],
     }
 
 
@@ -216,9 +271,10 @@ def _edit_decisions() -> dict:
                 "timeline_end": 10,
                 "speed": 1,
                 "layer": "primary",
-                "transform": {},
+                "transform": {"scale": None, "position": "", "notes": ""},
                 "transition_in": "none",
                 "transition_out": "none",
+                "transition_duration": 0,
                 "reason": "保持主画面连续",
             },
             {
@@ -232,17 +288,20 @@ def _edit_decisions() -> dict:
                 "timeline_end": 4,
                 "speed": 1,
                 "layer": "overlay",
-                "transform": {"scale": 1.5},
+                "transform": {"scale": 1.5, "position": "", "notes": ""},
                 "transition_in": "fade",
                 "transition_out": "fade",
+                "transition_duration": 0,
                 "reason": "局部放大关键区域",
             },
         ],
         "overlays": [],
-        "audio": {},
-        "subtitles": {},
+        "audio": {"narration": "", "music": "", "sound_effects": "", "ducking": ""},
+        "subtitles": {"style": "", "position": "", "notes": ""},
         "transitions": [],
-        "end_card": {},
+        "end_card": {"headline": "", "subheadline": "", "cta": "", "visual": "", "audio": ""},
+        "assumptions": [],
+        "risks": [],
         "metadata": {
             "crop_keyframes": [],
             "speed_plan": [],

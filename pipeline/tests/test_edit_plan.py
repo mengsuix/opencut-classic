@@ -145,10 +145,14 @@ def _concept(concept_id: str) -> dict:
         "hook": "开场钩子",
         "narrative_structure": "problem_solution",
         "visual_approach": "屏幕演示",
+        "suggested_playbook": "",
+        "target_audience": "",
+        "target_platform": "",
         "target_duration_seconds": 10,
         "key_points": ["要点一", "要点二"],
         "core_message": "核心信息",
         "cta": "立即体验",
+        "tone": "",
         "grounded_in": ["requirement:制作产品视频"],
         "why_this_works": "贴合需求",
     }
@@ -162,30 +166,43 @@ def _stage_artifact(stage: str) -> dict:
             "summary": "输入目录没有可用素材，全部内容需要补充。",
             "planning_implications": ["所有画面和音频均需列为补充素材"],
             "reference_policy": {"default_role": "reference_material", "reuse_rule": "没有可复用素材"},
+            "assumptions": [],
+            "risks": [],
         }
     if stage == "proposal":
         return {
             "version": "1.0",
             "concept_options": [_concept("c1"), _concept("c2"), _concept("c3")],
-            "selected_concept": {"concept_id": "c1", "rationale": "最贴合需求"},
+            "selected_concept": {"concept_id": "c1", "rationale": "最贴合需求", "modifications": []},
             "production_plan": {
                 "pipeline": "edit-plan",
-                "stages": [{"stage": "compose", "tools": [], "approach": "按方案执行"}],
+                "playbook": "",
+                "stages": [{"stage": "compose", "tools": [], "approach": "按方案执行", "fallback_if_unavailable": ""}],
                 "renderer_family": "screen-demo",
                 "render_runtime": "remotion",
                 "delivery_promise": {
                     "promise_type": "信息清晰",
                     "motion_required": False,
+                    "source_required": False,
                     "tone_mode": "专业",
                     "quality_floor": "可读",
+                    "approved_fallback": None,
                 },
                 "quality_tradeoffs": [],
                 "alternative_paths": [],
             },
-            "cost_estimate": {"total_estimated_usd": 0, "line_items": [], "budget_verdict": "no_budget_set"},
-            "approval": {"status": "pending"},
-            "format": {"platform": "通用"},
-            "creative_direction": {"tone": "简洁"},
+            "cost_estimate": {
+                "total_estimated_usd": 0,
+                "line_items": [],
+                "budget_cap_usd": None,
+                "budget_verdict": "no_budget_set",
+                "savings_options": [],
+            },
+            "approval": {"status": "pending", "user_notes": "", "approved_budget_usd": None},
+            "format": {"platform": "通用", "aspect_ratio": "16:9", "delivery_notes": ""},
+            "creative_direction": {"labels": [], "description": ""},
+            "assumptions": [],
+            "risks": [],
         }
     if stage == "script":
         return {
@@ -197,6 +214,8 @@ def _stage_artifact(stage: str) -> dict:
                 "pacing_profile": "conversational",
                 "energy_curve": "平稳",
                 "pause_policy": "句号停顿",
+                "sample_section_id": "",
+                "provider_notes": {"provider": "", "voice": "", "notes": ""},
             },
             "sections": [
                 {
@@ -206,12 +225,16 @@ def _stage_artifact(stage: str) -> dict:
                     "start_seconds": 0,
                     "end_seconds": 10,
                     "speaker_directions": "",
-                    "delivery_cues": {},
+                    "delivery_cues": {"pace": "", "emphasis": "", "notes": ""},
                     "enhancement_cues": [],
                     "source_basis": "需求",
+                    "source_ref": "",
+                    "pronunciation_guides": [],
                 }
             ],
             "factual_notes": [],
+            "assumptions": [],
+            "risks": [],
         }
     if stage == "scene_plan":
         return {
@@ -234,7 +257,8 @@ def _stage_artifact(stage: str) -> dict:
                     "information_role": "主题信息",
                     "hero_moment": False,
                     "required_assets": [],
-                    "shot_language": {},
+                    "shot_language": {"shot_size": "", "camera_angle": "", "notes": ""},
+                    "overlay_notes": "",
                 },
                 {
                     "id": "scene_02",
@@ -252,10 +276,13 @@ def _stage_artifact(stage: str) -> dict:
                     "information_role": "结果信息",
                     "hero_moment": True,
                     "required_assets": [],
-                    "shot_language": {},
+                    "shot_language": {"shot_size": "", "camera_angle": "", "notes": ""},
+                    "overlay_notes": "",
                 },
             ],
             "metadata": {"crop_regions": [], "callout_plan": [], "speed_plan": [], "quality_gates": ["检查时间线连续性"]},
+            "assumptions": [],
+            "risks": [],
         }
     if stage == "asset_plan":
         return {
@@ -274,7 +301,14 @@ def _stage_artifact(stage: str) -> dict:
             },
             "narration": {"enabled": True, "language": "中文", "tone": "自然", "provider": "待选 TTS", "segments": []},
             "subtitles": {"enabled": True, "source": "旁白", "style": "白字黑边", "position": "底部", "max_words_per_line": 18},
-            "music": {"source_type": "补充音乐", "mood": "轻快", "track_plan": "全程低音量", "ducking": "旁白时压低"},
+            "music": {
+                "source_type": "补充音乐",
+                "mood": "轻快",
+                "track_plan": "全程低音量",
+                "ducking": "旁白时压低",
+                "fade_in_seconds": 0,
+                "fade_out_seconds": 0,
+            },
             "chapters": [{"id": "ch_1", "title": "开场", "start_seconds": 0}],
             "delivery": {
                 "platform": "通用",
@@ -284,6 +318,8 @@ def _stage_artifact(stage: str) -> dict:
                 "codec": "h264",
                 "notes": "高清导出",
             },
+            "assumptions": [],
+            "risks": [],
         }
     if stage == "edit_decisions":
         return {
@@ -303,9 +339,10 @@ def _stage_artifact(stage: str) -> dict:
                     "timeline_end": 5,
                     "speed": 1,
                     "layer": "primary",
-                    "transform": {},
+                    "transform": {"scale": None, "position": "", "notes": ""},
                     "transition_in": "无",
                     "transition_out": "切",
+                    "transition_duration": 0,
                     "reason": "开场建立主题",
                 },
                 {
@@ -319,17 +356,18 @@ def _stage_artifact(stage: str) -> dict:
                     "timeline_end": 10,
                     "speed": 1,
                     "layer": "primary",
-                    "transform": {},
+                    "transform": {"scale": None, "position": "", "notes": ""},
                     "transition_in": "切",
                     "transition_out": "无",
+                    "transition_duration": 0,
                     "reason": "展示结果",
                 },
             ],
             "overlays": [],
-            "audio": {},
-            "subtitles": {},
+            "audio": {"narration": "", "music": "", "sound_effects": "", "ducking": ""},
+            "subtitles": {"style": "", "position": "", "notes": ""},
             "transitions": [],
-            "end_card": {},
+            "end_card": {"headline": "", "subheadline": "", "cta": "", "visual": "", "audio": ""},
             "metadata": {
                 "crop_keyframes": [],
                 "speed_plan": [],
@@ -338,6 +376,8 @@ def _stage_artifact(stage: str) -> dict:
                 "variant_notes": [],
                 "quality_gates": ["检查主轨连续性"],
             },
+            "assumptions": [],
+            "risks": [],
         }
     raise AssertionError(f"未知阶段：{stage}")
 

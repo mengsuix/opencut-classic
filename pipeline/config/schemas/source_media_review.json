@@ -1,23 +1,33 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "files", "summary", "planning_implications", "reference_policy"],
+  "required": ["version", "files", "summary", "planning_implications", "reference_policy", "assumptions", "risks"],
   "properties": {
-    "version": {"const": "1.0"},
+    "version": {"type": "string", "const": "1.0"},
     "files": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["asset_id", "path", "media_type", "reviewed", "reference_role", "reuse_policy", "technical_probe", "content_summary", "representative_frames", "quality_risks", "usable_for"],
+        "required": ["asset_id", "path", "media_type", "reviewed", "reference_role", "reuse_policy", "technical_probe", "content_summary", "transcript_summary", "representative_frames", "quality_risks", "usable_for"],
         "properties": {
           "asset_id": {"type": "string", "minLength": 1},
           "path": {"type": "string", "minLength": 1},
-          "media_type": {"enum": ["video", "audio", "image", "document", "text", "archive", "unknown"]},
-          "reviewed": {"const": true},
+          "media_type": {"type": "string", "enum": ["video", "audio", "image", "document", "text", "archive", "unknown"]},
+          "reviewed": {"type": "boolean", "const": true},
           "reference_role": {"type": "string", "minLength": 1},
           "reuse_policy": {"type": "string", "enum": ["optional_reuse", "style_reference_only", "not_reusable"]},
-          "technical_probe": {"type": "object"},
+          "technical_probe": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary", "duration_seconds", "resolution", "has_audio"],
+            "properties": {
+              "summary": {"type": "string"},
+              "duration_seconds": {"type": ["number", "null"]},
+              "resolution": {"type": "string"},
+              "has_audio": {"type": ["boolean", "null"]}
+            }
+          },
           "content_summary": {"type": "string", "minLength": 1},
           "transcript_summary": {"type": "string"},
           "representative_frames": {"type": "array", "items": {"type": "string"}},
@@ -33,7 +43,7 @@
       "additionalProperties": false,
       "required": ["default_role", "reuse_rule"],
       "properties": {
-        "default_role": {"const": "reference_material"},
+        "default_role": {"type": "string", "const": "reference_material"},
         "reuse_rule": {"type": "string", "minLength": 1}
       }
     },
