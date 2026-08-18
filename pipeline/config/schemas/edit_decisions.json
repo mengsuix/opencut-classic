@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cuts", "overlays", "audio", "subtitles", "transitions", "renderer_family", "render_runtime", "delivery_promise", "end_card", "metadata"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "cuts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "scene_id", "source_type", "source", "in_seconds", "out_seconds", "timeline_start", "timeline_end", "speed", "layer", "transform", "transition_in", "transition_out", "reason"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "scene_id": {"type": "string", "minLength": 1},
+          "source_type": {"type": "string", "enum": ["provided", "supplemental", "generate", "record", "text"]},
+          "source": {"type": "string", "minLength": 1},
+          "in_seconds": {"type": "number", "minimum": 0},
+          "out_seconds": {"type": "number", "exclusiveMinimum": 0},
+          "timeline_start": {"type": "number", "minimum": 0},
+          "timeline_end": {"type": "number", "exclusiveMinimum": 0},
+          "speed": {"type": "number", "minimum": 0.1},
+          "layer": {"type": "string", "enum": ["primary", "overlay", "background"]},
+          "transform": {"type": "object"},
+          "transition_in": {"type": "string"},
+          "transition_out": {"type": "string"},
+          "transition_duration": {"type": "number", "minimum": 0},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "overlays": {"type": "array", "items": {"type": "object"}},
+    "audio": {"type": "object"},
+    "subtitles": {"type": "object"},
+    "transitions": {"type": "array", "items": {"type": "object"}},
+    "renderer_family": {"type": "string"},
+    "render_runtime": {"type": "string", "enum": ["remotion", "hyperframes", "ffmpeg", "not_selected"]},
+    "delivery_promise": {"type": "string", "minLength": 1},
+    "end_card": {"type": "object"},
+    "metadata": {
+      "type": "object",
+      "required": ["crop_keyframes", "speed_plan", "subtitle_position_overrides", "audio_notes", "variant_notes", "quality_gates"],
+      "properties": {"crop_keyframes": {"type": "array"}, "speed_plan": {"type": "array"}, "subtitle_position_overrides": {"type": "array"}, "audio_notes": {"type": "array"}, "variant_notes": {"type": "array"}, "quality_gates": {"type": "array", "minItems": 1}}
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}

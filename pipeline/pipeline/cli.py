@@ -11,6 +11,7 @@ from .hotspots.fetch import fetch_all, hotspot_to_dict
 from .hotspots.filter import is_blacklisted, match_topics
 from .hotspots.ranking import rank_hotspots
 from .hotspots.tophub import tophub_sources
+from .edit_plan import EditPlanInputError, run_edit_plan
 from .workflow import run_selected_plans, save_workflow_summary
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
@@ -145,6 +146,29 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def cmd_edit_plan(args: argparse.Namespace) -> int:
+    try:
+        summary = run_edit_plan(
+            args.input_dir,
+            requirements=args.requirements,
+            output_dir=args.output_dir,
+            max_attempts=args.max_attempts,
+            timeout=args.timeout,
+            max_agent_input_bytes=args.max_agent_input_bytes,
+        )
+    except EditPlanInputError as exc:
+        print(f"输入错误：{exc}", file=sys.stderr)
+        return 2
+    print(f"状态: {summary['status']}  素材: {summary['asset_count']}  跳过: {summary['skipped_count']}")
+    print(f"尝试次数: {summary['attempts']}")
+    if summary["errors"]:
+        print(f"错误: {len(summary['errors'])} 项", file=sys.stderr)
+    input_path = Path(args.input_dir).expanduser().resolve()
+    output_dir = Path(args.output_dir).expanduser() if args.output_dir else input_path.parent / f"{input_path.name}-video-plan"
+    print(f"已保存: {output_dir.resolve()}")
+    return 0 if summary["status"] == "succeeded" else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="pipeline", description="推广视频批量生产流水线")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -165,6 +189,15 @@ def main() -> int:
     pl.add_argument("--max-attempts", type=int, default=3, help="每个阶段最多尝试次数")
     pl.add_argument("--timeout", type=int, default=600, help="单次 tcodex 调用超时秒数")
     pl.set_defaults(func=cmd_plan)
+
+    ep = sub.add_parser("edit-plan", help="根据目录素材和需求生成详细视频剪辑方案")
+    ep.add_argument("input_dir", help="素材目录；目录内普通文件都会进入扫描清单")
+    ep.add_argument("--requirements", default=None, help="可选 UTF-8 需求文件")
+    ep.add_argument("--output-dir", default=None, help="输出目录，默认在素材目录旁生成")
+    ep.add_argument("--max-attempts", type=int, default=3, help="Agent 最多尝试次数")
+    ep.add_argument("--timeout", type=int, default=600, help="单次 tcodex 调用超时秒数")
+    ep.add_argument("--max-agent-input-bytes", type=int, default=262144, help="Agent 输入最大 UTF-8 字节数")
+    ep.set_defaults(func=cmd_edit_plan)
 
     args = parser.parse_args()
     return args.func(args)

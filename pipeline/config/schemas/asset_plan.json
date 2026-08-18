@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "assets", "supplemental_assets", "cover", "narration", "subtitles", "music", "chapters", "delivery"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "assets": {"type": "array", "items": {"type": "object", "required": ["asset_ref", "selected", "role", "use_reason"], "properties": {"asset_ref": {"type": "string"}, "selected": {"type": "boolean"}, "role": {"type": "string"}, "use_reason": {"type": "string"}, "style_reference_only": {"type": "boolean"}}, "additionalProperties": false}},
+    "supplemental_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "purpose", "description", "acquisition", "priority", "scene_ids"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "acquisition": {"type": "string", "minLength": 1},
+          "priority": {"type": "string", "enum": ["must_have", "recommended", "optional"]},
+          "scene_ids": {"type": "array", "items": {"type": "string"}},
+          "constraints": {"type": "string"}
+        }
+      }
+    },
+    "cover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "concept", "text_overlay", "style_notes", "safe_area_notes", "reason", "asset_refs", "supplemental_asset_refs"],
+      "properties": {
+        "source": {"type": "string", "enum": ["provided_asset", "supplemental_asset", "text_card", "ai_generated", "poster_frame"]},
+        "concept": {"type": "string", "minLength": 1},
+        "text_overlay": {"type": "string"},
+        "style_notes": {"type": "string", "minLength": 1},
+        "safe_area_notes": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "asset_refs": {"type": "array", "items": {"type": "string"}},
+        "supplemental_asset_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "narration": {"type": "object", "required": ["enabled", "language", "tone", "provider", "segments"], "properties": {"enabled": {"type": "boolean"}, "language": {"type": "string"}, "tone": {"type": "string"}, "provider": {"type": "string"}, "segments": {"type": "array", "items": {"type": "object"}}}, "additionalProperties": false},
+    "subtitles": {"type": "object", "required": ["enabled", "source", "style", "position", "max_words_per_line"], "properties": {"enabled": {"type": "boolean"}, "source": {"type": "string"}, "style": {"type": "string"}, "position": {"type": "string"}, "max_words_per_line": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    "music": {"type": "object", "required": ["source_type", "mood", "track_plan", "ducking"], "properties": {"source_type": {"type": "string"}, "mood": {"type": "string"}, "track_plan": {"type": "string"}, "ducking": {"type": "string"}, "fade_in_seconds": {"type": "number", "minimum": 0}, "fade_out_seconds": {"type": "number", "minimum": 0}}, "additionalProperties": false},
+    "chapters": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "title", "start_seconds"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "start_seconds": {"type": "number", "minimum": 0}}, "additionalProperties": false}},
+    "delivery": {"type": "object", "required": ["platform", "aspect_ratio", "resolution", "fps", "codec", "notes"], "properties": {"platform": {"type": "string"}, "aspect_ratio": {"type": "string"}, "resolution": {"type": "string"}, "fps": {"type": "number", "exclusiveMinimum": 0}, "codec": {"type": "string"}, "notes": {"type": "string"}}, "additionalProperties": false},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}

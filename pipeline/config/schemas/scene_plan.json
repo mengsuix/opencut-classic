@@ -1,0 +1,63 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "style_playbook", "scenes", "metadata"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "style_playbook": {"type": "string", "minLength": 1},
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "description", "start_seconds", "end_seconds", "script_section_id", "framing", "movement", "transition_in", "transition_out", "shot_intent", "narrative_role", "information_role", "hero_moment", "required_assets", "shot_language"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"type": "string", "enum": ["talking_head", "broll", "animation", "character_scene", "diagram", "text_card", "transition", "generated", "screen_recording"]},
+          "description": {"type": "string", "minLength": 1},
+          "start_seconds": {"type": "number", "minimum": 0},
+          "end_seconds": {"type": "number", "exclusiveMinimum": 0},
+          "script_section_id": {"type": "string", "minLength": 1},
+          "framing": {"type": "string", "minLength": 1},
+          "movement": {"type": "string", "minLength": 1},
+          "transition_in": {"type": "string", "minLength": 1},
+          "transition_out": {"type": "string", "minLength": 1},
+          "shot_intent": {"type": "string", "minLength": 1},
+          "narrative_role": {"type": "string", "minLength": 1},
+          "information_role": {"type": "string", "minLength": 1},
+          "hero_moment": {"type": "boolean"},
+          "required_assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "description", "source"],
+              "properties": {
+                "type": {"type": "string", "minLength": 1},
+                "description": {"type": "string", "minLength": 1},
+                "source": {"type": "string", "enum": ["provided", "supplemental", "generate", "record", "text"]},
+                "asset_ref": {"type": "string"},
+                "supplemental_id": {"type": "string"}
+              }
+            }
+          },
+          "shot_language": {"type": "object"},
+          "overlay_notes": {"type": "string"}
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["crop_regions", "callout_plan", "speed_plan", "quality_gates"],
+      "properties": {
+        "crop_regions": {"type": "array"},
+        "callout_plan": {"type": "array"},
+        "speed_plan": {"type": "array"},
+        "quality_gates": {"type": "array", "minItems": 1}
+      }
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}

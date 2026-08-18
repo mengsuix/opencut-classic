@@ -1,0 +1,111 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "concept_options", "selected_concept", "production_plan", "cost_estimate", "approval", "format", "creative_direction"],
+  "properties": {
+    "version": {"const": "1.0"},
+    "concept_options": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "hook", "narrative_structure", "visual_approach", "target_duration_seconds", "key_points", "core_message", "cta", "why_this_works"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "hook": {"type": "string", "minLength": 1},
+          "narrative_structure": {"type": "string", "enum": ["analogy", "problem_solution", "journey", "debate", "myth_busting", "timeline", "comparison", "tutorial", "story", "data_narrative"]},
+          "visual_approach": {"type": "string", "minLength": 1},
+          "suggested_playbook": {"type": "string"},
+          "target_audience": {"type": "string"},
+          "target_platform": {"type": "string"},
+          "target_duration_seconds": {"type": "number", "minimum": 1},
+          "key_points": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+          "core_message": {"type": "string", "minLength": 1},
+          "cta": {"type": "string", "minLength": 1},
+          "tone": {"type": "string"},
+          "grounded_in": {"type": "array", "items": {"type": "string"}},
+          "why_this_works": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "selected_concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concept_id", "rationale"],
+      "properties": {
+        "concept_id": {"type": "string", "minLength": 1},
+        "rationale": {"type": "string", "minLength": 1},
+        "modifications": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "production_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pipeline", "stages", "renderer_family", "render_runtime", "delivery_promise", "quality_tradeoffs", "alternative_paths"],
+      "properties": {
+        "pipeline": {"type": "string", "minLength": 1},
+        "playbook": {"type": "string"},
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stage", "tools", "approach"],
+            "properties": {
+              "stage": {"type": "string", "minLength": 1},
+              "tools": {"type": "array", "items": {"type": "object"}},
+              "approach": {"type": "string", "minLength": 1},
+              "fallback_if_unavailable": {"type": "string"}
+            }
+          }
+        },
+        "renderer_family": {"type": "string", "enum": ["explainer-data", "explainer-teacher", "cinematic-trailer", "documentary-montage", "product-reveal", "screen-demo", "presenter", "animation-first"]},
+        "render_runtime": {"type": "string", "enum": ["remotion", "hyperframes", "ffmpeg"]},
+        "delivery_promise": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["promise_type", "motion_required", "tone_mode", "quality_floor"],
+          "properties": {
+            "promise_type": {"type": "string", "minLength": 1},
+            "motion_required": {"type": "boolean"},
+            "source_required": {"type": "boolean"},
+            "tone_mode": {"type": "string", "minLength": 1},
+            "quality_floor": {"type": "string", "minLength": 1},
+            "approved_fallback": {"type": ["string", "null"]}
+          }
+        },
+        "quality_tradeoffs": {"type": "array", "items": {"type": "object"}},
+        "alternative_paths": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "cost_estimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_estimated_usd", "line_items", "budget_verdict"],
+      "properties": {
+        "total_estimated_usd": {"type": "number", "minimum": 0},
+        "line_items": {"type": "array", "items": {"type": "object"}},
+        "budget_cap_usd": {"type": "number", "minimum": 0},
+        "budget_verdict": {"type": "string", "enum": ["within_budget", "near_limit", "over_budget", "no_budget_set"]},
+        "savings_options": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"type": "string", "enum": ["pending", "approved", "approved_with_changes", "rejected"]},
+        "user_notes": {"type": "string"},
+        "approved_budget_usd": {"type": "number", "minimum": 0}
+      }
+    },
+    "format": {"type": "object"},
+    "creative_direction": {"type": "object"},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}
