@@ -451,11 +451,13 @@ def _run_stage(
             session_id = response.session_id
             errors = _validate_response(stage, response, asset_ids, asset_catalog, artifacts)
 
-        _save_attempt(destination, stage, total_attempt, response, errors)
+        if errors:
+            _save_attempt(destination, stage, total_attempt, response, errors)
         stage_state.update({"session_id": session_id, "attempt": total_attempt, "last_errors": errors})
         if not errors:
             result = json.loads(response.text)
             _write_json(result_path, result)
+            _clear_attempt_files(destination, stage)
             stage_state.update({
                 "status": "succeeded",
                 "last_errors": [],
@@ -1026,6 +1028,12 @@ def _response_errors(response: TcodexResult) -> list[dict]:
 def _save_attempt(destination: Path, stage: str, attempt: int, response: TcodexResult, errors: list[dict]) -> None:
     _write_text(destination / f"{stage}-attempt-{attempt}.raw", response.stdout or response.text or response.stderr)
     _write_json(destination / f"{stage}-attempt-{attempt}.errors.json", errors)
+
+
+def _clear_attempt_files(destination: Path, stage: str) -> None:
+    for pattern in (f"{stage}-attempt-*.raw", f"{stage}-attempt-*.errors.json"):
+        for stale in destination.glob(pattern):
+            stale.unlink(missing_ok=True)
 
 
 def _write_json(path: Path, value: object) -> None:

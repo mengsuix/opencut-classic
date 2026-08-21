@@ -177,7 +177,10 @@ def cmd_edit_plan(args: argparse.Namespace) -> int:
         output_dir = input_path.parent / f"{input_path.name}-video-plan"
     else:
         output_dir = DEFAULT_EMPTY_OUTPUT_DIR
-    print(f"已保存: {output_dir.resolve()}")
+    if summary["status"] == "succeeded":
+        print(f"已保存: {(output_dir / 'video-plan.json').resolve()}")
+    else:
+        print(f"已保存: {output_dir.resolve()}")
     return 0 if summary["status"] in {"succeeded", "awaiting_approval"} else 1
 
 

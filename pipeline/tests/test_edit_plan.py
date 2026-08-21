@@ -120,6 +120,7 @@ class EditPlanTests(unittest.TestCase):
                 plan = json.loads((output_dir / "video-plan.json").read_text(encoding="utf-8"))
                 self.assertTrue(plan["decisions"])
                 self.assertEqual(plan["plan_review"]["approval_status"], "approved")
+                self.assertEqual(list(output_dir.glob("*-attempt-*")), [])
 
 
 class _FakeTcodexClient:
