@@ -60,6 +60,33 @@ class EditPlanTests(unittest.TestCase):
             self.assertIn('"manifest_truncated": true', prompt)
             self.assertNotIn(str(root), prompt)
 
+    def test_end_to_end_writes_only_final_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            requirements = root / "requirements.txt"
+            requirements.write_text("制作一条产品视频。", encoding="utf-8")
+            output_dir = root / "out"
+            output_dir.mkdir()
+            (output_dir / "video-plan.json").write_text("old", encoding="utf-8")
+            (output_dir / "plan-review.json").write_text("old", encoding="utf-8")
+            (output_dir / ".edit-plan" / "stages").mkdir(parents=True)
+            (output_dir / ".edit-plan" / "stages" / "proposal.json").write_text("old", encoding="utf-8")
+
+            with mock.patch("pipeline.edit_plan.TcodexClient", _FakeTcodexClient):
+                summary = run_edit_plan(requirements=requirements, output_dir=output_dir)
+
+            self.assertEqual(summary["status"], "succeeded")
+            self.assertEqual(summary["completed_stages"], [
+                "source_media_review",
+                "proposal",
+                "script",
+                "scene_plan",
+                "asset_plan",
+                "edit_decisions",
+            ])
+            self.assertEqual(summary["output_files"], ["video-plan.json"])
+            self.assertEqual(list(output_dir.iterdir()), [output_dir / "video-plan.json"])
+
     def test_valid_plan_references_only_known_assets(self):
         plan = _valid_plan()
         self.assertEqual(validate_edit_plan(plan, asset_ids={"asset_0001"}), [])
@@ -74,56 +101,6 @@ class EditPlanTests(unittest.TestCase):
         errors = validate_edit_plan(plan, asset_ids={"asset_0001"})
         self.assertTrue(any(error["code"] == "timeline_gap" for error in errors))
 
-    def test_feedback_without_gate_requires_revise_target(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            requirements = root / "requirements.txt"
-            requirements.write_text("制作一条产品视频。", encoding="utf-8")
-            input_dir = root / "assets"
-            input_dir.mkdir()
-
-            with self.assertRaises(EditPlanInputError):
-                run_edit_plan(input_dir, requirements=requirements, output_dir=root / "out", feedback="没有目标阶段")
-
-    def test_approval_gate_pause_feedback_and_approve(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            requirements = root / "requirements.txt"
-            requirements.write_text("制作一条 10 秒产品视频。", encoding="utf-8")
-            input_dir = root / "assets"
-            input_dir.mkdir()
-            output_dir = root / "out"
-
-            with mock.patch("pipeline.edit_plan.TcodexClient", _FakeTcodexClient):
-                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, stop_after="proposal")
-                self.assertEqual(summary["status"], "awaiting_approval")
-                self.assertEqual(summary["approval"]["stage"], "proposal")
-                self.assertTrue((output_dir / ".edit-plan" / "stages" / "proposal.json").is_file())
-                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
-
-                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir)
-                self.assertEqual(summary["status"], "awaiting_approval")
-                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
-
-                summary = run_edit_plan(
-                    input_dir,
-                    requirements=requirements,
-                    output_dir=output_dir,
-                    feedback="方向再聚焦一些",
-                )
-                self.assertEqual(summary["status"], "awaiting_approval")
-                self.assertEqual(len(list((output_dir / ".edit-plan" / "history").glob("proposal-*.json"))), 1)
-                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
-
-                summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, approve=True)
-                self.assertEqual(summary["status"], "succeeded")
-                plan = json.loads((output_dir / "video-plan.json").read_text(encoding="utf-8"))
-                self.assertTrue(plan["decisions"])
-                self.assertNotIn("artifacts", plan)
-                self.assertTrue((output_dir / ".edit-plan" / "scan-manifest.json").is_file())
-                self.assertTrue((output_dir / ".edit-plan" / "state.json").is_file())
-                self.assertFalse((output_dir / "plan-review.json").exists())
-                self.assertEqual(list((output_dir / ".edit-plan").rglob("*-attempt-*")), [])
 
 
 class _FakeTcodexClient:

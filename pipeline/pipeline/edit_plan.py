@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import json
+import shutil
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,9 +90,11 @@ class EditPlanInputError(ValueError):
 
 
 class EditPlanStageFailed(RuntimeError):
-    def __init__(self, stage: str, message: str) -> None:
+    def __init__(self, stage: str, message: str, *, errors: list[dict] | None = None, attempts: int = 0) -> None:
         super().__init__(message)
         self.stage = stage
+        self.errors = errors or []
+        self.attempts = attempts
 
 
 def run_edit_plan(
@@ -103,10 +105,6 @@ def run_edit_plan(
     max_attempts: int = 3,
     timeout: int = 600,
     max_agent_input_bytes: int = DEFAULT_MAX_AGENT_INPUT_BYTES,
-    stop_after: str | None = None,
-    approve: bool = False,
-    feedback: str | None = None,
-    revise_stage: str | None = None,
 ) -> dict:
     if requirements is None or (isinstance(requirements, str) and not requirements.strip()):
         raise EditPlanInputError("必须提供需求文件")
@@ -116,16 +114,6 @@ def run_edit_plan(
         raise EditPlanInputError("timeout 必须大于 0")
     if max_agent_input_bytes < 1:
         raise EditPlanInputError("max_agent_input_bytes 必须大于 0")
-    if stop_after is not None and stop_after not in EDIT_STAGES:
-        raise EditPlanInputError(f"stop_after 必须是以下阶段之一：{', '.join(EDIT_STAGES)}")
-    if revise_stage is not None and revise_stage not in EDIT_STAGES:
-        raise EditPlanInputError(f"revise_stage 必须是以下阶段之一：{', '.join(EDIT_STAGES)}")
-    if approve and feedback:
-        raise EditPlanInputError("approve 与 feedback 不能同时使用")
-    if revise_stage and not feedback:
-        raise EditPlanInputError("revise_stage 必须配合 feedback 使用")
-    if feedback is not None and not feedback.strip():
-        raise EditPlanInputError("feedback 不能为空")
 
     no_input_directory = input_dir is None or (isinstance(input_dir, str) and not input_dir.strip())
     root = _empty_input_dir() if no_input_directory else _resolve_input_dir(input_dir)
@@ -136,61 +124,17 @@ def run_edit_plan(
     )
     requirements_text = _load_requirements(requirements)
     manifest = scan_directory(root, excluded_dir=destination)
+    _clean_output_dir(destination)
     asset_ids = {asset["asset_id"] for asset in manifest["assets"]}
     asset_catalog = {asset["asset_id"]: asset for asset in manifest["assets"]}
-    fingerprint = _input_fingerprint(manifest, requirements_text)
-
-    destination.mkdir(parents=True, exist_ok=True)
-    runtime_dir = destination / ".edit-plan"
-    stage_dir = runtime_dir / "stages"
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(runtime_dir / "scan-manifest.json", manifest)
-    state_path = runtime_dir / "state.json"
-    state = _load_state(state_path, fingerprint)
-    _save_state(state_path, state)
-
-    gate = state.get("gate") if isinstance(state.get("gate"), dict) else None
-    human_feedback: dict[str, dict] = {}
-    if feedback:
-        target = revise_stage or (gate or {}).get("stage")
-        if not isinstance(target, str) or target not in EDIT_STAGES:
-            raise EditPlanInputError("当前没有等待审批的阶段，请用 --revise 指定要修订的阶段")
-        previous = _archive_artifact(stage_dir, runtime_dir / "history", target)
-        _reset_stage(state, target)
-        human_feedback[target] = {"note": feedback.strip(), "previous": previous}
-        stop_after = stop_after or target
-        state.pop("gate", None)
-        state["status"] = "pending"
-        _save_state(state_path, state)
-    elif gate and gate.get("status") == "awaiting":
-        if approve:
-            state.pop("gate", None)
-            state.setdefault("gate_history", []).append({
-                "stage": gate.get("stage"),
-                "status": "approved",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-            _save_state(state_path, state)
-        else:
-            summary = _summary(
-                status="awaiting_approval",
-                manifest=manifest,
-                state=state,
-                requirements_provided=bool(requirements_text),
-                errors=[],
-            )
-            _write_json(runtime_dir / "run-summary.json", summary)
-            return summary
-
     artifacts: dict[str, dict] = {}
+    attempts = {stage: 0 for stage in EDIT_STAGES}
+
     try:
         for stage in EDIT_STAGES:
-            result = _run_stage(
+            result, stage_attempts = _run_stage(
                 stage,
                 root=root,
-                destination=stage_dir,
-                state=state,
-                state_path=state_path,
                 manifest=manifest,
                 asset_ids=asset_ids,
                 asset_catalog=asset_catalog,
@@ -199,66 +143,46 @@ def run_edit_plan(
                 max_attempts=max_attempts,
                 timeout=timeout,
                 max_agent_input_bytes=max_agent_input_bytes,
-                human_feedback=human_feedback.get(stage),
             )
             artifacts[stage] = result
-            if stage == stop_after:
-                state["gate"] = {"stage": stage, "status": "awaiting", "updated_at": datetime.now(timezone.utc).isoformat()}
-                state.update({"status": "awaiting_approval", "current_stage": stage, "last_errors": []})
-                _save_state(state_path, state)
-                summary = _summary(
-                    status="awaiting_approval",
-                    manifest=manifest,
-                    state=state,
-                    requirements_provided=bool(requirements_text),
-                    errors=[],
-                )
-                _write_json(runtime_dir / "run-summary.json", summary)
-                return summary
+            attempts[stage] = stage_attempts
 
-        plan = _build_video_plan(artifacts, gate_approvals=_gate_approvals(state))
+        plan = _build_video_plan(artifacts)
         plan_errors = _schema_errors("edit_plan_v2", plan)
         if not plan_errors:
             plan_errors = validate_video_plan(plan, asset_ids=asset_ids, asset_catalog=asset_catalog)
         if plan_errors:
-            _write_json(runtime_dir / "video-plan-errors.json", plan_errors)
-            state.update({"status": "failed", "current_stage": "aggregate", "last_errors": plan_errors})
-            _save_state(state_path, state)
-            summary = _summary(
+            return _summary(
                 status="failed",
                 manifest=manifest,
-                state=state,
+                completed_stages=list(artifacts),
+                current_stage="aggregate",
+                attempts=attempts,
                 requirements_provided=bool(requirements_text),
                 errors=plan_errors,
             )
-            _write_json(runtime_dir / "run-summary.json", summary)
-            return summary
 
         _write_json(destination / "video-plan.json", plan)
-        state.update({"status": "succeeded", "current_stage": "completed", "last_errors": []})
-        _save_state(state_path, state)
-        summary = _summary(
+        return _summary(
             status="succeeded",
             manifest=manifest,
-            state=state,
+            completed_stages=list(artifacts),
+            current_stage="completed",
+            attempts=attempts,
             requirements_provided=bool(requirements_text),
             errors=[],
         )
-        _write_json(runtime_dir / "run-summary.json", summary)
-        return summary
     except EditPlanStageFailed as exc:
-        state.update({"status": "failed", "current_stage": exc.stage})
-        _save_state(state_path, state)
-        errors = state["stages"].get(exc.stage, {}).get("last_errors", [])
-        summary = _summary(
+        attempts[exc.stage] = exc.attempts
+        return _summary(
             status="failed",
             manifest=manifest,
-            state=state,
+            completed_stages=list(artifacts),
+            current_stage=exc.stage,
+            attempts=attempts,
             requirements_provided=bool(requirements_text),
-            errors=errors,
+            errors=exc.errors or [{"path": "$", "code": "stage_failed", "message": str(exc)}],
         )
-        _write_json(runtime_dir / "run-summary.json", summary)
-        return summary
 
 
 def scan_directory(input_dir: str | Path, *, excluded_dir: Path | None = None) -> dict:
@@ -370,9 +294,6 @@ def _run_stage(
     stage: str,
     *,
     root: Path,
-    destination: Path,
-    state: dict,
-    state_path: Path,
     manifest: dict,
     asset_ids: set[str],
     asset_catalog: dict[str, dict],
@@ -381,8 +302,7 @@ def _run_stage(
     max_attempts: int,
     timeout: int,
     max_agent_input_bytes: int,
-    human_feedback: dict | None = None,
-) -> dict:
+) -> tuple[dict, int]:
     rules_path = STAGE_RULES[stage]
     schema_path = STAGE_SCHEMAS[stage]
     if not rules_path.is_file():
@@ -390,41 +310,10 @@ def _run_stage(
     if not schema_path.is_file():
         raise EditPlanStageFailed(stage, f"{stage} 阶段缺少 JSON Schema：{schema_path}")
 
-    stage_state = state["stages"][stage]
-    state["current_stage"] = stage
-    _save_state(state_path, state)
-    result_path = destination / f"{stage}.json"
-    upstream_digest = _json_digest(artifacts)
-    contract_digest = _stage_contract_digest(stage)
-    cache_matches = (
-        stage_state.get("status") == "succeeded"
-        and result_path.is_file()
-        and stage_state.get("upstream_digest") == upstream_digest
-        and stage_state.get("contract_digest") == contract_digest
-        and stage_state.get("result_digest") == _file_digest(result_path)
-    )
-    if cache_matches:
-        try:
-            result = json.loads(result_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            result = None
-            errors = [{"path": "$", "code": "invalid_saved_result", "message": str(exc)}]
-        else:
-            errors = _validate_stage_result(stage, result, asset_ids, asset_catalog, artifacts)
-        if not errors and isinstance(result, dict):
-            return result
-        stage_state.update({"status": "pending", "last_errors": errors})
-        _save_state(state_path, state)
-
-    if not cache_matches and stage_state.get("status") == "succeeded":
-        stage_state.update({"status": "pending", "session_id": None, "last_errors": []})
-        _save_state(state_path, state)
-
-    session_id = stage_state.get("session_id")
-    total_attempt = int(stage_state.get("attempt", 0))
+    session_id: str | None = None
     client = TcodexClient(cwd=root, schema_path=schema_path, timeout=timeout)
-    for local_attempt in range(1, max_attempts + 1):
-        total_attempt += 1
+    last_errors: list[dict] = []
+    for attempt in range(1, max_attempts + 1):
         try:
             prompt = _build_stage_prompt(
                 stage,
@@ -432,20 +321,18 @@ def _run_stage(
                 manifest=manifest,
                 requirements=requirements,
                 artifacts=artifacts,
-                feedback=stage_state.get("last_errors"),
+                feedback=last_errors,
                 max_bytes=max_agent_input_bytes,
-                human_feedback=human_feedback,
             )
         except EditPlanInputError as exc:
-            stage_state.update({"status": "failed", "attempt": total_attempt, "last_errors": [{"path": "$", "code": "input_too_large", "message": str(exc)}]})
-            _save_state(state_path, state)
-            raise EditPlanStageFailed(stage, str(exc)) from exc
+            errors = [{"path": "$", "code": "input_too_large", "message": str(exc)}]
+            raise EditPlanStageFailed(stage, str(exc), errors=errors, attempts=attempt) from exc
+
         response = client.run(prompt, session_id=session_id, search=False)
         if response.session_id and session_id and response.session_id != session_id:
             errors = [{"path": "$", "code": "session_changed", "message": "resume 返回了不同的会话 ID"}]
         elif response.exit_code != 0:
-            if response.session_id:
-                session_id = response.session_id
+            session_id = response.session_id or session_id
             errors = _response_errors(response)
         elif not response.session_id:
             errors = _response_errors(response) or [{"path": "$", "code": "missing_session", "message": "tcodex 未返回会话 ID"}]
@@ -453,27 +340,16 @@ def _run_stage(
             session_id = response.session_id
             errors = _validate_response(stage, response, asset_ids, asset_catalog, artifacts)
 
-        if errors:
-            _save_attempt(destination, stage, total_attempt, response, errors)
-        stage_state.update({"session_id": session_id, "attempt": total_attempt, "last_errors": errors})
         if not errors:
-            result = json.loads(response.text)
-            _write_json(result_path, result)
-            _clear_attempt_files(destination, stage)
-            stage_state.update({
-                "status": "succeeded",
-                "last_errors": [],
-                "upstream_digest": upstream_digest,
-                "contract_digest": contract_digest,
-                "result_digest": _file_digest(result_path),
-            })
-            _save_state(state_path, state)
-            return result
+            return json.loads(response.text), attempt
+        last_errors = errors
 
-        stage_state["status"] = "retrying" if local_attempt < max_attempts else "failed"
-        _save_state(state_path, state)
-
-    raise EditPlanStageFailed(stage, f"{stage} 阶段失败，已重试 {max_attempts} 次；详情：{destination}")
+    raise EditPlanStageFailed(
+        stage,
+        f"{stage} 阶段失败，已重试 {max_attempts} 次",
+        errors=last_errors,
+        attempts=max_attempts,
+    )
 
 
 def _build_stage_prompt(
@@ -485,7 +361,6 @@ def _build_stage_prompt(
     artifacts: dict[str, dict],
     feedback: list[dict] | None,
     max_bytes: int,
-    human_feedback: dict | None = None,
 ) -> str:
     rules = rules_path.read_text(encoding="utf-8")
     payload = {
@@ -499,15 +374,6 @@ def _build_stage_prompt(
         payload["inspection_note"] = "当前工作目录就是输入素材目录；允许只读检查清单中的文件内容和媒体元数据，但不得执行文件、脚本或命令。"
     if not manifest.get("assets"):
         payload["reference_note"] = "没有提供任何已有参考素材；请完全根据需求自主规划，并将所有需要新增的画面、录制、生成内容、音频或图形列为补充素材，不能伪造为 provided。"
-    if human_feedback:
-        revision: dict[str, object] = {
-            "note": human_feedback.get("note", ""),
-            "instruction": "这是人工审核对上一版结果的修订意见；必须在满足阶段规则和 Schema 的前提下据此修订，未提及的设计可保持不变。",
-        }
-        previous = human_feedback.get("previous")
-        if isinstance(previous, dict):
-            revision["previous_result"] = _compact_artifacts({"previous": previous}).get("previous", previous)
-        payload["human_revision_feedback"] = revision
     if feedback:
         payload["validation_feedback"] = feedback
     prompt = (
@@ -589,7 +455,7 @@ def _validate_response(
     return _validate_stage_result(stage, value, asset_ids, asset_catalog, artifacts)
 
 
-def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, str] | None = None) -> dict:
+def _build_video_plan(artifacts: dict[str, dict]) -> dict:
     source_review = artifacts["source_media_review"]
     proposal = artifacts["proposal"]
     script = artifacts["script"]
@@ -618,7 +484,6 @@ def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, s
         + _strings(asset_plan.get("assumptions"))
         + _strings(edit_decisions.get("assumptions"))
     )
-    approvals = gate_approvals or {}
     files = [item for item in source_review.get("files", []) if isinstance(item, dict)]
     reviewed = sum(1 for item in files if item.get("reviewed") is True)
     concepts = [item for item in proposal.get("concept_options", []) if isinstance(item, dict)]
@@ -629,8 +494,8 @@ def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, s
     plan_review = {
         "version": "1.0",
         "status": "passed_with_risks" if risks else "passed",
-        "human_approval_required": True,
-        "approval_status": approvals.get("proposal") or proposal.get("approval", {}).get("status", "pending"),
+        "human_approval_required": False,
+        "approval_status": "not_required",
         "checks": [
             {"id": "source_media_review", "status": "passed", "note": f"{reviewed}/{len(files)} 个输入文件完成审核，且仍被标记为参考素材。"},
             {"id": "concept_options", "status": "passed", "note": f"提供 {len(concepts)} 个创意方向（均含 grounded_in 依据），推荐 {selected_id or '未记录'}。"},
@@ -640,7 +505,7 @@ def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, s
             {"id": "edit_decisions", "status": "passed", "note": f"{len(cuts)} 个 cut 构成连续时间线；renderer family/runtime 与提案锁定值一致。"},
         ],
         "unresolved_risks": risks,
-        "next_action": "人工审核方案和补充素材清单；确认后再进入素材生成、录制或渲染。",
+        "next_action": "进入素材生成、录制或渲染。",
     }
     return {
         "schema_version": "2.0",
@@ -658,13 +523,13 @@ def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, s
         "edit_decisions": edit_decisions,
         "delivery": asset_plan.get("delivery", {}),
         "plan_review": plan_review,
-        "decisions": _collect_decisions(proposal, approvals),
+        "decisions": _collect_decisions(proposal),
         "assumptions": assumptions,
         "risks": risks,
     }
 
 
-def _collect_decisions(proposal: dict, gate_approvals: dict[str, str]) -> list[dict]:
+def _collect_decisions(proposal: dict) -> list[dict]:
     decisions: list[dict] = []
     options = [item for item in proposal.get("concept_options", []) if isinstance(item, dict)]
     selected = proposal.get("selected_concept", {})
@@ -695,141 +560,60 @@ def _collect_decisions(proposal: dict, gate_approvals: dict[str, str]) -> list[d
                     "selected": value,
                     "reason": "提案 production_plan 锁定；下游阶段按此值校验一致性",
                 })
-    for stage, status in gate_approvals.items():
-        decisions.append({
-            "category": "human_approval",
-            "subject": f"{stage} 阶段人工审批",
-            "selected": status,
-            "reason": "人工审批门结果",
-        })
     return decisions
 
 
-def _archive_artifact(stage_dir: Path, history_dir: Path, stage: str) -> dict | None:
-    result_path = stage_dir / f"{stage}.json"
-    try:
-        data = json.loads(result_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    _write_json(history_dir / f"{stage}-{stamp}.json", data)
-    return data
-
-
-def _reset_stage(state: dict, stage: str) -> None:
-    stage_state = state["stages"][stage]
-    stage_state.update({"status": "pending", "session_id": None, "last_errors": []})
-    for key in ["upstream_digest", "contract_digest", "result_digest"]:
-        stage_state.pop(key, None)
-
-
-def _gate_approvals(state: dict) -> dict[str, str]:
-    history = state.get("gate_history")
-    if not isinstance(history, list):
-        return {}
+def _summary(
+    *,
+    status: str,
+    manifest: dict,
+    completed_stages: list[str],
+    current_stage: str,
+    attempts: dict[str, int],
+    requirements_provided: bool,
+    errors: list[dict],
+) -> dict:
     return {
-        entry["stage"]: entry["status"]
-        for entry in history
-        if isinstance(entry, dict) and isinstance(entry.get("stage"), str) and isinstance(entry.get("status"), str)
-    }
-
-
-def _load_state(path: Path, fingerprint: str) -> dict:
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        state = {}
-    if state.get("input_fingerprint") != fingerprint:
-        state = {
-            "schema_version": "1.0",
-            "pipeline": PIPELINE_IMPLEMENTATION_VERSION,
-            "input_fingerprint": fingerprint,
-            "status": "pending",
-            "current_stage": EDIT_STAGES[0],
-            "last_errors": [],
-            "stages": {},
-        }
-    state.setdefault("schema_version", "1.0")
-    if state.get("pipeline") != PIPELINE_IMPLEMENTATION_VERSION:
-        state = {
-            "schema_version": "1.0",
-            "pipeline": PIPELINE_IMPLEMENTATION_VERSION,
-            "input_fingerprint": fingerprint,
-            "status": "pending",
-            "current_stage": EDIT_STAGES[0],
-            "last_errors": [],
-            "stages": {},
-        }
-    state.setdefault("pipeline", PIPELINE_IMPLEMENTATION_VERSION)
-    state.setdefault("input_fingerprint", fingerprint)
-    state.setdefault("status", "pending")
-    state.setdefault("current_stage", EDIT_STAGES[0])
-    state.setdefault("last_errors", [])
-    state.setdefault("stages", {})
-    for stage in EDIT_STAGES:
-        state["stages"].setdefault(stage, {"status": "pending", "attempt": 0, "session_id": None, "last_errors": []})
-    return state
-
-
-def _save_state(path: Path, state: dict) -> None:
-    _write_json(path, state)
-
-
-def _summary(*, status: str, manifest: dict, state: dict, requirements_provided: bool, errors: list[dict]) -> dict:
-    completed = [stage for stage in EDIT_STAGES if state["stages"].get(stage, {}).get("status") == "succeeded"]
-    output_files = [".edit-plan/scan-manifest.json", ".edit-plan/state.json", *[f".edit-plan/stages/{stage}.json" for stage in completed]]
-    if status == "succeeded":
-        output_files.append("video-plan.json")
-    output_files.append(".edit-plan/run-summary.json")
-    summary = {
         "schema_version": "1.0",
         "status": status,
-        "pipeline": state.get("pipeline"),
-        "current_stage": state.get("current_stage"),
-        "completed_stages": completed,
+        "pipeline": PIPELINE_IMPLEMENTATION_VERSION,
+        "current_stage": current_stage,
+        "completed_stages": completed_stages,
         "asset_count": manifest["summary"]["asset_count"],
         "skipped_count": manifest["summary"]["skipped_count"],
         "requirements_provided": requirements_provided,
-        "attempts": {stage: state["stages"].get(stage, {}).get("attempt", 0) for stage in EDIT_STAGES},
-        "output_files": output_files,
+        "attempts": attempts,
+        "output_files": ["video-plan.json"] if status == "succeeded" else [],
         "errors": errors,
     }
-    gate = state.get("gate")
-    if isinstance(gate, dict):
-        summary["approval"] = {
-            "stage": gate.get("stage"),
-            "status": gate.get("status"),
-            "how_to_continue": f"审核 .edit-plan/stages/{gate.get('stage')}.json 后重跑同一命令：加 --approve 继续，或加 --feedback \"修订意见\" 重跑该阶段",
-        }
-    return summary
 
 
-def _input_fingerprint(manifest: dict, requirements: str) -> str:
-    stable_manifest = dict(manifest)
-    stable_manifest.pop("generated_at", None)
-    payload = {
-        "implementation": PIPELINE_IMPLEMENTATION_VERSION,
-        "manifest": stable_manifest,
-        "requirements": requirements,
-        "stage_files": _stage_file_digests(),
+def _clean_output_dir(destination: Path) -> None:
+    if not destination.exists():
+        return
+    generated_files = {
+        "video-plan.json",
+        "plan-review.json",
+        "run-summary.json",
+        "scan-manifest.json",
+        "state.json",
+        "video-plan-errors.json",
+        *(f"{stage}.json" for stage in EDIT_STAGES),
     }
-    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-def _json_digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-def _file_digest(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return "<missing>"
-
-
-def _stage_contract_digest(stage: str) -> str:
-    paths = [STAGE_RULES[stage], STAGE_SCHEMAS[stage]]
-    return _json_digest({str(path): _file_digest(path) for path in paths})
+    for name in generated_files:
+        path = destination / name
+        if path.is_file() or path.is_symlink():
+            path.unlink(missing_ok=True)
+    for pattern in ("*-attempt-*.raw", "*-attempt-*.errors.json"):
+        for path in destination.glob(pattern):
+            if path.is_file() or path.is_symlink():
+                path.unlink(missing_ok=True)
+    for directory_name in ("history", "stages", ".edit-plan"):
+        runtime_dir = destination / directory_name
+        if runtime_dir.is_symlink():
+            runtime_dir.unlink(missing_ok=True)
+        elif runtime_dir.is_dir():
+            shutil.rmtree(runtime_dir)
 
 
 def _mtime_ns(path: Path) -> int | None:
@@ -837,24 +621,6 @@ def _mtime_ns(path: Path) -> int | None:
         return path.stat().st_mtime_ns
     except OSError:
         return None
-
-
-def _stage_file_digests() -> dict[str, str]:
-    digests: dict[str, str] = {}
-    for stage in EDIT_STAGES:
-        for path in [STAGE_RULES[stage], STAGE_SCHEMAS[stage]]:
-            try:
-                content = path.read_bytes()
-            except OSError:
-                content = b"<missing>"
-            digests[str(path.relative_to(PIPELINE_DIR))] = hashlib.sha256(content).hexdigest()
-    final_schema = SCHEMA_DIR / "edit_plan_v2.json"
-    try:
-        content = final_schema.read_bytes()
-    except OSError:
-        content = b"<missing>"
-    digests[str(final_schema.relative_to(PIPELINE_DIR))] = hashlib.sha256(content).hexdigest()
-    return digests
 
 
 def _compact_assets(assets: list[dict]) -> list[dict]:
@@ -1024,17 +790,6 @@ def _validate_response_errors(response: TcodexResult) -> list[dict]:
 
 def _response_errors(response: TcodexResult) -> list[dict]:
     return _validate_response_errors(response)
-
-
-def _save_attempt(destination: Path, stage: str, attempt: int, response: TcodexResult, errors: list[dict]) -> None:
-    _write_text(destination / f"{stage}-attempt-{attempt}.raw", response.stdout or response.text or response.stderr)
-    _write_json(destination / f"{stage}-attempt-{attempt}.errors.json", errors)
-
-
-def _clear_attempt_files(destination: Path, stage: str) -> None:
-    for pattern in (f"{stage}-attempt-*.raw", f"{stage}-attempt-*.errors.json"):
-        for stale in destination.glob(pattern):
-            stale.unlink(missing_ok=True)
 
 
 def _write_json(path: Path, value: object) -> None:
