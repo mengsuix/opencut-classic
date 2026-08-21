@@ -214,7 +214,7 @@ def main() -> int:
     ep.add_argument("--max-agent-input-bytes", type=int, default=262144, help="Agent 输入最大 UTF-8 字节数")
     ep.add_argument("--stop-after", choices=EDIT_STAGES, default=None, help="跑完指定阶段后暂停，等待人工审批")
     ep.add_argument("--approve", action="store_true", help="批准当前等待审批的阶段并继续后续阶段")
-    ep.add_argument("--feedback", default=None, help="人工修订意见；重跑目标阶段后再次等待审批，旧结果归档 history/")
+    ep.add_argument("--feedback", default=None, help="人工修订意见；重跑目标阶段后再次等待审批，旧结果归档 .edit-plan/history/")
     ep.add_argument("--revise", choices=EDIT_STAGES, default=None, help="要修订的阶段，配合 --feedback；默认取等待审批的阶段")
     ep.set_defaults(func=cmd_edit_plan)
 

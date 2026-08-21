@@ -21,7 +21,6 @@
     "decisions": {"type": "array", "items": {"type": "object"}},
     "assumptions": {"type": "array", "items": {"type": "string"}},
     "risks": {"type": "array", "items": {"type": "string"}},
-    "artifacts": {"type": "object", "additionalProperties": true},
     "metadata": {"type": "object", "additionalProperties": true}
   }
 }

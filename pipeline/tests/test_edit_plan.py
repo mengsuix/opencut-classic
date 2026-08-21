@@ -98,12 +98,12 @@ class EditPlanTests(unittest.TestCase):
                 summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, stop_after="proposal")
                 self.assertEqual(summary["status"], "awaiting_approval")
                 self.assertEqual(summary["approval"]["stage"], "proposal")
-                self.assertTrue((output_dir / "proposal.json").is_file())
-                self.assertFalse((output_dir / "script.json").exists())
+                self.assertTrue((output_dir / ".edit-plan" / "stages" / "proposal.json").is_file())
+                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
 
                 summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir)
                 self.assertEqual(summary["status"], "awaiting_approval")
-                self.assertFalse((output_dir / "script.json").exists())
+                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
 
                 summary = run_edit_plan(
                     input_dir,
@@ -112,15 +112,18 @@ class EditPlanTests(unittest.TestCase):
                     feedback="方向再聚焦一些",
                 )
                 self.assertEqual(summary["status"], "awaiting_approval")
-                self.assertEqual(len(list((output_dir / "history").glob("proposal-*.json"))), 1)
-                self.assertFalse((output_dir / "script.json").exists())
+                self.assertEqual(len(list((output_dir / ".edit-plan" / "history").glob("proposal-*.json"))), 1)
+                self.assertFalse((output_dir / ".edit-plan" / "stages" / "script.json").exists())
 
                 summary = run_edit_plan(input_dir, requirements=requirements, output_dir=output_dir, approve=True)
                 self.assertEqual(summary["status"], "succeeded")
                 plan = json.loads((output_dir / "video-plan.json").read_text(encoding="utf-8"))
                 self.assertTrue(plan["decisions"])
-                self.assertEqual(plan["plan_review"]["approval_status"], "approved")
-                self.assertEqual(list(output_dir.glob("*-attempt-*")), [])
+                self.assertNotIn("artifacts", plan)
+                self.assertTrue((output_dir / ".edit-plan" / "scan-manifest.json").is_file())
+                self.assertTrue((output_dir / ".edit-plan" / "state.json").is_file())
+                self.assertFalse((output_dir / "plan-review.json").exists())
+                self.assertEqual(list((output_dir / ".edit-plan").rglob("*-attempt-*")), [])
 
 
 class _FakeTcodexClient:

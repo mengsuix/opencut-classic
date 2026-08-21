@@ -97,17 +97,11 @@ def validate_video_plan(
     ]:
         _object_field(value, field, errors)
 
-    artifacts = value.get("artifacts")
-    if not isinstance(artifacts, dict):
-        errors.append(_error("artifacts", "invalid_type", "必须是对象", artifacts))
-        return errors
-
-    source_review = artifacts.get("source_media_review")
-    proposal = artifacts.get("proposal")
-    script = artifacts.get("script")
-    scene_plan = artifacts.get("scene_plan")
-    asset_plan = artifacts.get("asset_plan")
-    edit_decisions = artifacts.get("edit_decisions")
+    proposal = value.get("proposal")
+    script = value.get("script")
+    scene_plan = value.get("scene_plan")
+    asset_plan = value.get("asset_plan")
+    edit_decisions = value.get("edit_decisions")
     catalog = asset_catalog or {}
     proposal_duration, expected_family, expected_runtime = _proposal_contract(proposal)
     script_duration = script.get("total_duration_seconds") if isinstance(script, dict) else None
@@ -115,7 +109,6 @@ def validate_video_plan(
     scene_ids = _ids(scene_plan, "scenes")
     supplemental_ids = _ids(asset_plan, "supplemental_assets")
 
-    errors.extend(validate_artifact("source_media_review", source_review, asset_ids=asset_ids, asset_catalog=catalog))
     errors.extend(validate_artifact("proposal", proposal, asset_ids=asset_ids, asset_catalog=catalog))
     errors.extend(
         validate_artifact(

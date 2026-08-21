@@ -141,8 +141,11 @@ def run_edit_plan(
     fingerprint = _input_fingerprint(manifest, requirements_text)
 
     destination.mkdir(parents=True, exist_ok=True)
-    _write_json(destination / "scan-manifest.json", manifest)
-    state_path = destination / "state.json"
+    runtime_dir = destination / ".edit-plan"
+    stage_dir = runtime_dir / "stages"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(runtime_dir / "scan-manifest.json", manifest)
+    state_path = runtime_dir / "state.json"
     state = _load_state(state_path, fingerprint)
     _save_state(state_path, state)
 
@@ -152,7 +155,7 @@ def run_edit_plan(
         target = revise_stage or (gate or {}).get("stage")
         if not isinstance(target, str) or target not in EDIT_STAGES:
             raise EditPlanInputError("当前没有等待审批的阶段，请用 --revise 指定要修订的阶段")
-        previous = _archive_artifact(destination, target)
+        previous = _archive_artifact(stage_dir, runtime_dir / "history", target)
         _reset_stage(state, target)
         human_feedback[target] = {"note": feedback.strip(), "previous": previous}
         stop_after = stop_after or target
@@ -176,7 +179,7 @@ def run_edit_plan(
                 requirements_provided=bool(requirements_text),
                 errors=[],
             )
-            _write_json(destination / "run-summary.json", summary)
+            _write_json(runtime_dir / "run-summary.json", summary)
             return summary
 
     artifacts: dict[str, dict] = {}
@@ -185,7 +188,7 @@ def run_edit_plan(
             result = _run_stage(
                 stage,
                 root=root,
-                destination=destination,
+                destination=stage_dir,
                 state=state,
                 state_path=state_path,
                 manifest=manifest,
@@ -210,7 +213,7 @@ def run_edit_plan(
                     requirements_provided=bool(requirements_text),
                     errors=[],
                 )
-                _write_json(destination / "run-summary.json", summary)
+                _write_json(runtime_dir / "run-summary.json", summary)
                 return summary
 
         plan = _build_video_plan(artifacts, gate_approvals=_gate_approvals(state))
@@ -218,7 +221,7 @@ def run_edit_plan(
         if not plan_errors:
             plan_errors = validate_video_plan(plan, asset_ids=asset_ids, asset_catalog=asset_catalog)
         if plan_errors:
-            _write_json(destination / "video-plan-errors.json", plan_errors)
+            _write_json(runtime_dir / "video-plan-errors.json", plan_errors)
             state.update({"status": "failed", "current_stage": "aggregate", "last_errors": plan_errors})
             _save_state(state_path, state)
             summary = _summary(
@@ -228,11 +231,10 @@ def run_edit_plan(
                 requirements_provided=bool(requirements_text),
                 errors=plan_errors,
             )
-            _write_json(destination / "run-summary.json", summary)
+            _write_json(runtime_dir / "run-summary.json", summary)
             return summary
 
         _write_json(destination / "video-plan.json", plan)
-        _write_json(destination / "plan-review.json", plan["plan_review"])
         state.update({"status": "succeeded", "current_stage": "completed", "last_errors": []})
         _save_state(state_path, state)
         summary = _summary(
@@ -242,7 +244,7 @@ def run_edit_plan(
             requirements_provided=bool(requirements_text),
             errors=[],
         )
-        _write_json(destination / "run-summary.json", summary)
+        _write_json(runtime_dir / "run-summary.json", summary)
         return summary
     except EditPlanStageFailed as exc:
         state.update({"status": "failed", "current_stage": exc.stage})
@@ -255,7 +257,7 @@ def run_edit_plan(
             requirements_provided=bool(requirements_text),
             errors=errors,
         )
-        _write_json(destination / "run-summary.json", summary)
+        _write_json(runtime_dir / "run-summary.json", summary)
         return summary
 
 
@@ -659,7 +661,6 @@ def _build_video_plan(artifacts: dict[str, dict], *, gate_approvals: dict[str, s
         "decisions": _collect_decisions(proposal, approvals),
         "assumptions": assumptions,
         "risks": risks,
-        "artifacts": artifacts,
     }
 
 
@@ -704,14 +705,14 @@ def _collect_decisions(proposal: dict, gate_approvals: dict[str, str]) -> list[d
     return decisions
 
 
-def _archive_artifact(destination: Path, stage: str) -> dict | None:
-    result_path = destination / f"{stage}.json"
+def _archive_artifact(stage_dir: Path, history_dir: Path, stage: str) -> dict | None:
+    result_path = stage_dir / f"{stage}.json"
     try:
         data = json.loads(result_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    _write_json(destination / "history" / f"{stage}-{stamp}.json", data)
+    _write_json(history_dir / f"{stage}-{stamp}.json", data)
     return data
 
 
@@ -776,10 +777,10 @@ def _save_state(path: Path, state: dict) -> None:
 
 def _summary(*, status: str, manifest: dict, state: dict, requirements_provided: bool, errors: list[dict]) -> dict:
     completed = [stage for stage in EDIT_STAGES if state["stages"].get(stage, {}).get("status") == "succeeded"]
-    output_files = ["scan-manifest.json", "state.json", *[f"{stage}.json" for stage in completed]]
+    output_files = [".edit-plan/scan-manifest.json", ".edit-plan/state.json", *[f".edit-plan/stages/{stage}.json" for stage in completed]]
     if status == "succeeded":
-        output_files.extend(["video-plan.json", "plan-review.json"])
-    output_files.append("run-summary.json")
+        output_files.append("video-plan.json")
+    output_files.append(".edit-plan/run-summary.json")
     summary = {
         "schema_version": "1.0",
         "status": status,
@@ -798,7 +799,7 @@ def _summary(*, status: str, manifest: dict, state: dict, requirements_provided:
         summary["approval"] = {
             "stage": gate.get("stage"),
             "status": gate.get("status"),
-            "how_to_continue": f"审核 {gate.get('stage')}.json 后重跑同一命令：加 --approve 继续，或加 --feedback \"修订意见\" 重跑该阶段",
+            "how_to_continue": f"审核 .edit-plan/stages/{gate.get('stage')}.json 后重跑同一命令：加 --approve 继续，或加 --feedback \"修订意见\" 重跑该阶段",
         }
     return summary
 
