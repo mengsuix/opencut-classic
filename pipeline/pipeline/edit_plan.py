@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .schema_validation import validate_json_schema
-from .staged_validation import _ids, _proposal_contract, validate_artifact, validate_video_plan
+from .staged_validation import _ids, _proposal_contract, _required_supplemental_ids, validate_artifact, validate_video_plan
 from .tcodex import TcodexClient, TcodexResult
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent
@@ -374,6 +374,13 @@ def _build_stage_prompt(
         payload["inspection_note"] = "当前工作目录就是输入素材目录；允许只读检查清单中的文件内容和媒体元数据，但不得执行文件、脚本或命令。"
     if not manifest.get("assets"):
         payload["reference_note"] = "没有提供任何已有参考素材；请完全根据需求自主规划，并将所有需要新增的画面、录制、生成内容、音频或图形列为补充素材，不能伪造为 provided。"
+    if stage == "asset_plan":
+        required_ids = sorted(_required_supplemental_ids(artifacts.get("scene_plan")))
+        section_ids = sorted(_ids(artifacts.get("script"), "sections"))
+        payload["required_supplemental_ids"] = required_ids
+        payload["script_section_ids"] = section_ids
+        payload["supplemental_reference_note"] = "supplemental_assets.id 必须逐一原样覆盖 required_supplemental_ids，不能改名、遗漏或用其他 ID 替代。"
+        payload["script_reference_note"] = "narration.segments[*].script_section_id 必须逐一使用 script_section_ids 中的脚本段 ID，不能填写 scene_id。"
     if feedback:
         payload["validation_feedback"] = feedback
     prompt = (
@@ -410,7 +417,9 @@ def _validate_stage_result(
     expected_duration = proposal_duration if stage == "script" else script_duration
     section_ids = _ids(script, "sections")
     asset_plan = artifacts.get("asset_plan")
+    scene_plan = artifacts.get("scene_plan")
     supplemental_ids = _ids(asset_plan, "supplemental_assets")
+    required_supplemental_ids = _required_supplemental_ids(scene_plan)
     semantic_errors = validate_artifact(
         stage,
         value,
@@ -419,7 +428,8 @@ def _validate_stage_result(
         expected_duration=expected_duration if isinstance(expected_duration, (int, float)) else None,
         script_section_ids=section_ids,
         supplemental_ids=supplemental_ids,
-        scene_ids=_ids(artifacts.get("scene_plan"), "scenes"),
+        required_supplemental_ids=required_supplemental_ids,
+        scene_ids=_ids(scene_plan, "scenes"),
         expected_renderer_family=expected_family,
         expected_render_runtime=expected_runtime,
     )

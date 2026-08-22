@@ -41,6 +41,7 @@ def validate_artifact(
     expected_duration: float | None = None,
     script_section_ids: set[str] | None = None,
     supplemental_ids: set[str] | None = None,
+    required_supplemental_ids: set[str] | None = None,
     scene_ids: set[str] | None = None,
     expected_renderer_family: str | None = None,
     expected_render_runtime: str | None = None,
@@ -64,6 +65,7 @@ def validate_artifact(
         expected_duration=expected_duration,
         script_section_ids=script_section_ids or set(),
         supplemental_ids=supplemental_ids or set(),
+        required_supplemental_ids=required_supplemental_ids or set(),
         scene_ids=scene_ids or set(),
         expected_renderer_family=expected_renderer_family,
         expected_render_runtime=expected_render_runtime,
@@ -108,6 +110,7 @@ def validate_video_plan(
     section_ids = _ids(script, "sections")
     scene_ids = _ids(scene_plan, "scenes")
     supplemental_ids = _ids(asset_plan, "supplemental_assets")
+    required_supplemental_ids = _required_supplemental_ids(scene_plan)
 
     errors.extend(validate_artifact("proposal", proposal, asset_ids=asset_ids, asset_catalog=catalog))
     errors.extend(
@@ -127,6 +130,7 @@ def validate_video_plan(
             asset_catalog=catalog,
             expected_duration=script_duration if isinstance(script_duration, (int, float)) else None,
             script_section_ids=section_ids,
+            required_supplemental_ids=required_supplemental_ids,
             scene_ids=scene_ids,
         )
     )
@@ -191,6 +195,22 @@ def _ids(value: object, field: str) -> set[str]:
     if not isinstance(value, dict) or not isinstance(value.get(field), list):
         return set()
     return {item.get("id") for item in value[field] if isinstance(item, dict) and isinstance(item.get("id"), str)}
+
+
+def _required_supplemental_ids(value: object) -> set[str]:
+    if not isinstance(value, dict) or not isinstance(value.get("scenes"), list):
+        return set()
+    result: set[str] = set()
+    for scene in value["scenes"]:
+        if not isinstance(scene, dict) or not isinstance(scene.get("required_assets"), list):
+            continue
+        for asset in scene["required_assets"]:
+            if not isinstance(asset, dict) or asset.get("source") != "supplemental":
+                continue
+            supplemental_id = asset.get("supplemental_id")
+            if isinstance(supplemental_id, str) and supplemental_id.strip():
+                result.add(supplemental_id)
+    return result
 
 
 def _source_media_review(
@@ -482,6 +502,7 @@ def _asset_plan(
     asset_ids: set[str],
     expected_duration: float | None = None,
     script_section_ids: set[str],
+    required_supplemental_ids: set[str],
     scene_ids: set[str],
     **_: Any,
 ) -> list[dict]:
@@ -525,6 +546,15 @@ def _asset_plan(
             if item_id in supplemental_ids:
                 errors.append(_error(f"{path}.id", "duplicate", "补充素材 ID 必须唯一", item_id))
             supplemental_ids.add(item_id)
+
+    missing_scene_assets = sorted(required_supplemental_ids - supplemental_ids)
+    if missing_scene_assets:
+        errors.append(_error(
+            "supplemental_assets",
+            "missing_required_supplemental",
+            "必须逐一声明分镜 required_assets 中引用的 supplemental_id",
+            missing_scene_assets,
+        ))
 
     cover = value.get("cover")
     if not isinstance(cover, dict):

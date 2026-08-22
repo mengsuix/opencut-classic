@@ -113,6 +113,37 @@ class StagedValidationTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_asset_plan_requires_scene_supplemental_ids(self):
+        errors = validate_artifact(
+            "asset_plan",
+            _asset_plan([]),
+            asset_ids=set(),
+            expected_duration=10,
+            script_section_ids={"sec_1"},
+            required_supplemental_ids={"supp_ui_01"},
+            scene_ids={"scene_01"},
+        )
+        self.assertTrue(any(error["code"] == "missing_required_supplemental" for error in errors))
+
+    def test_asset_plan_rejects_scene_id_in_narration(self):
+        value = _asset_plan([])
+        value["narration"]["segments"] = [{
+            "script_section_id": "scene_01",
+            "text": "旁白",
+            "start_seconds": 0,
+            "end_seconds": 1,
+        }]
+        errors = validate_artifact(
+            "asset_plan",
+            value,
+            asset_ids=set(),
+            expected_duration=10,
+            script_section_ids={"sec_1"},
+            required_supplemental_ids=set(),
+            scene_ids={"scene_01"},
+        )
+        self.assertTrue(any(error["code"] == "unknown_section" for error in errors))
+
     def test_proposal_requires_grounded_concepts(self):
         errors = validate_artifact("proposal", _proposal(), asset_ids=set())
         self.assertEqual(errors, [])
@@ -191,6 +222,31 @@ def _scene_plan(scenes: list) -> dict:
         "style_playbook": "clean-professional",
         "scenes": scenes,
         "metadata": {"crop_regions": [], "callout_plan": [], "speed_plan": [], "quality_gates": ["检查时间线"]},
+        "assumptions": [],
+        "risks": [],
+    }
+
+
+def _asset_plan(supplemental_assets: list[dict]) -> dict:
+    return {
+        "version": "1.0",
+        "assets": [],
+        "supplemental_assets": supplemental_assets,
+        "cover": {
+            "source": "text_card",
+            "concept": "标题",
+            "text_overlay": "测试",
+            "style_notes": "简洁",
+            "safe_area_notes": "居中",
+            "reason": "无已有素材",
+            "asset_refs": [],
+            "supplemental_asset_refs": [],
+        },
+        "narration": {"enabled": True, "language": "中文", "tone": "自然", "provider": "TTS", "segments": []},
+        "subtitles": {"enabled": True, "source": "旁白", "style": "白字", "position": "底部", "max_words_per_line": 18},
+        "music": {"source_type": "补充音乐", "mood": "轻快", "track_plan": "全程", "ducking": "旁白时压低"},
+        "chapters": [{"id": "ch_1", "title": "开场", "start_seconds": 0}],
+        "delivery": {},
         "assumptions": [],
         "risks": [],
     }
