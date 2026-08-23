@@ -42,214 +42,46 @@ class StagedValidationTests(unittest.TestCase):
                 walk(schema, "", problems)
                 self.assertEqual(problems, [], "tcodex 上游要求 OpenAI strict 结构化输出")
 
-    def test_edit_decisions_allow_overlay_over_primary_track(self):
-        errors = validate_artifact(
-            "edit_decisions",
-            _edit_decisions(),
-            asset_ids={"asset_0001"},
-            scene_ids={"scene_01"},
-            expected_duration=10,
-            expected_renderer_family="screen-demo",
-            expected_render_runtime="remotion",
-        )
-        self.assertEqual(errors, [])
-
-    def test_edit_decisions_reject_invalid_source_range(self):
-        value = _edit_decisions()
-        value["cuts"][0]["out_seconds"] = 0
-        errors = validate_artifact(
-            "edit_decisions",
-            value,
-            asset_ids={"asset_0001"},
-            scene_ids={"scene_01"},
-            expected_duration=10,
-            expected_renderer_family="screen-demo",
-            expected_render_runtime="remotion",
-        )
-        self.assertTrue(any(error["code"] == "invalid_source_range" for error in errors))
-
-    def test_edit_decisions_reject_unknown_scene(self):
-        value = _edit_decisions()
-        value["cuts"][0]["scene_id"] = "scene_missing"
-        errors = validate_artifact(
-            "edit_decisions",
-            value,
-            asset_ids={"asset_0001"},
-            scene_ids={"scene_01"},
-            expected_duration=10,
-            expected_renderer_family="screen-demo",
-            expected_render_runtime="remotion",
-        )
-        self.assertTrue(any(error["code"] == "unknown_scene_ref" for error in errors))
-
-    def test_script_rejects_speech_faster_than_section_duration(self):
-        errors = validate_artifact("script", _script("这是一段长度合适的旁白文本。"), asset_ids=set())
-        self.assertEqual(errors, [])
-
-        errors = validate_artifact("script", _script("字" * 100), asset_ids=set())
-        self.assertTrue(any(error["code"] == "speech_rate_infeasible" for error in errors))
-
-    def test_scene_plan_rejects_identical_visual_grammar(self):
-        scenes = [_scene("s1", 0, 10), _scene("s2", 10, 20), _scene("s3", 20, 30), _scene("s4", 30, 40)]
-        errors = validate_artifact(
-            "scene_plan",
-            _scene_plan(scenes),
-            asset_ids=set(),
-            expected_duration=40,
-            script_section_ids={"sec_1"},
-            supplemental_ids=set(),
-        )
-        self.assertTrue(any(error["code"] == "no_visual_variation" for error in errors))
-
-        for index, scene in enumerate(scenes):
-            scene["framing"] = f"构图{index}"
-        errors = validate_artifact(
-            "scene_plan",
-            _scene_plan(scenes),
-            asset_ids=set(),
-            expected_duration=40,
-            script_section_ids={"sec_1"},
-            supplemental_ids=set(),
-        )
-        self.assertEqual(errors, [])
-
-    def test_asset_plan_requires_scene_supplemental_ids(self):
-        errors = validate_artifact(
-            "asset_plan",
-            _asset_plan([]),
-            asset_ids=set(),
-            expected_duration=10,
-            script_section_ids={"sec_1"},
-            required_supplemental_ids={"supp_ui_01"},
-            scene_ids={"scene_01"},
-        )
-        self.assertTrue(any(error["code"] == "missing_required_supplemental" for error in errors))
-
-    def test_asset_plan_rejects_scene_id_in_narration(self):
-        value = _asset_plan([])
-        value["narration"]["segments"] = [{
-            "script_section_id": "scene_01",
-            "text": "旁白",
-            "start_seconds": 0,
-            "end_seconds": 1,
-        }]
-        errors = validate_artifact(
-            "asset_plan",
-            value,
-            asset_ids=set(),
-            expected_duration=10,
-            script_section_ids={"sec_1"},
-            required_supplemental_ids=set(),
-            scene_ids={"scene_01"},
-        )
-        self.assertTrue(any(error["code"] == "unknown_section" for error in errors))
-
     def test_proposal_requires_grounded_concepts(self):
-        errors = validate_artifact("proposal", _proposal(), asset_ids=set())
+        errors = validate_artifact("proposal", _proposal())
         self.assertEqual(errors, [])
 
         proposal = _proposal()
         for concept in proposal["concept_options"]:
             concept["grounded_in"] = []
-        errors = validate_artifact("proposal", proposal, asset_ids=set())
+        errors = validate_artifact("proposal", proposal)
         self.assertTrue(any(error["path"].endswith("grounded_in") for error in errors))
 
         proposal = _proposal()
         proposal["concept_options"][0]["grounded_in"] = ["asset:ghost"]
-        errors = validate_artifact("proposal", proposal, asset_ids=set())
+        errors = validate_artifact("proposal", proposal)
         self.assertTrue(any(error["code"] == "unknown_asset_ref" for error in errors))
 
+    def test_storyboard_valid(self):
+        errors = validate_artifact("storyboard", _storyboard(), expected_duration=10)
+        self.assertEqual(errors, [])
 
-def _script(text: str) -> dict:
-    return {
-        "version": "1.0",
-        "title": "测试脚本",
-        "total_duration_seconds": 10,
-        "voice_performance": {
-            "performance_intent": "清晰",
-            "pacing_profile": "conversational",
-            "energy_curve": "平稳",
-            "pause_policy": "句号停顿",
-            "sample_section_id": "",
-            "provider_notes": {"provider": "", "voice": "", "notes": ""},
-        },
-        "sections": [
-            {
-                "id": "sec_1",
-                "label": "开场",
-                "text": text,
-                "start_seconds": 0,
-                "end_seconds": 10,
-                "speaker_directions": "",
-                "delivery_cues": {"pace": "", "emphasis": "", "notes": ""},
-                "enhancement_cues": [],
-                "source_basis": "需求",
-                "source_ref": "",
-                "pronunciation_guides": [],
-            }
-        ],
-        "factual_notes": [],
-        "assumptions": [],
-        "risks": [],
-    }
+    def test_storyboard_rejects_speech_faster_than_shot_duration(self):
+        value = _storyboard()
+        value["shots"][0]["narration"] = "字" * 100
+        errors = validate_artifact("storyboard", value, expected_duration=10)
+        self.assertTrue(any(error["code"] == "speech_rate_infeasible" for error in errors))
 
+    def test_storyboard_rejects_timeline_gap(self):
+        value = _storyboard()
+        value["shots"][1]["start_seconds"] = 6
+        errors = validate_artifact("storyboard", value, expected_duration=10)
+        self.assertTrue(any(error["code"] == "timeline_gap" for error in errors))
 
-def _scene(scene_id: str, start: int, end: int) -> dict:
-    return {
-        "id": scene_id,
-        "type": "screen_recording",
-        "description": "演示画面",
-        "start_seconds": start,
-        "end_seconds": end,
-        "script_section_id": "sec_1",
-        "framing": "全景",
-        "movement": "静止",
-        "transition_in": "无",
-        "transition_out": "无",
-        "shot_intent": "展示功能",
-        "narrative_role": "establish_context",
-        "information_role": "功能信息",
-        "hero_moment": False,
-        "required_assets": [],
-        "shot_language": {"shot_size": "", "camera_angle": "", "notes": ""},
-        "overlay_notes": "",
-    }
+    def test_storyboard_rejects_duration_mismatch(self):
+        errors = validate_artifact("storyboard", _storyboard(), expected_duration=30)
+        self.assertTrue(any(error["code"] == "duration_mismatch" for error in errors))
 
-
-def _scene_plan(scenes: list) -> dict:
-    return {
-        "version": "1.0",
-        "style_playbook": "clean-professional",
-        "scenes": scenes,
-        "metadata": {"crop_regions": [], "callout_plan": [], "speed_plan": [], "quality_gates": ["检查时间线"]},
-        "assumptions": [],
-        "risks": [],
-    }
-
-
-def _asset_plan(supplemental_assets: list[dict]) -> dict:
-    return {
-        "version": "1.0",
-        "assets": [],
-        "supplemental_assets": supplemental_assets,
-        "cover": {
-            "source": "text_card",
-            "concept": "标题",
-            "text_overlay": "测试",
-            "style_notes": "简洁",
-            "safe_area_notes": "居中",
-            "reason": "无已有素材",
-            "asset_refs": [],
-            "supplemental_asset_refs": [],
-        },
-        "narration": {"enabled": True, "language": "中文", "tone": "自然", "provider": "TTS", "segments": []},
-        "subtitles": {"enabled": True, "source": "旁白", "style": "白字", "position": "底部", "max_words_per_line": 18},
-        "music": {"source_type": "补充音乐", "mood": "轻快", "track_plan": "全程", "ducking": "旁白时压低"},
-        "chapters": [{"id": "ch_1", "title": "开场", "start_seconds": 0}],
-        "delivery": {},
-        "assumptions": [],
-        "risks": [],
-    }
+    def test_storyboard_rejects_duplicate_shot_id(self):
+        value = _storyboard()
+        value["shots"][1]["id"] = "shot_001"
+        errors = validate_artifact("storyboard", value, expected_duration=10)
+        self.assertTrue(any(error["code"] == "duplicate" for error in errors))
 
 
 def _concept(concept_id: str, grounded_in: list | None = None) -> dict:
@@ -309,63 +141,43 @@ def _proposal() -> dict:
     }
 
 
-def _edit_decisions() -> dict:
+def _storyboard() -> dict:
     return {
         "version": "1.0",
-        "renderer_family": "screen-demo",
-        "render_runtime": "remotion",
-        "delivery_promise": "输出可供人工审核的屏幕演示剪辑方案",
-        "cuts": [
+        "title": "测试视频",
+        "objective": "让观众理解核心价值",
+        "audience": "潜在用户",
+        "concept_summary": "方向 c1",
+        "format": {"platform": "通用", "aspect_ratio": "16:9", "delivery_notes": ""},
+        "total_duration_seconds": 10,
+        "cover": {"concept": "结果画面", "text_overlay": "测试视频", "reason": "首帧传达结果"},
+        "shots": [
             {
-                "id": "cut_01",
-                "scene_id": "scene_01",
-                "source_type": "provided",
-                "source": "asset_0001",
-                "in_seconds": 0,
-                "out_seconds": 10,
-                "timeline_start": 0,
-                "timeline_end": 10,
-                "speed": 1,
-                "layer": "primary",
-                "transform": {"scale": None, "position": "", "notes": ""},
-                "transition_in": "none",
-                "transition_out": "none",
-                "transition_duration": 0,
-                "reason": "保持主画面连续",
+                "id": "shot_001",
+                "start_seconds": 0,
+                "end_seconds": 5,
+                "label": "开场钩子",
+                "visual": "结果画面特写",
+                "narration": "先看结果。",
+                "subtitle": "先看结果",
+                "asset_need": "录制一段真实生成结果",
+                "notes": "",
             },
             {
-                "id": "cut_02",
-                "scene_id": "scene_01",
-                "source_type": "provided",
-                "source": "asset_0001",
-                "in_seconds": 2,
-                "out_seconds": 4,
-                "timeline_start": 2,
-                "timeline_end": 4,
-                "speed": 1,
-                "layer": "overlay",
-                "transform": {"scale": 1.5, "position": "", "notes": ""},
-                "transition_in": "fade",
-                "transition_out": "fade",
-                "transition_duration": 0,
-                "reason": "局部放大关键区域",
+                "id": "shot_002",
+                "start_seconds": 5,
+                "end_seconds": 10,
+                "label": "品牌收尾",
+                "visual": "品牌卡",
+                "narration": "",
+                "subtitle": "立即体验",
+                "asset_need": "品牌素材",
+                "notes": "",
             },
         ],
-        "overlays": [],
-        "audio": {"narration": "", "music": "", "sound_effects": "", "ducking": ""},
-        "subtitles": {"style": "", "position": "", "notes": ""},
-        "transitions": [],
-        "end_card": {"headline": "", "subheadline": "", "cta": "", "visual": "", "audio": ""},
+        "audio_notes": "轻快背景音乐",
         "assumptions": [],
         "risks": [],
-        "metadata": {
-            "crop_keyframes": [],
-            "speed_plan": [],
-            "subtitle_position_overrides": [],
-            "audio_notes": [],
-            "variant_notes": [],
-            "quality_gates": ["检查主轨连续性"],
-        },
     }
 
 

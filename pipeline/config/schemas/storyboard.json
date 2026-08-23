@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "title", "objective", "audience", "concept_summary", "format", "total_duration_seconds", "cover", "shots", "audio_notes", "assumptions", "risks"],
+  "properties": {
+    "version": {"type": "string", "const": "1.0"},
+    "title": {"type": "string", "minLength": 1},
+    "objective": {"type": "string", "minLength": 1},
+    "audience": {"type": "string", "minLength": 1},
+    "concept_summary": {"type": "string", "minLength": 1},
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "aspect_ratio", "delivery_notes"],
+      "properties": {
+        "platform": {"type": "string", "minLength": 1},
+        "aspect_ratio": {"type": "string", "minLength": 1},
+        "delivery_notes": {"type": "string"}
+      }
+    },
+    "total_duration_seconds": {"type": "number", "minimum": 1},
+    "cover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concept", "text_overlay", "reason"],
+      "properties": {
+        "concept": {"type": "string", "minLength": 1},
+        "text_overlay": {"type": "string"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "start_seconds", "end_seconds", "label", "visual", "narration", "subtitle", "asset_need", "notes"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "start_seconds": {"type": "number", "minimum": 0},
+          "end_seconds": {"type": "number", "exclusiveMinimum": 0},
+          "label": {"type": "string", "minLength": 1},
+          "visual": {"type": "string", "minLength": 1},
+          "narration": {"type": "string"},
+          "subtitle": {"type": "string"},
+          "asset_need": {"type": "string"},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "audio_notes": {"type": "string"},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}}
+  }
+}
