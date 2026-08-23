@@ -195,9 +195,15 @@ const TOOLS = [
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
+		name: "get_selection",
+		description:
+			'Get the current editor selection in detail: selected timeline elements (refs, track type, element type, name, timing in seconds, text content), selected keyframes and mask points. When the user refers to "the selected part/clip/选中的部分", call this first to resolve what it refers to. Commands that accept an "elements" array also accept the string "$selection" to target the current selection directly.',
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
 		name: "execute_command",
 		description:
-			"Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor's command system, so changes are applied to the live preview immediately and are undoable.",
+			'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected.',
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -251,6 +257,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				return textResult(await callEditor("commands.list"));
 			case "get_editor_state":
 				return textResult(await callEditor("state.get"));
+			case "get_selection":
+				return textResult(await callEditor("selection.describe"));
 			case "execute_command": {
 				const command = toolArgs?.command;
 				if (typeof command !== "string" || command.length === 0) {

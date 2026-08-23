@@ -93,6 +93,25 @@ function requireElementRefs(value: unknown): BridgeElementRef[] {
 	});
 }
 
+function resolveElementRefs(
+	editor: EditorCore,
+	value: unknown,
+): BridgeElementRef[] {
+	if (value === "$selection") {
+		const selected = editor.selection.getSelectedElements();
+		if (selected.length === 0) {
+			throw new Error(
+				'No elements are selected in the editor. Ask the user to select elements on the timeline first, or pass explicit element refs. Use the "selection.describe" command to inspect the current selection.',
+			);
+		}
+		return selected.map((ref) => ({
+			trackId: ref.trackId,
+			elementId: ref.elementId,
+		}));
+	}
+	return requireElementRefs(value);
+}
+
 function serializeElement(element: Record<string, unknown>) {
 	return {
 		...element,
@@ -132,6 +151,31 @@ function findElement(
 	return element as unknown as Record<string, unknown>;
 }
 
+function findTrackAndElement(
+	editor: EditorCore,
+	trackId: string,
+	elementId: string,
+): { trackType: string; element: Record<string, unknown> } | null {
+	const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+	if (!tracks) {
+		return null;
+	}
+	const allTracks = [tracks.main, ...tracks.overlay, ...tracks.audio] as Array<{
+		id: string;
+		type: string;
+		elements: Array<{ id: string }>;
+	}>;
+	const track = allTracks.find((item) => item.id === trackId);
+	const element = track?.elements.find((item) => item.id === elementId);
+	if (!track || !element) {
+		return null;
+	}
+	return {
+		trackType: track.type,
+		element: element as unknown as Record<string, unknown>,
+	};
+}
+
 function sanitizeJson<T>(value: T): T {
 	return JSON.parse(JSON.stringify(value));
 }
@@ -166,6 +210,15 @@ function getElementMasks(
 	return (element.masks as Mask[] | undefined) ?? [];
 }
 
+function buildSelectionState(editor: EditorCore) {
+	return {
+		kind: editor.selection.getActiveSelectionKind(),
+		elements: editor.selection.getSelectedElements(),
+		keyframes: editor.selection.getSelectedKeyframes(),
+		maskPoints: editor.selection.getSelectedMaskPointSelection(),
+	};
+}
+
 function buildEditorState(editor: EditorCore) {
 	const project = editor.project.getActiveOrNull();
 	const scenes = editor.scenes.getScenes();
@@ -189,7 +242,7 @@ function buildEditorState(editor: EditorCore) {
 			volume: editor.playback.getVolume(),
 			muted: editor.playback.isMuted(),
 		},
-		selection: editor.selection.getSelectedElements(),
+		selection: buildSelectionState(editor),
 		history: {
 			canUndo: editor.command.canUndo(),
 			canRedo: editor.command.canRedo(),
@@ -354,13 +407,13 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		description:
 			"Split elements at a time (seconds). Returns the right-side element refs.",
 		args: {
-			elements: "[{ trackId, elementId }]",
+			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
 			splitTime: "seconds",
 			retainSide: "'both' | 'left' | 'right'? (default both)",
 		},
 		run: ({ editor, args }) => ({
 			rightSide: editor.timeline.splitElements({
-				elements: requireElementRefs(args.elements),
+				elements: resolveElementRefs(editor, args.elements),
 				splitTime: toTicks(requireNumber(args.splitTime, "splitTime")),
 				...(typeof args.retainSide === "string"
 					? { retainSide: args.retainSide as "both" | "left" | "right" }
@@ -428,10 +481,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.delete_elements": {
 		description: "Delete elements from the timeline.",
-		args: { elements: "[{ trackId, elementId }]" },
+		args: {
+			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
+		},
 		run: ({ editor, args }) => {
 			editor.timeline.deleteElements({
-				elements: requireElementRefs(args.elements),
+				elements: resolveElementRefs(editor, args.elements),
 			});
 			return { deleted: true };
 		},
@@ -439,20 +494,24 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.duplicate_elements": {
 		description: "Duplicate elements. Returns the new element refs.",
-		args: { elements: "[{ trackId, elementId }]" },
+		args: {
+			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
+		},
 		run: ({ editor, args }) => ({
 			duplicated: editor.timeline.duplicateElements({
-				elements: requireElementRefs(args.elements),
+				elements: resolveElementRefs(editor, args.elements),
 			}),
 		}),
 	},
 
 	"timeline.toggle_muted": {
 		description: "Toggle mute on audio-capable elements.",
-		args: { elements: "[{ trackId, elementId }]" },
+		args: {
+			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
+		},
 		run: ({ editor, args }) => {
 			editor.timeline.toggleElementsMuted({
-				elements: requireElementRefs(args.elements),
+				elements: resolveElementRefs(editor, args.elements),
 			});
 			return { toggled: true };
 		},
@@ -460,10 +519,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.toggle_visibility": {
 		description: "Toggle visibility on hideable elements.",
-		args: { elements: "[{ trackId, elementId }]" },
+		args: {
+			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
+		},
 		run: ({ editor, args }) => {
 			editor.timeline.toggleElementsVisibility({
-				elements: requireElementRefs(args.elements),
+				elements: resolveElementRefs(editor, args.elements),
 			});
 			return { toggled: true };
 		},
@@ -759,10 +820,53 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"selection.get": {
-		description: "Get the current selection.",
-		run: ({ editor }) => ({
-			selected: editor.selection.getSelectedElements(),
-		}),
+		description:
+			"Get the current selection (ids only): elements, keyframes and mask points. Use selection.describe for full details.",
+		run: ({ editor }) => buildSelectionState(editor),
+	},
+
+	"selection.describe": {
+		description:
+			'Describe the current selection in detail: selected elements with track type, element type, name, timing (seconds) and text content, plus selected keyframes and mask points. Use this to understand what "the selected part" refers to.',
+		run: ({ editor }) => {
+			const elements = editor.selection.getSelectedElements().map((ref) => {
+				const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
+				if (!found) {
+					return { ...ref, error: "element not found" };
+				}
+				const { element } = found;
+				const params = (element.params ?? {}) as Record<string, unknown>;
+				return {
+					trackId: ref.trackId,
+					elementId: ref.elementId,
+					trackType: found.trackType,
+					type: (element.type as string | undefined) ?? null,
+					name: (element.name as string | undefined) ?? null,
+					startTime: toSeconds(element.startTime as MediaTime),
+					duration: toSeconds(element.duration as MediaTime),
+					...(typeof params.content === "string"
+						? { text: params.content }
+						: {}),
+					...(typeof element.mediaId === "string"
+						? { mediaId: element.mediaId }
+						: {}),
+					...(typeof element.muted === "boolean"
+						? { muted: element.muted }
+						: {}),
+					...(typeof element.hidden === "boolean"
+						? { hidden: element.hidden }
+						: {}),
+					effectCount: Array.isArray(element.effects)
+						? element.effects.length
+						: 0,
+					maskCount: Array.isArray(element.masks) ? element.masks.length : 0,
+				};
+			});
+			return {
+				...buildSelectionState(editor),
+				elements,
+			};
+		},
 	},
 
 	"selection.set": {
