@@ -43,12 +43,16 @@ import {
 	Layers01Icon,
 	Chart03Icon,
 	Unlink02Icon,
+	Undo02Icon,
+	Redo02Icon,
+	Clock01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { OcRippleIcon } from "@/components/icons";
 import { GraphEditorPopover } from "./graph-editor/popover";
 import { PopoverTrigger } from "@/components/ui/popover";
 import { useGraphEditorController } from "./graph-editor/use-controller";
+import { HistoryPopover } from "./history-popover";
 
 export function TimelineToolbar({
 	zoomLevel,
@@ -87,6 +91,8 @@ export function TimelineToolbar({
 
 function ToolbarLeftSection() {
 	const editor = useEditor();
+	const canUndo = useEditor((e) => e.command.canUndo());
+	const canRedo = useEditor((e) => e.command.canRedo());
 	const mediaAssets = useEditor((currentEditor) =>
 		currentEditor.media.getAssets(),
 	);
@@ -142,6 +148,32 @@ function ToolbarLeftSection() {
 	return (
 		<div className="flex items-center gap-1">
 			<TooltipProvider delayDuration={500}>
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={Undo02Icon} />}
+					tooltip="撤销"
+					disabled={!canUndo}
+					onClick={() => editor.command.undo()}
+				/>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={Redo02Icon} />}
+					tooltip="重做"
+					disabled={!canRedo}
+					onClick={() => editor.command.redo()}
+				/>
+
+				<HistoryPopover>
+					<ToolbarButton
+						icon={<HugeiconsIcon icon={Clock01Icon} />}
+						tooltip="编辑历史"
+						buttonWrapper={(button) => (
+							<PopoverTrigger asChild>{button}</PopoverTrigger>
+						)}
+					/>
+				</HistoryPopover>
+
+				<div className="bg-border mx-1 h-6 w-px" />
+
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={ScissorIcon} />}
 					tooltip="Split element"

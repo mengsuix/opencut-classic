@@ -28,6 +28,10 @@ export class MoveElementCommand extends Command {
 		super();
 		this.moves = moves;
 		this.createTracks = createTracks;
+		this.affectedElementRefs = moves.map((move) => ({
+			trackId: move.sourceTrackId,
+			elementId: move.elementId,
+		}));
 	}
 
 	private readonly moves: PlannedElementMove[];

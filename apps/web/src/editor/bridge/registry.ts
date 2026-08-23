@@ -935,19 +935,42 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"history.undo": {
-		description: "Undo the last command.",
+		description:
+			"Undo the last command. Returns the label of the undone command.",
 		run: ({ editor }) => {
-			editor.command.undo();
-			return { canUndo: editor.command.canUndo() };
+			const entry = editor.command.undo();
+			return {
+				undone: entry?.label ?? null,
+				canUndo: editor.command.canUndo(),
+			};
 		},
 	},
 
 	"history.redo": {
-		description: "Redo the last undone command.",
+		description:
+			"Redo the last undone command. Returns the label of the redone command.",
 		run: ({ editor }) => {
-			editor.command.redo();
-			return { canRedo: editor.command.canRedo() };
+			const entry = editor.command.redo();
+			return {
+				redone: entry?.label ?? null,
+				canRedo: editor.command.canRedo(),
+			};
 		},
+	},
+
+	"history.list": {
+		description:
+			"List the undo history (oldest first) with command labels, affected element names (targets), sources (user/agent) and timestamps, plus the number of redoable commands.",
+		run: ({ editor }) => ({
+			history: editor.command.getHistory().map((entry, index) => ({
+				index,
+				label: entry.label,
+				targets: entry.targets ?? [],
+				source: entry.source,
+				timestamp: entry.timestamp,
+			})),
+			redoCount: editor.command.getRedoStack().length,
+		}),
 	},
 
 	"scenes.list": {

@@ -1,24 +1,90 @@
 import type { EditorCore } from "@/core";
+import { describeElementTarget } from "@/commands/base-command";
 import type { Command, CommandResult } from "@/commands";
 import type { EditorSelectionSnapshot } from "@/selection/editor-selection";
 import { applyRippleAdjustments, computeRippleAdjustments } from "@/ripple";
 import type { SceneTracks } from "@/timeline/types";
 
-interface CommandHistoryEntry {
+export interface CommandHistoryEntry {
 	command: Command;
 	previousSelection: EditorSelectionSnapshot;
 	selectionOverride?: EditorSelectionSnapshot;
+	label: string;
+	source: "user" | "agent";
+	timestamp: number;
+	targets?: string[];
+}
+
+export interface CommandExecutionMeta {
+	source: "user" | "agent";
+	label?: string;
 }
 
 export class CommandManager {
 	public isRippleEnabled = false;
+	/** Set by the bridge before running a command so history entries are
+	 *  attributed correctly. Cleared by the caller in a finally block. */
+	public currentMeta: CommandExecutionMeta | null = null;
 	private history: CommandHistoryEntry[] = [];
 	private redoStack: CommandHistoryEntry[] = [];
 	private reactors: Array<() => void> = [];
+	private listeners = new Set<() => void>();
 
 	constructor(private editor: EditorCore) {}
 
+	private buildEntry({
+		command,
+		previousSelection,
+		selectionOverride,
+		targets,
+	}: {
+		command: Command;
+		previousSelection: EditorSelectionSnapshot;
+		selectionOverride?: EditorSelectionSnapshot;
+		targets?: string[];
+	}): CommandHistoryEntry {
+		return {
+			command,
+			previousSelection,
+			...(selectionOverride !== undefined ? { selectionOverride } : {}),
+			...(targets !== undefined ? { targets } : {}),
+			label: this.currentMeta?.label ?? command.constructor.name,
+			source: this.currentMeta?.source ?? "user",
+			timestamp: Date.now(),
+		};
+	}
+
+	/** Resolve the command's target elements to display names. Must be called
+	 *  before execution — delete-type commands remove their targets. */
+	private describeTargets(command: Command): string[] | undefined {
+		if (command.historyDetail) {
+			return [command.historyDetail];
+		}
+		const refs = command.affectedElementRefs;
+		if (!refs || refs.length === 0) {
+			return undefined;
+		}
+		const tracks = this.editor.scenes.getActiveSceneOrNull()?.tracks;
+		if (!tracks) {
+			return undefined;
+		}
+		const allTracks = [tracks.main, ...tracks.overlay, ...tracks.audio];
+		const names: string[] = [];
+		for (const ref of refs) {
+			const track = allTracks.find((item) => item.id === ref.trackId);
+			const element = track?.elements.find(
+				(item) => item.id === ref.elementId,
+			);
+			if (!element) {
+				continue;
+			}
+			names.push(describeElementTarget(element));
+		}
+		return names.length > 0 ? [...new Set(names)] : undefined;
+	}
+
 	execute({ command }: { command: Command }): Command {
+		const targets = this.describeTargets(command);
 		const beforeTracks = this.isRippleEnabled
 			? (this.editor.scenes.getActiveSceneOrNull()?.tracks ?? null)
 			: null;
@@ -27,29 +93,39 @@ export class CommandManager {
 		this.applyRippleIfEnabled({ beforeTracks });
 		const selectionOverride = this.applySelectionOverride(result);
 		this.runReactors();
-		this.history.push({
-			command,
-			previousSelection,
-			selectionOverride,
-		});
+		this.history.push(
+			this.buildEntry({
+				command,
+				previousSelection,
+				selectionOverride,
+				targets,
+			}),
+		);
 		this.redoStack = [];
+		this.notify();
 		return command;
 	}
 
 	push({ command }: { command: Command }): void {
-		this.history.push({
-			command,
-			previousSelection: this.getSelectionSnapshot(),
-		});
+		// Best-effort: the command already ran, so delete-type targets are gone.
+		const targets = this.describeTargets(command);
+		this.history.push(
+			this.buildEntry({
+				command,
+				previousSelection: this.getSelectionSnapshot(),
+				targets,
+			}),
+		);
 		this.redoStack = [];
+		this.notify();
 	}
 
 	registerReactor(reactor: () => void): void {
 		this.reactors.push(reactor);
 	}
 
-	undo(): void {
-		if (this.history.length === 0) return;
+	undo(): CommandHistoryEntry | undefined {
+		if (this.history.length === 0) return undefined;
 		const entry = this.history.pop();
 		entry?.command.undo();
 		if (entry) {
@@ -65,13 +141,15 @@ export class CommandManager {
 			}
 			this.redoStack.push(entry);
 		}
+		this.notify();
+		return entry;
 	}
 
-	redo(): void {
-		if (this.redoStack.length === 0) return;
+	redo(): CommandHistoryEntry | undefined {
+		if (this.redoStack.length === 0) return undefined;
 		const entry = this.redoStack.pop();
 		if (!entry) {
-			return;
+			return undefined;
 		}
 
 		const beforeTracks = this.isRippleEnabled
@@ -83,11 +161,48 @@ export class CommandManager {
 		const selectionOverride = this.applySelectionOverride(result);
 		this.runReactors();
 
-		this.history.push({
+		const rebuilt = this.buildEntry({
 			command: entry.command,
 			previousSelection,
 			selectionOverride,
 		});
+		rebuilt.label = entry.label;
+		rebuilt.source = entry.source;
+		this.history.push(rebuilt);
+		this.notify();
+		return entry;
+	}
+
+	/** Jump to a history position: 0 = nothing applied, history.length = all
+	 *  applied. Undoes or redoes as needed. */
+	jumpTo({ targetLength }: { targetLength: number }): void {
+		const total = this.history.length + this.redoStack.length;
+		const clamped = Math.max(0, Math.min(targetLength, total));
+		while (this.history.length > clamped) {
+			this.undo();
+		}
+		while (this.history.length < clamped && this.redoStack.length > 0) {
+			this.redo();
+		}
+	}
+
+	getHistory(): readonly CommandHistoryEntry[] {
+		return this.history;
+	}
+
+	getRedoStack(): readonly CommandHistoryEntry[] {
+		return this.redoStack;
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private notify(): void {
+		for (const listener of this.listeners) {
+			listener();
+		}
 	}
 
 	canUndo(): boolean {
@@ -101,6 +216,7 @@ export class CommandManager {
 	clear(): void {
 		this.history = [];
 		this.redoStack = [];
+		this.notify();
 	}
 
 	private getSelectionSnapshot(): EditorSelectionSnapshot {

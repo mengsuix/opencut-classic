@@ -22,6 +22,7 @@ export class DuplicateElementsCommand extends Command {
 	constructor({ elements }: DuplicateElementsParams) {
 		super();
 		this.elements = elements;
+		this.affectedElementRefs = elements;
 	}
 
 	execute(): CommandResult | undefined {

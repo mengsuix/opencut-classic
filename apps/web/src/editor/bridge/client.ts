@@ -40,16 +40,24 @@ export function startEditorCommandBridge(): () => void {
 				);
 			}
 			const editor = EditorCore.getInstance();
-			const result = await definition.run({
-				editor,
-				args: request.args ?? {},
-			});
-			respond({
-				type: "response",
-				id: request.id,
-				ok: true,
-				result: result ?? null,
-			});
+			// Attribute any commands pushed during this run to the agent in the
+			// undo history. Best-effort: concurrent bridge requests may overwrite
+			// each other's meta (MCP clients typically call tools sequentially).
+			editor.command.currentMeta = { source: "agent", label: request.command };
+			try {
+				const result = await definition.run({
+					editor,
+					args: request.args ?? {},
+				});
+				respond({
+					type: "response",
+					id: request.id,
+					ok: true,
+					result: result ?? null,
+				});
+			} finally {
+				editor.command.currentMeta = null;
+			}
 		} catch (error) {
 			respond({
 				type: "response",

@@ -38,6 +38,7 @@ export function useEditor<T>(
 				editor.selection.subscribe(onChange),
 				editor.clipboard.subscribe(onChange),
 				editor.diagnostics.subscribe(onChange),
+				editor.command.subscribe(onChange),
 			];
 			return () => {
 				unsubscribers.forEach((unsubscribe) => {

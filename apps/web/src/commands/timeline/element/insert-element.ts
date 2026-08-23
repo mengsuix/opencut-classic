@@ -1,4 +1,8 @@
-import { Command, type CommandResult } from "@/commands/base-command";
+import {
+	Command,
+	describeElementTarget,
+	type CommandResult,
+} from "@/commands/base-command";
 import { EditorCore } from "@/core";
 import type {
 	CreateTimelineElement,
@@ -39,6 +43,7 @@ export class InsertElementCommand extends Command {
 		this.elementId = generateUUID();
 		this.element = element;
 		this.placement = placement;
+		this.historyDetail = describeElementTarget(element);
 	}
 
 	private element: CreateTimelineElement;

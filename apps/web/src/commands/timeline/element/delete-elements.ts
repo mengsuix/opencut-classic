@@ -32,6 +32,7 @@ export class DeleteElementsCommand extends Command {
 	}) {
 		super();
 		this.elements = elements;
+		this.affectedElementRefs = elements;
 	}
 
 	execute(): CommandResult | undefined {

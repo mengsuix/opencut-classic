@@ -26,6 +26,10 @@ export class UpdateElementsCommand extends Command {
 	}) {
 		super();
 		this.updates = updates;
+		this.affectedElementRefs = updates.map(({ trackId, elementId }) => ({
+			trackId,
+			elementId,
+		}));
 	}
 
 	execute(): CommandResult | undefined {

@@ -34,6 +34,7 @@ export class SplitElementsCommand extends Command {
 	}) {
 		super();
 		this.elements = elements;
+		this.affectedElementRefs = elements;
 		this.splitTime = splitTime;
 		this.retainSide = retainSide;
 	}
