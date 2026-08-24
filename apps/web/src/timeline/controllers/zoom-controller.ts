@@ -1,7 +1,6 @@
 import type { WheelEvent as ReactWheelEvent } from "react";
 import { TIMELINE_ZOOM_ANCHOR_PLAYHEAD_THRESHOLD } from "@/timeline/components/interaction";
 import { timelineTimeToPixels } from "@/timeline/pixel-utils";
-import { TIMELINE_ZOOM_MAX } from "@/timeline/scale";
 import { zoomToSlider } from "@/timeline/zoom-utils";
 import type { MediaTime } from "@/wasm";
 
@@ -9,6 +8,7 @@ type ZoomUpdater = number | ((prev: number) => number);
 
 export interface ZoomConfig {
 	minZoom: number;
+	maxZoom: number;
 	getContainerEl: () => HTMLDivElement | null;
 	getTracksScrollEl: () => HTMLDivElement | null;
 	getRulerScrollEl: () => HTMLDivElement | null;
@@ -28,11 +28,14 @@ export interface ZoomConfigRef {
 function clampZoom({
 	zoomLevel,
 	minZoom,
+	maxZoom,
 }: {
 	zoomLevel: number;
 	minZoom: number;
+	maxZoom: number;
 }): number {
-	return Math.max(minZoom, Math.min(TIMELINE_ZOOM_MAX, zoomLevel));
+	const safeMax = Math.max(minZoom, maxZoom);
+	return Math.max(minZoom, Math.min(safeMax, zoomLevel));
 }
 
 export class ZoomController {
@@ -55,7 +58,11 @@ export class ZoomController {
 		const minZoom = this.config.minZoom;
 		this.zoomLevelValue =
 			deps.initialZoom !== undefined
-				? clampZoom({ zoomLevel: deps.initialZoom, minZoom })
+				? clampZoom({
+						zoomLevel: deps.initialZoom,
+						minZoom,
+						maxZoom: this.config.maxZoom,
+					})
 				: minZoom;
 		this.previousZoom = this.zoomLevelValue;
 		this.hasInitialized = deps.initialZoom !== undefined;
@@ -98,6 +105,7 @@ export class ZoomController {
 		const nextZoom = clampZoom({
 			zoomLevel: nextZoomRaw,
 			minZoom: this.config.minZoom,
+			maxZoom: this.config.maxZoom,
 		});
 		if (nextZoom === this.zoomLevelValue) return;
 
@@ -126,19 +134,29 @@ export class ZoomController {
 
 	reconcileInitialAndMinZoom({
 		minZoom,
+		maxZoom,
 		initialZoom,
 	}: {
 		minZoom: number;
+		maxZoom: number;
 		initialZoom?: number;
 	}): void {
 		if (initialZoom !== undefined && !this.hasInitialized) {
 			this.hasInitialized = true;
-			this.setZoomLevel(clampZoom({ zoomLevel: initialZoom, minZoom }));
+			this.setZoomLevel(
+				clampZoom({ zoomLevel: initialZoom, minZoom, maxZoom }),
+			);
 			return;
 		}
 
 		if (this.zoomLevelValue < minZoom) {
 			this.setZoomLevel(minZoom);
+			return;
+		}
+
+		// Duration can grow after media loads, shrinking the allowed max.
+		if (this.zoomLevelValue > maxZoom) {
+			this.setZoomLevel(maxZoom);
 		}
 	}
 
@@ -157,10 +175,12 @@ export class ZoomController {
 		const sliderPercent = zoomToSlider({
 			zoomLevel,
 			minZoom: this.config.minZoom,
+			maxZoom: this.config.maxZoom,
 		});
 		const previousSliderPercent = zoomToSlider({
 			zoomLevel: previousZoom,
 			minZoom: this.config.minZoom,
+			maxZoom: this.config.maxZoom,
 		});
 		const isCrossingThresholdUp =
 			previousSliderPercent < TIMELINE_ZOOM_ANCHOR_PLAYHEAD_THRESHOLD &&

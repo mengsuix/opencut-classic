@@ -1,14 +1,7 @@
 "use client";
 
-import { useRef } from "react";
 import { useContainerSize } from "@/hooks/use-container-size";
-import {
-	getCenteredLineLeft,
-	TIMELINE_INDICATOR_LINE_WIDTH_PX,
-	timelineTimeToSnappedPixels,
-} from "@/timeline";
-import { useScrollPosition } from "@/timeline/hooks/use-scroll-position";
-import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
+import { TIMELINE_INDICATOR_LINE_WIDTH_PX } from "@/timeline";
 import {
 	addMediaTime,
 	maxMediaTime,
@@ -22,46 +15,39 @@ import { TIMELINE_SCROLLBAR_SIZE_PX } from "./layout";
 import { TIMELINE_LAYERS } from "./layers";
 
 interface TimelinePlayheadProps {
-	zoomLevel: number;
 	hasHorizontalScrollbar: boolean;
-	rulerRef: React.RefObject<HTMLDivElement | null>;
-	rulerScrollRef: React.RefObject<HTMLDivElement | null>;
 	tracksScrollRef: React.RefObject<HTMLDivElement | null>;
 	timelineRef: React.RefObject<HTMLDivElement | null>;
-	playheadRef?: React.RefObject<HTMLDivElement | null>;
+	playheadRef: React.RefObject<HTMLDivElement | null>;
+	onPlayheadMouseDown: (event: React.MouseEvent) => void;
 	isSnappingToPlayhead?: boolean;
 }
 
+/**
+ * Renders the playhead shell only. Its horizontal position is owned entirely by
+ * `PlayheadController`, which writes `style.left` imperatively on scroll and
+ * playback ticks. Deriving `left` from React state here as well would fight the
+ * controller: React commits land a frame later with a staler scroll offset,
+ * which is what made the line visibly lag behind the cursor.
+ */
 export function TimelinePlayhead({
-	zoomLevel,
 	hasHorizontalScrollbar,
-	rulerRef,
-	rulerScrollRef,
 	tracksScrollRef,
 	timelineRef,
-	playheadRef: externalPlayheadRef,
+	playheadRef,
+	onPlayheadMouseDown,
 	isSnappingToPlayhead = false,
 }: TimelinePlayheadProps) {
 	const editor = useEditor();
 	const duration = editor.timeline.getTotalDuration();
-	const internalPlayheadRef = useRef<HTMLDivElement>(null);
-	const playheadRef = externalPlayheadRef || internalPlayheadRef;
-
-	const { handlePlayheadMouseDown } = useTimelinePlayhead({
-		zoomLevel,
-		rulerRef,
-		rulerScrollRef,
-		tracksScrollRef,
-		playheadRef,
+	const { height: timelineHeight } = useContainerSize({
+		containerRef: timelineRef,
 	});
-	const { height: timelineHeight } = useContainerSize({ containerRef: timelineRef });
 	const { height: tracksHeight } = useContainerSize({
 		containerRef: tracksScrollRef,
 	});
-	const { scrollLeft } = useScrollPosition({ scrollRef: tracksScrollRef });
 
-	const timelineContainerHeight =
-		timelineHeight || tracksHeight || 400;
+	const timelineContainerHeight = timelineHeight || tracksHeight || 400;
 	const totalHeight = Math.max(
 		0,
 		timelineContainerHeight -
@@ -69,12 +55,6 @@ export function TimelinePlayhead({
 	);
 
 	const currentTime = editor.playback.getCurrentTime();
-	const centerPosition = timelineTimeToSnappedPixels({
-		time: currentTime,
-		zoomLevel,
-	});
-	const leftPosition =
-		getCenteredLineLeft({ centerPixel: centerPosition }) - scrollLeft;
 
 	const handlePlayheadKeyDown = (
 		event: React.KeyboardEvent<HTMLDivElement>,
@@ -114,7 +94,6 @@ export function TimelinePlayhead({
 			tabIndex={0}
 			className="pointer-events-none absolute"
 			style={{
-				left: `${leftPosition}px`,
 				top: 0,
 				height: `${totalHeight}px`,
 				width: `${TIMELINE_INDICATOR_LINE_WIDTH_PX}px`,
@@ -128,7 +107,7 @@ export function TimelinePlayhead({
 				type="button"
 				aria-label="Drag playhead"
 				className={`pointer-events-auto absolute top-1 left-1/2 size-3 -translate-x-1/2 transform cursor-col-resize rounded-full border-2 shadow-xs ${isSnappingToPlayhead ? "bg-primary border-primary" : "bg-primary border-primary/50"}`}
-				onMouseDown={handlePlayheadMouseDown}
+				onMouseDown={onPlayheadMouseDown}
 			/>
 		</div>
 	);

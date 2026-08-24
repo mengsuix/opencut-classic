@@ -6,14 +6,21 @@ import { TIMELINE_RULER_HEIGHT_PX } from "./layout";
 import { DEFAULT_FPS } from "@/fps/defaults";
 import { useEditor } from "@/editor/use-editor";
 import { getRulerConfig, shouldShowLabel } from "@/timeline/ruler-utils";
-import { useScrollPosition } from "@/timeline/hooks/use-scroll-position";
+import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { TimelineTick } from "./timeline-tick";
+
+/**
+ * Fixed overscan in pixels. This used to be a fraction of `scrollLeft`, which
+ * meant the buffer — and therefore the number of rendered ticks — grew without
+ * bound as you scrolled into a long timeline. A constant keeps tick count a
+ * function of viewport width only.
+ */
+const RULER_OVERSCAN_PX = 400;
 
 interface TimelineRulerProps {
 	zoomLevel: number;
 	dynamicTimelineWidth: number;
 	rulerRef: React.Ref<HTMLDivElement>;
-	tracksScrollRef: React.RefObject<HTMLElement | null>;
 	handleWheel: (e: React.WheelEvent) => void;
 	handleTimelineContentClick: (e: React.MouseEvent) => void;
 	handleRulerTrackingMouseDown: (e: React.MouseEvent) => void;
@@ -24,7 +31,6 @@ export function TimelineRuler({
 	zoomLevel,
 	dynamicTimelineWidth,
 	rulerRef,
-	tracksScrollRef,
 	handleWheel,
 	handleTimelineContentClick,
 	handleRulerTrackingMouseDown,
@@ -47,20 +53,14 @@ export function TimelineRuler({
 	const tickCount =
 		Math.ceil(effectiveDurationSeconds / tickIntervalSeconds) + 1;
 
-	const { scrollLeft, viewportWidth } = useScrollPosition({
-		scrollRef: tracksScrollRef,
-	});
-
-	// Keep extra buffer because zoom layout and scroll position can briefly
-	// settle on different frames.
-	const bufferPx = Math.max(200, (scrollLeft + viewportWidth) * 0.15);
+	const { scrollLeft, viewportWidth } = useQuantizedTimelineViewport();
 
 	const visibleStartTimeSeconds = Math.max(
 		0,
-		(scrollLeft - bufferPx) / pixelsPerSecond,
+		(scrollLeft - RULER_OVERSCAN_PX) / pixelsPerSecond,
 	);
 	const visibleEndTimeSeconds =
-		(scrollLeft + viewportWidth + bufferPx) / pixelsPerSecond;
+		(scrollLeft + viewportWidth + RULER_OVERSCAN_PX) / pixelsPerSecond;
 
 	const startTickIndex = Math.max(
 		0,

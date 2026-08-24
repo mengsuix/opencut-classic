@@ -21,6 +21,7 @@ import {
 } from "@/timeline";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import type { Bookmark, SceneTracks } from "@/timeline";
+import type { SnapPoint } from "@/timeline/snapping";
 
 // --- Session ---
 
@@ -32,6 +33,13 @@ interface ScrubSession {
 	hasMoved: boolean;
 	/** Most recent frame-snapped time set by scrub(). */
 	currentTime: MediaTime | null;
+	/**
+	 * Snap points captured once at gesture start. Rebuilding them per mousemove
+	 * walks every element edge, bookmark and keyframe in the scene, which turns
+	 * scrubbing into an O(elements) cost per frame. The timeline cannot change
+	 * mid-scrub, so a single snapshot is equivalent.
+	 */
+	snapPoints: SnapPoint[] | null;
 }
 
 type Session = { kind: "idle" } | ScrubSession;
@@ -134,6 +142,7 @@ export class PlayheadController {
 			didStartFromRuler: false,
 			hasMoved: false,
 			currentTime: null,
+			snapPoints: this.buildSnapPoints(),
 		};
 		this.config.setScrubbing(true);
 		this.scrub({ event, isElementSnappingEnabled: true });
@@ -150,6 +159,7 @@ export class PlayheadController {
 			didStartFromRuler: true,
 			hasMoved: false,
 			currentTime: null,
+			snapPoints: this.buildSnapPoints(),
 		};
 		this.config.setScrubbing(true);
 		// No element-edge snapping on initial ruler click — avoids a jarring jump.
@@ -172,8 +182,19 @@ export class PlayheadController {
 			time,
 			zoomLevel: this.config.zoomLevel,
 		});
-		const scrollLeft = this.config.getRulerScrollEl()?.scrollLeft ?? 0;
+		// The tracks area is the element the user actually scrolls; the ruler is a
+		// follower that is synced from it, so reading tracks avoids a one-frame
+		// stale offset when both are updated in the same tick.
+		const scrollLeft =
+			this.config.getTracksScrollEl()?.scrollLeft ??
+			this.config.getRulerScrollEl()?.scrollLeft ??
+			0;
 		playheadEl.style.left = `${getCenteredLineLeft({ centerPixel }) - scrollLeft}px`;
+	}
+
+	/** Repositions the playhead against the current playback time. */
+	syncToCurrentTime(time: MediaTime): void {
+		this.updatePlayheadLeft(time);
 	}
 
 	/**
@@ -224,6 +245,22 @@ export class PlayheadController {
 		window.removeEventListener("mouseup", this.handleMouseUp);
 	}
 
+	private buildSnapPoints(): SnapPoint[] {
+		return buildTimelineSnapPoints({
+			sources: [
+				() => getElementEdgeSnapPoints({ tracks: this.config.getSceneTracks() }),
+				() =>
+					getBookmarkSnapPoints({
+						bookmarks: this.config.getSceneBookmarks(),
+					}),
+				() =>
+					getAnimationKeyframeSnapPointsForTimeline({
+						tracks: this.config.getSceneTracks(),
+					}),
+			],
+		});
+	}
+
 	/**
 	 * Converts pointer position to a frame-snapped timeline time and seeks.
 	 * `isElementSnappingEnabled` controls element-edge snapping; frame-level snapping
@@ -255,20 +292,10 @@ export class PlayheadController {
 			if (!isElementSnappingEnabled || this.config.isShiftHeld())
 				return frameTime;
 
-			const snapPoints = buildTimelineSnapPoints({
-				sources: [
-					() =>
-						getElementEdgeSnapPoints({ tracks: this.config.getSceneTracks() }),
-					() =>
-						getBookmarkSnapPoints({
-							bookmarks: this.config.getSceneBookmarks(),
-						}),
-					() =>
-						getAnimationKeyframeSnapPointsForTimeline({
-							tracks: this.config.getSceneTracks(),
-						}),
-				],
-			});
+			const snapPoints =
+				this.session.kind === "scrubbing" && this.session.snapPoints
+					? this.session.snapPoints
+					: this.buildSnapPoints();
 			const result = resolveTimelineSnap({
 				targetTime: frameTime,
 				snapPoints,

@@ -15,20 +15,6 @@ export function downloadBlob({
 	URL.revokeObjectURL(url);
 }
 
-export function findScrollParent({
-	element,
-}: {
-	element: HTMLElement;
-}): HTMLElement | null {
-	let parent = element.parentElement;
-	while (parent) {
-		const { overflow, overflowX } = window.getComputedStyle(parent);
-		if (/auto|scroll/.test(overflow + overflowX)) return parent;
-		parent = parent.parentElement;
-	}
-	return null;
-}
-
 export function isTypableDOMElement({
 	element,
 }: {

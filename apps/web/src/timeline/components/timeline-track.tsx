@@ -1,11 +1,20 @@
 "use client";
 
+import { useMemo } from "react";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { TimelineElement } from "./timeline-element";
 import type { TimelineTrack } from "@/timeline";
 import type { TimelineElement as TimelineElementType } from "@/timeline";
 import { TIMELINE_LAYERS } from "./layers";
 import type { ElementDragView } from "@/timeline";
+import { timelineTimeToPixels } from "@/timeline/pixel-utils";
+import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
+
+/**
+ * Elements this far outside the viewport are still mounted, so a fast scroll
+ * doesn't reveal empty space before the next quantized update lands.
+ */
+const TRACK_ELEMENT_OVERSCAN_PX = 1024;
 
 interface TimelineTrackContentProps {
 	track: TimelineTrack;
@@ -46,6 +55,39 @@ export function TimelineTrackContent({
 	targetElementId = null,
 }: TimelineTrackContentProps) {
 	const { isElementSelected } = useElementSelection();
+	const { scrollLeft, viewportWidth } = useQuantizedTimelineViewport();
+
+	// Only mount elements that intersect the visible window. Keeps DOM size a
+	// function of viewport width instead of clip count.
+	const visibleElements = useMemo(() => {
+		if (viewportWidth <= 0) return track.elements;
+
+		const windowLeft = scrollLeft - TRACK_ELEMENT_OVERSCAN_PX;
+		const windowRight = scrollLeft + viewportWidth + TRACK_ELEMENT_OVERSCAN_PX;
+
+		return track.elements.filter((element) => {
+			const left = timelineTimeToPixels({
+				time: element.startTime,
+				zoomLevel,
+			});
+			const right =
+				left + timelineTimeToPixels({ time: element.duration, zoomLevel });
+			return right >= windowLeft && left <= windowRight;
+		});
+	}, [track.elements, zoomLevel, scrollLeft, viewportWidth]);
+
+	// A dragged element must stay mounted even when its committed position is far
+	// offscreen, since its rendered position follows the pointer.
+	const renderedElements = useMemo(() => {
+		if (dragView.kind !== "dragging") return visibleElements;
+
+		const included = new Set(visibleElements.map((element) => element.id));
+		const dragged = track.elements.filter(
+			(element) =>
+				dragView.memberTimeOffsets.has(element.id) && !included.has(element.id),
+		);
+		return dragged.length > 0 ? [...visibleElements, ...dragged] : visibleElements;
+	}, [visibleElements, dragView, track.elements]);
 
 	return (
 		<div className="relative size-full">
@@ -80,7 +122,7 @@ export function TimelineTrackContent({
 				{track.elements.length === 0 ? (
 					<div className="text-muted-foreground border-muted/30 pointer-events-none flex size-full items-center justify-center rounded-sm border-2 border-dashed text-xs" />
 				) : (
-					track.elements.map((element) => {
+					renderedElements.map((element) => {
 						const isSelected = isElementSelected({
 							trackId: track.id,
 							elementId: element.id,

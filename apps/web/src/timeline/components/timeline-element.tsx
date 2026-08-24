@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useAssetsPanelStore } from "@/components/editor/panels/assets/assets-panel-store";
 import { AudioWaveform, WAVEFORM_GAIN_SAMPLE_COUNT } from "./audio-waveform";
@@ -60,7 +60,8 @@ import {
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { resolveStickerId } from "@/stickers";
 import { buildGraphicPreviewUrl } from "@/graphics";
-import { useVideoFilmstrip } from "@/media/use-video-filmstrip";
+import { useWindowedFilmstrip } from "@/media/use-windowed-filmstrip";
+import { useElementVisibleWindow } from "@/timeline/hooks/use-element-visible-window";
 import { getSourceTimeAtClipTime } from "@/retime";
 import Image from "next/image";
 import {
@@ -405,6 +406,8 @@ export function TimelineElement({
 							onElementMouseDown={onElementMouseDown}
 							onResizeStart={onResizeStart}
 							isDropTarget={isDropTarget}
+							elementWidthPx={elementWidth}
+							elementLeftPx={elementLeft}
 						/>
 						{isSelected && (
 							<div
@@ -525,6 +528,8 @@ function ElementInner({
 	onElementMouseDown,
 	onResizeStart,
 	isDropTarget = false,
+	elementWidthPx,
+	elementLeftPx,
 }: {
 	element: TimelineElementType;
 	displayElement?: TimelineElementType;
@@ -548,6 +553,8 @@ function ElementInner({
 		side: "left" | "right";
 	}) => void;
 	isDropTarget?: boolean;
+	elementWidthPx: number;
+	elementLeftPx: number;
 }) {
 	const visibleElement = displayElement ?? element;
 	const isReducedOpacity =
@@ -597,7 +604,12 @@ function ElementInner({
 							style={{ height: `${baseTrackHeight}px` }}
 						>
 							<div className="flex flex-1 min-h-0 h-full items-center overflow-hidden">
-								<ElementContent element={visibleElement} track={track} />
+								<ElementContent
+									element={visibleElement}
+									track={track}
+									elementWidthPx={elementWidthPx}
+									elementLeftPx={elementLeftPx}
+								/>
 							</div>
 						</div>
 						{expandedContent}
@@ -901,6 +913,8 @@ function ExpandedKeyframeLanes({
 interface ElementContentProps {
 	element: TimelineElementType;
 	track: TimelineTrack;
+	elementWidthPx: number;
+	elementLeftPx: number;
 }
 
 function TextElementContent({
@@ -983,9 +997,13 @@ function GraphicElementContent({
 function AudioElementContent({
 	element,
 	trackId,
+	elementWidthPx,
+	elementLeftPx,
 }: {
 	element: AudioElement;
 	trackId: string;
+	elementWidthPx: number;
+	elementLeftPx: number;
 }) {
 	const pixelsPerSecond = useContext(PixelsPerSecondContext);
 	if (pixelsPerSecond === null) {
@@ -1033,6 +1051,8 @@ function AudioElementContent({
 						clipDurationSec={element.duration / TICKS_PER_SECOND}
 						retime={element.retime}
 						sourceStartSec={element.trimStart / TICKS_PER_SECOND}
+						elementLeftPx={elementLeftPx}
+						elementWidthPx={elementWidthPx}
 						color={TIMELINE_TRACK_THEME.audio.waveformColor}
 					/>
 					<AudioVolumeLine element={element} trackId={trackId} />
@@ -1086,9 +1106,13 @@ function EffectsButton({
 function TiledMediaContent({
 	element,
 	track,
+	elementWidthPx,
+	elementLeftPx,
 }: {
 	element: VideoElement | ImageElement;
 	track: TimelineTrack;
+	elementWidthPx: number;
+	elementLeftPx: number;
 }) {
 	const mediaAssets = useEditor((e) => e.media.getAssets());
 	const mediaAsset = mediaAssets.find((asset) => asset.id === element.mediaId);
@@ -1103,6 +1127,8 @@ function TiledMediaContent({
 					startTime={element.trimStart / TICKS_PER_SECOND}
 					endTime={getVisibleSourceEndSeconds({ element })}
 					tileWidth={getTrackHeight({ type: track.type }) * THUMBNAIL_ASPECT_RATIO}
+					elementWidthPx={elementWidthPx}
+					elementLeftPx={elementLeftPx}
 				/>
 			) : (
 				<StaticMediaContent
@@ -1141,10 +1167,16 @@ function getVisibleSourceEndSeconds({
 	return (element.trimStart + visibleSourceSpan) / TICKS_PER_SECOND;
 }
 
-// Bounds the decode cost of a single strip; beyond this the tiles just get
-// wider than the target instead of decoding more frames.
-const MAX_FILMSTRIP_FRAMES = 32;
-
+/**
+ * Renders thumbnails for the visible slice of a clip only.
+ *
+ * Previously this laid out a fixed 32 tiles stretched with `flex-1` across the
+ * element's full width. On a one-hour clip at high zoom each tile became tens of
+ * thousands of pixels wide, which both blurred the image and forced the
+ * compositor to rasterize enormous boxes — the main cause of deep-zoom stutter.
+ * Now tiles are a constant physical size and only cover the on-screen window, so
+ * cost is bounded by viewport width regardless of media duration or zoom.
+ */
 function VideoFilmstrip({
 	mediaId,
 	file,
@@ -1152,6 +1184,8 @@ function VideoFilmstrip({
 	startTime,
 	endTime,
 	tileWidth,
+	elementWidthPx,
+	elementLeftPx,
 }: {
 	mediaId: string;
 	file?: File;
@@ -1159,67 +1193,49 @@ function VideoFilmstrip({
 	startTime: number;
 	endTime: number;
 	tileWidth: number;
+	elementWidthPx: number;
+	elementLeftPx: number;
 }) {
-	const [container, setContainer] = useState<HTMLDivElement | null>(null);
-	const [width, setWidth] = useState(0);
+	const visibleWindow = useElementVisibleWindow({
+		elementLeftPx,
+		elementWidthPx,
+	});
 
-	useEffect(() => {
-		if (!container) {
-			return;
-		}
-		const observer = new ResizeObserver(([entry]) => {
-			if (entry) {
-				setWidth(entry.contentRect.width);
-			}
-		});
-		observer.observe(container);
-		return () => observer.disconnect();
-	}, [container]);
-
-	// Quantized by tile width: sub-tile width changes never change the count,
-	// so only meaningful zoom/resize steps trigger a regeneration.
-	const frameCount =
-		width > 0 && tileWidth > 0
-			? Math.min(
-					MAX_FILMSTRIP_FRAMES,
-					Math.max(1, Math.round(width / tileWidth)),
-				)
-			: 0;
-
-	const frames = useVideoFilmstrip({
+	const tiles = useWindowedFilmstrip({
 		mediaId,
 		file,
-		startTime,
-		endTime,
-		frameCount,
+		sourceStartSec: startTime,
+		sourceEndSec: endTime,
+		elementWidthPx,
+		windowLeftPx: visibleWindow.leftPx,
+		windowRightPx: visibleWindow.rightPx,
+		tileWidthPx: tileWidth,
 	});
+
+	if (!visibleWindow.isVisible) {
+		return null;
+	}
+
+	if (tiles.length === 0) {
+		return <StaticMediaContent imageUrl={fallbackUrl} />;
+	}
 
 	return (
 		<div
-			ref={setContainer}
-			className="absolute inset-0"
-			style={{ pointerEvents: "none" }}
+			className="absolute inset-0 overflow-hidden"
+			style={{ pointerEvents: "none", backgroundColor: "var(--muted)" }}
 		>
-			{frames.length === 0 ? (
-				<StaticMediaContent imageUrl={fallbackUrl} />
-			) : (
+			{tiles.map((tile) => (
 				<div
-					className="absolute inset-0 flex overflow-hidden"
-					style={{ backgroundColor: "var(--muted)" }}
-				>
-					{frames.map((frameUrl, index) => (
-						<div
-							key={index}
-							className="min-w-0 flex-1 bg-cover bg-center"
-							style={
-								frameUrl
-									? { backgroundImage: `url(${frameUrl})` }
-									: undefined
-							}
-						/>
-					))}
-				</div>
-			)}
+					key={tile.leftPx}
+					className="absolute top-0 bottom-0 bg-cover bg-center"
+					style={{
+						left: `${tile.leftPx}px`,
+						width: `${tile.widthPx}px`,
+						backgroundImage: tile.url ? `url(${tile.url})` : undefined,
+					}}
+				/>
+			))}
 		</div>
 	);
 }
@@ -1287,7 +1303,12 @@ function MediaElementHeader({
 	);
 }
 
-function ElementContent({ element, track }: ElementContentProps) {
+function ElementContent({
+	element,
+	track,
+	elementWidthPx,
+	elementLeftPx,
+}: ElementContentProps) {
 	switch (element.type) {
 		case "text":
 			return <TextElementContent element={element} />;
@@ -1298,10 +1319,24 @@ function ElementContent({ element, track }: ElementContentProps) {
 		case "graphic":
 			return <GraphicElementContent element={element} />;
 		case "audio":
-			return <AudioElementContent element={element} trackId={track.id} />;
+			return (
+				<AudioElementContent
+					element={element}
+					trackId={track.id}
+					elementWidthPx={elementWidthPx}
+					elementLeftPx={elementLeftPx}
+				/>
+			);
 		case "video":
 		case "image":
-			return <TiledMediaContent element={element} track={track} />;
+			return (
+				<TiledMediaContent
+					element={element}
+					track={track}
+					elementWidthPx={elementWidthPx}
+					elementLeftPx={elementLeftPx}
+				/>
+			);
 	}
 }
 

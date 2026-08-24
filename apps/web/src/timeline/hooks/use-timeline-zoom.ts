@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useCommittedRef } from "@/hooks/use-committed-ref";
-import { TIMELINE_ZOOM_MIN } from "@/timeline/scale";
+import { TIMELINE_ZOOM_MAX, TIMELINE_ZOOM_MIN } from "@/timeline/scale";
 import {
 	ZoomController,
 	type ZoomConfig,
@@ -18,6 +18,7 @@ import type { MediaTime } from "@/wasm";
 interface UseTimelineZoomProps {
 	containerRef: RefObject<HTMLDivElement | null>;
 	minZoom?: number;
+	maxZoom?: number;
 	initialZoom?: number;
 	initialScrollLeft?: number;
 	initialPlayheadTime?: MediaTime;
@@ -35,6 +36,7 @@ interface UseTimelineZoomReturn {
 export function useTimelineZoom({
 	containerRef,
 	minZoom = TIMELINE_ZOOM_MIN,
+	maxZoom = TIMELINE_ZOOM_MAX,
 	initialZoom,
 	initialScrollLeft,
 	initialPlayheadTime,
@@ -44,6 +46,7 @@ export function useTimelineZoom({
 	const editor = useEditor();
 	const config: ZoomConfig = {
 		minZoom,
+		maxZoom,
 		getContainerEl: () => containerRef.current,
 		getTracksScrollEl: () => tracksScrollRef.current,
 		getRulerScrollEl: () => rulerScrollRef.current,
@@ -68,8 +71,8 @@ export function useTimelineZoom({
 	useEffect(() => controller.subscribe(rerender), [controller]);
 
 	useEffect(() => {
-		controller.reconcileInitialAndMinZoom({ minZoom, initialZoom });
-	}, [controller, minZoom, initialZoom]);
+		controller.reconcileInitialAndMinZoom({ minZoom, maxZoom, initialZoom });
+	}, [controller, minZoom, maxZoom, initialZoom]);
 
 	useLayoutEffect(() => {
 		controller.applyZoomLayout(zoomLevel);

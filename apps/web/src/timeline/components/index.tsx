@@ -26,6 +26,7 @@ import { useTimelineZoom } from "@/timeline/hooks/use-timeline-zoom";
 import {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -53,13 +54,13 @@ import {
 	canTrackHaveAudio,
 	canTrackBeHidden,
 	getTimelineZoomMin,
+	getTimelineZoomMax,
 	getTimelinePaddingPx,
 } from "@/timeline";
 import { timelineTimeToPixels } from "@/timeline/pixel-utils";
 import {
 	getTrackHeight,
-	getCumulativeHeightBefore,
-	getTotalTracksHeight,
+	getTrackOffsets,
 } from "./track-layout";
 import { SELECTED_TRACK_ROW_CLASS } from "./theme";
 import {
@@ -83,7 +84,11 @@ import { useInitialScrollBottom } from "@/timeline/hooks/use-initial-scroll-bott
 import { useTimelineResize } from "@/timeline/hooks/use-timeline-resize";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditor } from "@/editor/use-editor";
-import { useScrollPosition } from "@/timeline/hooks/use-scroll-position";
+import {
+	useBindTimelineViewport,
+	useQuantizedTimelineViewport,
+} from "@/timeline/hooks/use-timeline-viewport";
+import { timelineViewport } from "@/timeline/viewport-store";
 import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
 import { DragLine } from "./drag-line";
 import { invokeAction } from "@/actions";
@@ -91,6 +96,7 @@ import { resolveTimelineElementIntersections } from "./selection-hit-testing";
 import { cn } from "@/utils/ui";
 
 const TRACKS_CONTAINER_MAX_HEIGHT = 800;
+
 const FALLBACK_CONTAINER_WIDTH = 1000;
 const TRACKS_CONTAINER_HEIGHT = { min: 0, max: TRACKS_CONTAINER_MAX_HEIGHT };
 const TRACK_ICONS: Record<TimelineTrack["type"], ReactNode> = {
@@ -158,9 +164,11 @@ export function Timeline() {
 	const { height: timelineHeaderHeightValue } = useContainerSize({
 		containerRef: timelineHeaderRef,
 	});
-	const { viewportWidth: tracksViewportWidth } = useScrollPosition({
-		scrollRef: tracksScrollRef,
-	});
+
+	// Single rAF-batched source of truth for scroll offset / viewport size. Every
+	// consumer reads from here instead of attaching its own scroll listener.
+	useBindTimelineViewport({ scrollRef: tracksScrollRef });
+	const { viewportWidth: tracksViewportWidth } = useQuantizedTimelineViewport();
 
 	const handleSnapPointChange = useCallback((snapPoint: SnapPoint | null) => {
 		setCurrentSnapPoint(snapPoint);
@@ -172,6 +180,9 @@ export function Timeline() {
 		duration: timelineDuration,
 		containerWidth,
 	});
+	// Caps the timeline's DOM width. Longer media trades maximum magnification for
+	// interaction cost that stays independent of duration.
+	const maxZoomLevel = getTimelineZoomMax({ duration: timelineDuration });
 
 	const savedViewState = editor.project.getTimelineViewState();
 
@@ -179,6 +190,7 @@ export function Timeline() {
 		useTimelineZoom({
 			containerRef: timelineRef,
 			minZoom: minZoomLevel,
+			maxZoom: maxZoomLevel,
 			initialZoom: savedViewState?.zoomLevel,
 			initialScrollLeft: savedViewState?.scrollLeft,
 			initialPlayheadTime: savedViewState?.playheadTime,
@@ -199,6 +211,12 @@ export function Timeline() {
 			return computeTrackExpansionHeight({ track, expandedElementIds });
 		},
 		[tracks, expandedElementIds],
+	);
+
+	// Prefix sums; deriving each track's offset independently is O(n²).
+	const trackLayout = useMemo(
+		() => getTrackOffsets({ tracks, getExtraHeight: getTrackExpansionHeight }),
+		[tracks, getTrackExpansionHeight],
 	);
 
 	// Stable refs so the wheel listener never goes stale
@@ -230,7 +248,6 @@ export function Timeline() {
 			trackLabelsScrollRef.current.scrollTop = tracks.scrollTop;
 		}
 	}, []);
-
 	// Single non-passive capture listener owns all wheel input. Prevents any
 	// native scroll or browser zoom from firing inside the timeline.
 	useEffect(() => {
@@ -323,7 +340,7 @@ export function Timeline() {
 		onSnapPointChange: handleSnapPointChange,
 	});
 
-	const { handleRulerMouseDown: handlePlayheadRulerMouseDown } =
+	const { handlePlayheadMouseDown, handleRulerMouseDown: handlePlayheadRulerMouseDown } =
 		useTimelinePlayhead({
 			zoomLevel,
 			rulerRef,
@@ -380,6 +397,7 @@ export function Timeline() {
 		containerWidth,
 		zoomLevel,
 		minZoom: minZoomLevel,
+		maxZoom: maxZoomLevel,
 	});
 	const dynamicTimelineWidth = Math.max(
 		contentWidth + paddingPx,
@@ -387,6 +405,12 @@ export function Timeline() {
 	);
 	const hasHorizontalScrollbar =
 		dynamicTimelineWidth > (tracksViewportWidth || containerWidth);
+
+	// Zoom changes the content width; the store must re-measure so windowed
+	// consumers don't compute against a stale viewport for a frame.
+	useLayoutEffect(() => {
+		timelineViewport.readNow();
+	}, [dynamicTimelineWidth]);
 
 	useEdgeAutoScroll({
 		isActive: bookmarkDragState.isDragging,
@@ -485,7 +509,6 @@ export function Timeline() {
 								zoomLevel={zoomLevel}
 								dynamicTimelineWidth={dynamicTimelineWidth}
 								rulerRef={rulerRef}
-								tracksScrollRef={rulerScrollRef}
 								handleWheel={handleWheel}
 								handleTimelineContentClick={handleRulerClick}
 								handleRulerTrackingMouseDown={handleRulerMouseDown}
@@ -525,10 +548,7 @@ export function Timeline() {
 											TRACKS_CONTAINER_HEIGHT.min,
 											Math.min(
 												TRACKS_CONTAINER_HEIGHT.max,
-												getTotalTracksHeight({
-													tracks,
-													getExtraHeight: getTrackExpansionHeight,
-												}),
+												trackLayout.totalHeight,
 											),
 										) + TIMELINE_CONTENT_TOP_PADDING_PX
 									}px`,
@@ -577,13 +597,11 @@ export function Timeline() {
 					</ScrollArea>
 
 					<TimelinePlayhead
-						zoomLevel={zoomLevel}
 						hasHorizontalScrollbar={hasHorizontalScrollbar}
-						rulerRef={rulerRef}
-						rulerScrollRef={rulerScrollRef}
 						tracksScrollRef={tracksScrollRef}
 						timelineRef={timelineRef}
 						playheadRef={playheadRef}
+						onPlayheadMouseDown={handlePlayheadMouseDown}
 						isSnappingToPlayhead={
 							showSnapIndicator && currentSnapPoint?.type === "playhead"
 						}
@@ -593,7 +611,6 @@ export function Timeline() {
 					snapPoint={currentSnapPoint}
 					zoomLevel={zoomLevel}
 					timelineRef={timelineRef}
-					tracksScrollRef={tracksScrollRef}
 					isVisible={showSnapIndicator}
 				/>
 			</div>
@@ -805,6 +822,14 @@ function TimelineTrackRows({
 		[tracks, expandedElementIds],
 	);
 
+	// Prefix sums shared by every row, instead of an O(n) walk per row.
+	const trackOffsets = useMemo(
+		() =>
+			getTrackOffsets({ tracks, getExtraHeight: getTrackExpansionHeight })
+				.offsets,
+		[tracks, getTrackExpansionHeight],
+	);
+
 	const draggingElementIds = useMemo(
 		() =>
 			dragView.kind === "dragging"
@@ -841,7 +866,7 @@ function TimelineTrackRows({
 								tracksWithSelection.has(track.id) && SELECTED_TRACK_ROW_CLASS,
 							)}
 							style={{
-								top: `${TIMELINE_CONTENT_TOP_PADDING_PX + getCumulativeHeightBefore({ tracks, trackIndex: index, getExtraHeight: getTrackExpansionHeight })}px`,
+								top: `${TIMELINE_CONTENT_TOP_PADDING_PX + (trackOffsets[index] ?? 0)}px`,
 								height: `${getTrackHeight({ type: track.type }) + getTrackExpansionHeight(index)}px`,
 							}}
 						>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { useCommittedRef } from "@/hooks/use-committed-ref";
 import { useShiftKey } from "@/hooks/use-shift-key";
@@ -8,6 +8,7 @@ import {
 	PlayheadController,
 	type PlayheadConfig,
 } from "@/timeline/controllers/playhead-controller";
+import { timelineViewport } from "@/timeline/viewport-store";
 import type { MediaTime } from "@/wasm";
 
 interface UseTimelinePlayheadProps {
@@ -18,6 +19,14 @@ interface UseTimelinePlayheadProps {
 	playheadRef?: React.RefObject<HTMLDivElement | null>;
 }
 
+/**
+ * Owns the single PlayheadController for the timeline.
+ *
+ * Must be called exactly once per timeline. It used to be called both by the
+ * Timeline container and by TimelinePlayhead, which produced two controllers,
+ * two scroll listeners, two playback subscriptions and two writers racing on the
+ * same `style.left`.
+ */
 export function useTimelinePlayhead({
 	zoomLevel,
 	rulerRef,
@@ -58,15 +67,14 @@ export function useTimelinePlayhead({
 	const configRef = useCommittedRef(config);
 	const [ctrl] = useState(() => new PlayheadController({ configRef }));
 
-	// Scroll → keep playhead position in sync with scroll offset.
+	// Scroll → reposition imperatively, batched to one write per frame by the
+	// shared viewport store. No React state is involved.
 	useEffect(() => {
-		const scrollEl = rulerScrollRef.current;
-		if (!scrollEl) return;
-		const handler = () =>
+		const reposition = () =>
 			ctrl.updatePlayheadLeft(editor.playback.getCurrentTime());
-		scrollEl.addEventListener("scroll", handler, { passive: true });
-		return () => scrollEl.removeEventListener("scroll", handler);
-	}, [ctrl, editor.playback, rulerScrollRef]);
+		reposition();
+		return timelineViewport.subscribeRaw(reposition);
+	}, [ctrl, editor.playback]);
 
 	// Playback events → update playhead position and auto-scroll during playback.
 	useEffect(() => {
@@ -79,6 +87,12 @@ export function useTimelinePlayhead({
 			unsubscribeSeek();
 		};
 	}, [ctrl, editor.playback]);
+
+	// Zoom changes the time→pixel mapping without emitting scroll or playback
+	// events, so the position has to be recomputed after that layout pass.
+	useLayoutEffect(() => {
+		ctrl.syncToCurrentTime(editor.playback.getCurrentTime());
+	}, [ctrl, editor.playback, zoomLevel]);
 
 	useEdgeAutoScroll({
 		isActive: isScrubbing,

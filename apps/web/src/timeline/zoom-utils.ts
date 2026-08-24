@@ -1,5 +1,6 @@
 import {
 	BASE_TIMELINE_PIXELS_PER_SECOND,
+	MAX_TIMELINE_WIDTH_PX,
 	TIMELINE_ZOOM_MAX,
 } from "@/timeline/scale";
 import { TICKS_PER_SECOND } from "@/wasm";
@@ -7,6 +8,25 @@ import { TICKS_PER_SECOND } from "@/wasm";
 const PADDING_MAX_RATIO = 0.75;
 const PADDING_MIN_RATIO = 0.15;
 const PADDING_MIN_AT_ZOOM_PERCENT = 0.2;
+
+/**
+ * Largest zoom that keeps the timeline's DOM width under
+ * `MAX_TIMELINE_WIDTH_PX`. Longer media gets less magnification — that is the
+ * deliberate tradeoff that keeps scroll/scrub cost duration-independent.
+ */
+export function getTimelineZoomMax({ duration }: { duration: number }): number {
+	const durationSeconds = duration / TICKS_PER_SECOND;
+	if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+		return TIMELINE_ZOOM_MAX;
+	}
+
+	const zoomAtMaxWidth =
+		MAX_TIMELINE_WIDTH_PX /
+		(durationSeconds * BASE_TIMELINE_PIXELS_PER_SECOND);
+
+	// Never clamp below 1x, otherwise absurdly long media would be unusable.
+	return Math.max(1, Math.min(TIMELINE_ZOOM_MAX, zoomAtMaxWidth));
+}
 
 export function getTimelineZoomMin({
 	duration,
@@ -29,12 +49,14 @@ export function getTimelinePaddingPx({
 	containerWidth,
 	zoomLevel,
 	minZoom,
+	maxZoom = TIMELINE_ZOOM_MAX,
 }: {
 	containerWidth: number;
 	zoomLevel: number;
 	minZoom: number;
+	maxZoom?: number;
 }): number {
-	const zoomPercent = getZoomPercent({ zoomLevel, minZoom });
+	const zoomPercent = getZoomPercent({ zoomLevel, minZoom, maxZoom });
 	const paddingTransitionPercent = Math.min(
 		zoomPercent / PADDING_MIN_AT_ZOOM_PERCENT,
 		1,
@@ -49,11 +71,15 @@ export function getTimelinePaddingPx({
 export function getZoomPercent({
 	zoomLevel,
 	minZoom,
+	maxZoom = TIMELINE_ZOOM_MAX,
 }: {
 	zoomLevel: number;
 	minZoom: number;
+	maxZoom?: number;
 }): number {
-	return (zoomLevel - minZoom) / (TIMELINE_ZOOM_MAX - minZoom);
+	const span = maxZoom - minZoom;
+	if (span <= 0) return 0;
+	return (zoomLevel - minZoom) / span;
 }
 
 /**

@@ -22,6 +22,34 @@ export function getExpandedTrackHeight({
 	);
 }
 
+/**
+ * Cumulative offsets for every track, plus the total height.
+ *
+ * Prefer this over calling `getCumulativeHeightBefore` per track: that walks the
+ * preceding tracks each time, making a full render O(n²).
+ */
+export function getTrackOffsets({
+	tracks,
+	getExtraHeight,
+}: {
+	tracks: Array<{ type: TrackType }>;
+	getExtraHeight?: (trackIndex: number) => number;
+}): { offsets: number[]; totalHeight: number } {
+	const offsets: number[] = new Array(tracks.length);
+	let cursor = 0;
+
+	for (let index = 0; index < tracks.length; index += 1) {
+		offsets[index] = cursor;
+		cursor +=
+			getTrackHeight({ type: tracks[index].type }) +
+			(getExtraHeight?.(index) ?? 0) +
+			TIMELINE_TRACK_GAP_PX;
+	}
+
+	const totalHeight = Math.max(0, cursor - TIMELINE_TRACK_GAP_PX);
+	return { offsets, totalHeight };
+}
+
 export function getCumulativeHeightBefore({
 	tracks,
 	trackIndex,
@@ -41,20 +69,4 @@ export function getCumulativeHeightBefore({
 				TIMELINE_TRACK_GAP_PX,
 			0,
 		);
-}
-
-export function getTotalTracksHeight({
-	tracks,
-	getExtraHeight,
-}: {
-	tracks: Array<{ type: TrackType }>;
-	getExtraHeight?: (trackIndex: number) => number;
-}): number {
-	const tracksHeight = tracks.reduce(
-		(sum, track, i) =>
-			sum + getTrackHeight({ type: track.type }) + (getExtraHeight?.(i) ?? 0),
-		0,
-	);
-	const gapsHeight = Math.max(0, tracks.length - 1) * TIMELINE_TRACK_GAP_PX;
-	return tracksHeight + gapsHeight;
 }

@@ -12,7 +12,11 @@ import {
 import type { RetimeConfig } from "@/timeline";
 import { getBarFractionFromOutputAmplitude } from "@/timeline/audio-display";
 import { waveformCache } from "@/services/waveform-cache/service";
-import { findScrollParent } from "@/utils/browser";
+import {
+	intersectViewportSpan,
+	timelineViewport,
+} from "@/timeline/viewport-store";
+import { useRawTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { cn } from "@/utils/ui";
 
 const BAR_WIDTH = 1;
@@ -20,6 +24,9 @@ const BAR_GAP = 1;
 const BAR_STEP = BAR_WIDTH + BAR_GAP;
 const WAVEFORM_BURN_COLOR = "rgba(255, 110, 20, 0.9)";
 export const WAVEFORM_GAIN_SAMPLE_COUNT = 200;
+
+/** Painted beyond the viewport so small scrolls reveal already-drawn pixels. */
+const WAVEFORM_OVERSCAN_PX = 256;
 
 function sampleGainAtClipTime({
 	samples,
@@ -51,6 +58,10 @@ interface AudioWaveformProps {
 	clipDurationSec: number;
 	retime?: RetimeConfig;
 	sourceStartSec: number;
+	/** Element's left edge in timeline content pixels. */
+	elementLeftPx: number;
+	/** Element's full width in timeline content pixels. */
+	elementWidthPx: number;
 	color?: string;
 	burnColor?: string;
 	className?: string;
@@ -66,6 +77,8 @@ export function AudioWaveform({
 	clipDurationSec,
 	retime,
 	sourceStartSec,
+	elementLeftPx,
+	elementWidthPx,
 	color = TIMELINE_AUDIO_WAVEFORM_COLOR,
 	burnColor = WAVEFORM_BURN_COLOR,
 	className = "",
@@ -79,12 +92,17 @@ export function AudioWaveform({
 		clipDurationSec,
 		retime,
 		sourceStartSec,
+		elementLeftPx,
+		elementWidthPx,
 		color,
 		burnColor,
 	});
-	const scrollParentRef = useRef<HTMLElement | null>(null);
 	const heightRef = useRef<number>(0);
-	const lastRenderSignatureRef = useRef<string | null>(null);
+	/**
+	 * Cheap structural signature of the last painted frame. Comparing numbers
+	 * avoids the per-frame `JSON.stringify` this used to do while scrolling.
+	 */
+	const lastRenderKeyRef = useRef<string | null>(null);
 
 	const clearCanvas = useCallback(() => {
 		const canvas = canvasRef.current;
@@ -97,46 +115,15 @@ export function AudioWaveform({
 			ctx.setTransform(1, 0, 0, 1, 0, 0);
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
 		}
-		lastRenderSignatureRef.current = null;
+		lastRenderKeyRef.current = null;
 	}, []);
 
 	const drawVisible = useCallback(() => {
-		const container = containerRef.current;
 		const canvas = canvasRef.current;
 		const summary = summaryRef.current;
 		const height = heightRef.current;
 
-		if (!container || !canvas || !summary || height <= 0) {
-			clearCanvas();
-			return;
-		}
-
-		const containerRect = container.getBoundingClientRect();
-		const elementWidth = containerRect.width;
-		if (elementWidth <= 0) {
-			clearCanvas();
-			return;
-		}
-
-		const scrollParent = scrollParentRef.current;
-
-		let clipLeft: number;
-		let clipRight: number;
-
-		if (scrollParent) {
-			const parentRect = scrollParent.getBoundingClientRect();
-			clipLeft = Math.max(0, parentRect.left - containerRect.left);
-			clipRight = Math.min(elementWidth, parentRect.right - containerRect.left);
-		} else {
-			clipLeft = Math.max(0, -containerRect.left);
-			clipRight = Math.min(
-				elementWidth,
-				window.innerWidth - containerRect.left,
-			);
-		}
-
-		const visibleWidth = clipRight - clipLeft;
-		if (visibleWidth <= 0) {
+		if (!canvas || !summary || height <= 0) {
 			clearCanvas();
 			return;
 		}
@@ -147,41 +134,69 @@ export function AudioWaveform({
 			clipDurationSec: clipDurationSecValue,
 			retime: retimeValue,
 			sourceStartSec: sourceStartSecValue,
+			elementLeftPx: elementLeftValue,
+			elementWidthPx: elementWidthValue,
 			color: colorValue,
 			burnColor: burnColorValue,
 		} = waveformConfigRef.current;
+
+		if (elementWidthValue <= 0) {
+			clearCanvas();
+			return;
+		}
+
+		// Derive the visible slice from the shared viewport store rather than
+		// measuring the DOM: `getBoundingClientRect` on a multi-million-pixel-wide
+		// layout forces a synchronous reflow on every scroll frame.
+		const visible = intersectViewportSpan({
+			spanLeftPx: elementLeftValue,
+			spanRightPx: elementLeftValue + elementWidthValue,
+			viewport: timelineViewport.cached,
+			overscanPx: WAVEFORM_OVERSCAN_PX,
+		});
+		if (!visible) {
+			clearCanvas();
+			return;
+		}
+
+		const clipLeft = visible.leftPx - elementLeftValue;
+		const clipRight = visible.rightPx - elementLeftValue;
+		const visibleWidth = clipRight - clipLeft;
+		if (visibleWidth <= 0) {
+			clearCanvas();
+			return;
+		}
+
 		const dpr = window.devicePixelRatio || 1;
 		const canvasW = Math.max(1, Math.ceil(visibleWidth * dpr));
 		const canvasH = Math.max(1, Math.round(height * dpr));
 		const barCount = Math.max(1, Math.floor(visibleWidth / BAR_STEP));
-		const renderSignature = JSON.stringify({
-			elementWidth,
-			clipLeft,
-			clipRight,
-			visibleWidth,
+		const renderKey = [
+			Math.round(clipLeft),
+			Math.round(clipRight),
 			canvasW,
 			canvasH,
 			barCount,
-			dpr,
-			clipDurationSec: clipDurationSecValue,
-			sourceStartSec: sourceStartSecValue,
-			pixelsPerSecond: pixelsPerSecondValue,
-			retime: retimeValue ?? null,
-			summarySourceKey: summary.sourceKey,
-			summarySampleRate: summary.sampleRate,
-			summaryTotalSamples: summary.totalSamples,
-			summaryBucketSize: summary.bucketSize,
-			gainSamples: gainSamplesValue ?? null,
-			color: colorValue,
-			burnColor: burnColorValue,
-		});
-		if (lastRenderSignatureRef.current === renderSignature) {
+			pixelsPerSecondValue,
+			clipDurationSecValue,
+			sourceStartSecValue,
+			retimeValue?.rate ?? 1,
+			summary.sourceKey,
+			summary.totalSamples,
+			gainSamplesValue?.length ?? 0,
+			colorValue,
+			burnColorValue,
+		].join("|");
+		if (lastRenderKeyRef.current === renderKey) {
 			return;
 		}
-		lastRenderSignatureRef.current = renderSignature;
+		lastRenderKeyRef.current = renderKey;
 
-		canvas.width = canvasW;
-		canvas.height = canvasH;
+		// Reallocating the backing store is expensive; only resize when needed.
+		if (canvas.width !== canvasW || canvas.height !== canvasH) {
+			canvas.width = canvasW;
+			canvas.height = canvasH;
+		}
 		canvas.style.width = `${visibleWidth}px`;
 		canvas.style.height = `${height}px`;
 		canvas.style.left = `${clipLeft}px`;
@@ -310,28 +325,15 @@ export function AudioWaveform({
 		clipDurationSec,
 		retime,
 		sourceStartSec,
+		elementLeftPx,
+		elementWidthPx,
 		color,
 		burnColor,
 	]);
 
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) {
-			return;
-		}
-
-		scrollParentRef.current = findScrollParent({ element: container });
-		const scrollParent = scrollParentRef.current;
-		if (!scrollParent) {
-			return;
-		}
-
-		const handleScroll = () => {
-			drawVisible();
-		};
-		scrollParent.addEventListener("scroll", handleScroll, { passive: true });
-		return () => scrollParent.removeEventListener("scroll", handleScroll);
-	}, [drawVisible]);
+	// One shared rAF-batched notification for every waveform on the timeline,
+	// replacing a per-instance unthrottled scroll listener.
+	useRawTimelineViewport(drawVisible);
 
 	const onResize = useCallback(
 		(entry: ResizeObserverEntry) => {
