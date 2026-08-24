@@ -92,11 +92,7 @@ export class VideoCache {
 			}
 		}
 
-		const frame = await this.seekToTime({ sinkData, time });
-		if (frame && !sinkData.nextFrame && !sinkData.prefetching) {
-			this.startPrefetch({ sinkData });
-		}
-		return frame;
+		return this.seekToTime({ sinkData, time });
 	}
 
 	private isFrameValid({
@@ -183,7 +179,6 @@ export class VideoCache {
 
 			if (frame) {
 				sinkData.currentFrame = frame;
-				this.startPrefetch({ sinkData });
 				return frame;
 			}
 		} catch (error) {

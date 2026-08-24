@@ -194,19 +194,22 @@ function PreviewCanvas({
 		);
 		const frame = Math.floor(renderTime / ticksPerFrame);
 
-		if (
-			frame === lastFrameRef.current &&
-			renderTree === lastSceneRef.current
-		) {
+		if (frame === lastFrameRef.current && renderTree === lastSceneRef.current) {
 			return;
 		}
 
 		renderingRef.current = true;
-		lastSceneRef.current = renderTree;
-		lastFrameRef.current = frame;
-		renderer
+		void renderer
 			.render({ node: renderTree, time: renderTime })
 			.then(() => {
+				lastSceneRef.current = renderTree;
+				lastFrameRef.current = frame;
+			})
+			.catch(() => {
+				lastSceneRef.current = null;
+				lastFrameRef.current = -1;
+			})
+			.finally(() => {
 				renderingRef.current = false;
 			});
 	}, [renderer, renderTree, editor.playback, editor.timeline]);

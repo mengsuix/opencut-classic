@@ -29,8 +29,6 @@ interface ScrubSession {
 	kind: "scrubbing";
 	/** True when scrub started from a ruler click (not the playhead handle). */
 	didStartFromRuler: boolean;
-	/** True once the mouse has moved during a ruler drag. */
-	hasMoved: boolean;
 	/** Most recent frame-snapped time set by scrub(). */
 	currentTime: MediaTime | null;
 	/**
@@ -140,7 +138,6 @@ export class PlayheadController {
 		this.session = {
 			kind: "scrubbing",
 			didStartFromRuler: false,
-			hasMoved: false,
 			currentTime: null,
 			snapPoints: this.buildSnapPoints(),
 		};
@@ -151,13 +148,15 @@ export class PlayheadController {
 
 	onRulerMouseDown(event: ReactMouseEvent): void {
 		if (event.button !== 0) return;
-		if (this.config.getPlayheadEl()?.contains(event.target as Node)) return;
+		const target = event.target;
+		if (target instanceof Node && this.config.getPlayheadEl()?.contains(target)) {
+			return;
+		}
 
 		event.preventDefault();
 		this.session = {
 			kind: "scrubbing",
 			didStartFromRuler: true,
-			hasMoved: false,
 			currentTime: null,
 			snapPoints: this.buildSnapPoints(),
 		};
@@ -314,9 +313,6 @@ export class PlayheadController {
 	private handleMouseMove(event: MouseEvent): void {
 		if (this.session.kind !== "scrubbing") return;
 		this.scrub({ event, isElementSnappingEnabled: true });
-		if (this.session.didStartFromRuler) {
-			this.session.hasMoved = true;
-		}
 	}
 
 	private handleMouseUp(event: MouseEvent): void {
@@ -325,18 +321,21 @@ export class PlayheadController {
 		const session = this.session;
 		this.config.setScrubbing(false);
 
+		// Keep the release-position behavior without issuing a duplicate seek when
+		// the pointer did not move after the latest mousedown/mousemove.
+		if (
+			session.didStartFromRuler &&
+			event.clientX !== this.lastMouseClientX
+		) {
+			this.scrub({ event, isElementSnappingEnabled: false });
+		}
+
 		if (session.currentTime !== null) {
-			this.config.seek(session.currentTime);
 			this.config.setTimelineViewState({
 				zoomLevel: this.config.zoomLevel,
 				scrollLeft: this.config.getTracksScrollEl()?.scrollLeft ?? 0,
 				playheadTime: session.currentTime,
 			});
-		}
-
-		// Ruler click without drag: snap to clicked position on mouseup.
-		if (session.didStartFromRuler && !session.hasMoved) {
-			this.scrub({ event, isElementSnappingEnabled: false });
 		}
 
 		this.session = { kind: "idle" };
