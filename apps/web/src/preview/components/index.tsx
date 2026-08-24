@@ -142,6 +142,9 @@ function PreviewCanvas({
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
 	const renderingRef = useRef(false);
+	const activeRenderControllerRef = useRef<AbortController | null>(null);
+	const seekRevisionRef = useRef(0);
+	const renderedSeekRevisionRef = useRef(0);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -193,28 +196,81 @@ function PreviewCanvas({
 			(TICKS_PER_SECOND * renderer.fps.denominator) / renderer.fps.numerator,
 		);
 		const frame = Math.floor(renderTime / ticksPerFrame);
+		const seekRevision = seekRevisionRef.current;
 
-		if (frame === lastFrameRef.current && renderTree === lastSceneRef.current) {
+		if (
+			frame === lastFrameRef.current &&
+			renderTree === lastSceneRef.current &&
+			seekRevision === renderedSeekRevisionRef.current
+		) {
 			return;
 		}
 
+		const controller = new AbortController();
+		const cancelVideoDecode = seekRevision !== renderedSeekRevisionRef.current;
 		renderingRef.current = true;
+		activeRenderControllerRef.current = controller;
 		void renderer
-			.render({ node: renderTree, time: renderTime })
+			.render({
+				node: renderTree,
+				time: renderTime,
+				signal: controller.signal,
+				cancelVideoDecode,
+			})
 			.then(() => {
+				const latestTime = Math.min(
+					editor.playback.getCurrentTime(),
+					editor.timeline.getLastFrameTime(),
+				);
+				const latestFrame = Math.floor(latestTime / ticksPerFrame);
+				const isLatestRender =
+					!controller.signal.aborted &&
+					seekRevision === seekRevisionRef.current &&
+					latestFrame === frame &&
+					editor.renderer.getRenderTree() === renderTree;
+
+				if (!isLatestRender) {
+					lastSceneRef.current = null;
+					lastFrameRef.current = -1;
+					queueMicrotask(() => render());
+					return;
+				}
+
 				lastSceneRef.current = renderTree;
 				lastFrameRef.current = frame;
+				renderedSeekRevisionRef.current = seekRevision;
 			})
-			.catch(() => {
+			.catch((error) => {
+				if (controller.signal.aborted) return;
 				lastSceneRef.current = null;
 				lastFrameRef.current = -1;
+				console.warn("Preview render failed:", error);
 			})
 			.finally(() => {
+				if (activeRenderControllerRef.current === controller) {
+					activeRenderControllerRef.current = null;
+				}
 				renderingRef.current = false;
+				if (seekRevision !== seekRevisionRef.current) {
+					queueMicrotask(() => render());
+				}
 			});
-	}, [renderer, renderTree, editor.playback, editor.timeline]);
+	}, [renderer, renderTree, editor]);
 
 	useRafLoop(render);
+
+	useEffect(() => {
+		const unsubscribe = editor.playback.onSeek(() => {
+			seekRevisionRef.current += 1;
+			activeRenderControllerRef.current?.abort();
+			queueMicrotask(() => render());
+		});
+
+		return () => {
+			unsubscribe();
+			activeRenderControllerRef.current?.abort();
+		};
+	}, [editor, render]);
 
 	useEffect(() => {
 		const container = viewportRef.current;

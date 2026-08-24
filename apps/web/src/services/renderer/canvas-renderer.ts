@@ -3,7 +3,7 @@ import type { AnyBaseNode } from "./nodes/base-node";
 import { createCanvasSurface } from "./canvas-utils";
 import { buildFrameDescriptor } from "./compositor/frame-descriptor";
 import { wasmCompositor } from "./compositor/wasm-compositor";
-import { resolveRenderTree } from "./resolve";
+import { resolveRenderTree, throwIfAborted } from "./resolve";
 import {
 	measureSpanAsync,
 	measureSpanSync,
@@ -50,15 +50,39 @@ export class CanvasRenderer {
 		this.context = surface.context;
 	}
 
-	async render({ node, time }: { node: AnyBaseNode; time: number }) {
+	async render({
+		node,
+		time,
+		signal,
+		cancelVideoDecode = false,
+		requestId,
+	}: {
+		node: AnyBaseNode;
+		time: number;
+		signal?: AbortSignal;
+		cancelVideoDecode?: boolean;
+		requestId?: symbol;
+	}) {
+		const renderRequestId = requestId ?? Symbol("canvas-render");
+		throwIfAborted(signal);
 		await measureSpanAsync({
 			name: "resolve",
-			fn: () => resolveRenderTree({ node, renderer: this, time }),
+			fn: () =>
+				resolveRenderTree({
+					node,
+					renderer: this,
+					time,
+					signal,
+					cancelVideoDecode,
+					requestId: renderRequestId,
+				}),
 		});
+		throwIfAborted(signal);
 		const { frame, textures } = await measureSpanAsync({
 			name: "buildFrame",
 			fn: () => buildFrameDescriptor({ node, renderer: this }),
 		});
+		throwIfAborted(signal);
 		wasmCompositor.ensureInitialized({
 			width: this.width,
 			height: this.height,

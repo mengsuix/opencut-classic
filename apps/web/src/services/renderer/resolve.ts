@@ -48,22 +48,39 @@ import type {
 type ResolveContext = {
 	renderer: CanvasRenderer;
 	time: number;
+	signal?: AbortSignal;
+	cancelVideoDecode: boolean;
+	requestId: symbol;
 };
+
+export function throwIfAborted(signal?: AbortSignal): void {
+	if (!signal?.aborted) return;
+	throw signal.reason ?? new DOMException("Render aborted", "AbortError");
+}
 
 export async function resolveRenderTree({
 	node,
 	renderer,
 	time,
+	signal,
+	cancelVideoDecode = false,
+	requestId,
 }: {
 	node: AnyBaseNode;
 	renderer: CanvasRenderer;
 	time: number;
+	signal?: AbortSignal;
+	cancelVideoDecode?: boolean;
+	requestId: symbol;
 }): Promise<void> {
 	await resolveNode({
 		node,
 		context: {
 			renderer,
 			time,
+			signal,
+			cancelVideoDecode,
+			requestId,
 		},
 	});
 }
@@ -75,6 +92,7 @@ async function resolveNode({
 	node: AnyBaseNode;
 	context: ResolveContext;
 }): Promise<void> {
+	throwIfAborted(context.signal);
 	if (node instanceof VideoNode) {
 		node.resolved = await resolveVideoNode({ node, context });
 	} else if (node instanceof ImageNode) {
@@ -91,9 +109,11 @@ async function resolveNode({
 		node.resolved = resolveEffectLayerNode({ node, context });
 	}
 
+	throwIfAborted(context.signal);
 	await Promise.all(
 		node.children.map((child) => resolveNode({ node: child, context })),
 	);
+	throwIfAborted(context.signal);
 }
 
 function resolveEffectPassGroups({
@@ -205,7 +225,12 @@ async function resolveVideoNode({
 	const frame = await videoCache.getFrameAt({
 		mediaId: node.params.mediaId,
 		file: node.params.file,
-		time: mediaTimeToSeconds({ time: roundMediaTime({ time: sourceTimeTicks }) }),
+		time: mediaTimeToSeconds({
+			time: roundMediaTime({ time: sourceTimeTicks }),
+		}),
+		signal: context.signal,
+		prefetch: !context.cancelVideoDecode,
+		requestId: context.requestId,
 	});
 	if (!frame) {
 		return null;
@@ -387,7 +412,13 @@ async function resolveBlurBackgroundNode({
 		return null;
 	}
 
-	const backdropSource = await resolveBackdropSource({ node, clipTime });
+	const backdropSource = await resolveBackdropSource({
+		node,
+		clipTime,
+		signal: context.signal,
+		prefetch: !context.cancelVideoDecode,
+		requestId: context.requestId,
+	});
 	if (!backdropSource) {
 		return null;
 	}
@@ -412,9 +443,15 @@ async function resolveBlurBackgroundNode({
 async function resolveBackdropSource({
 	node,
 	clipTime,
+	signal,
+	prefetch,
+	requestId,
 }: {
 	node: BlurBackgroundNode;
 	clipTime: number;
+	signal?: AbortSignal;
+	prefetch: boolean;
+	requestId: symbol;
 }): Promise<BackdropSource | null> {
 	if (node.params.mediaType === "video") {
 		const sourceTimeTicks =
@@ -426,7 +463,12 @@ async function resolveBackdropSource({
 		const frame = await videoCache.getFrameAt({
 			mediaId: node.params.mediaId,
 			file: node.params.file,
-			time: mediaTimeToSeconds({ time: roundMediaTime({ time: sourceTimeTicks }) }),
+			time: mediaTimeToSeconds({
+				time: roundMediaTime({ time: sourceTimeTicks }),
+			}),
+			signal,
+			prefetch,
+			requestId,
 		});
 		if (!frame) {
 			return null;

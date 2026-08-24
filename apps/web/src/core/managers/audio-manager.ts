@@ -151,7 +151,7 @@ export class AudioManager {
 		if (!audioContext) return;
 
 		this.stopPlayback();
-		this.playbackSessionId++;
+		const sessionId = ++this.playbackSessionId;
 		this.playbackLatencyCompensationSeconds = 0;
 
 		const tracks = this.editor.scenes.getActiveScene().tracks;
@@ -163,24 +163,35 @@ export class AudioManager {
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
+		if (sessionId !== this.playbackSessionId || !this.editor.playback.getIsPlaying()) {
+			return;
+		}
 
-		this.clips = await collectAudioClips({ tracks, mediaAssets });
-		if (!this.editor.playback.getIsPlaying()) return;
+		const clips = await collectAudioClips({ tracks, mediaAssets });
+		if (sessionId !== this.playbackSessionId || !this.editor.playback.getIsPlaying()) {
+			return;
+		}
+		this.clips = clips;
 
 		this.playbackStartTime = time;
 		this.playbackStartContextTime = audioContext.currentTime;
 
-		this.scheduleUpcomingClips();
+		this.scheduleUpcomingClips({ sessionId });
 
 		if (typeof window !== "undefined") {
 			this.scheduleTimer = window.setInterval(() => {
-				this.scheduleUpcomingClips();
+				this.scheduleUpcomingClips({ sessionId });
 			}, this.scheduleIntervalMs);
 		}
 	}
 
-	private scheduleUpcomingClips(): void {
-		if (!this.editor.playback.getIsPlaying()) return;
+	private scheduleUpcomingClips({ sessionId }: { sessionId: number }): void {
+		if (
+			sessionId !== this.playbackSessionId ||
+			!this.editor.playback.getIsPlaying()
+		) {
+			return;
+		}
 
 		const currentTime = this.getPlaybackTime();
 		const windowEnd = currentTime + this.lookaheadSeconds;
@@ -198,13 +209,13 @@ export class AudioManager {
 				void this.schedulePreparedClip({
 					clip,
 					startTime: currentTime,
-					sessionId: this.playbackSessionId,
+					sessionId,
 				});
 			} else {
 				void this.runClipIterator({
 					clip,
 					startTime: currentTime,
-					sessionId: this.playbackSessionId,
+					sessionId,
 				});
 			}
 		}

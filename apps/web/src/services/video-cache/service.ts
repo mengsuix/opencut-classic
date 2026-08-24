@@ -15,64 +15,122 @@ interface VideoSinkData {
 	lastTime: number;
 	prefetching: boolean;
 	prefetchPromise: Promise<void> | null;
+	latestRequestId: symbol | null;
+	activeRequestId: symbol | null;
+	prefetchRequestId: symbol | null;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+	if (!signal?.aborted) return;
+	throw signal.reason ?? new DOMException("Video seek aborted", "AbortError");
 }
 
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
 	private frameChain = new Map<string, Promise<unknown>>();
-	private seekGenerations = new Map<string, number>();
 
 	async getFrameAt({
 		mediaId,
 		file,
 		time,
+		signal,
+		prefetch = true,
+		requestId,
 	}: {
 		mediaId: string;
 		file: File;
 		time: number;
+		signal?: AbortSignal;
+		prefetch?: boolean;
+		requestId: symbol;
 	}): Promise<WrappedCanvas | null> {
 		await this.ensureSink({ mediaId, file });
+		throwIfAborted(signal);
 
 		const sinkData = this.sinks.get(mediaId);
 		if (!sinkData) return null;
 
-		const generation = (this.seekGenerations.get(mediaId) ?? 0) + 1;
-		this.seekGenerations.set(mediaId, generation);
+		sinkData.latestRequestId = requestId;
+		if (
+			!prefetch &&
+			((sinkData.activeRequestId && sinkData.activeRequestId !== requestId) ||
+				(sinkData.prefetchRequestId &&
+					sinkData.prefetchRequestId !== requestId))
+		) {
+			this.cancelPendingDecode({ sinkData });
+		}
+
+		const cancelPendingDecode = () => {
+			if (sinkData.latestRequestId === requestId) {
+				this.cancelPendingDecode({ sinkData });
+			}
+		};
+		signal?.addEventListener("abort", cancelPendingDecode, { once: true });
 
 		const previous = this.frameChain.get(mediaId) ?? Promise.resolve();
-		const current = previous.then(() => {
-			if (this.seekGenerations.get(mediaId) !== generation) {
-				return sinkData.currentFrame ?? null;
+		const current = previous.then(async () => {
+			if (sinkData.latestRequestId !== requestId) {
+				return null;
 			}
-			return this.resolveFrame({ sinkData, time });
+			throwIfAborted(signal);
+			sinkData.activeRequestId = requestId;
+			try {
+				const frame = await this.resolveFrame({
+					sinkData,
+					time,
+					signal,
+					prefetch,
+					requestId,
+				});
+				return sinkData.latestRequestId === requestId ? frame : null;
+			} finally {
+				if (sinkData.activeRequestId === requestId) {
+					sinkData.activeRequestId = null;
+				}
+			}
 		});
 		this.frameChain.set(
 			mediaId,
 			current.catch(() => {}),
 		);
-		return current;
+
+		try {
+			return await current;
+		} finally {
+			signal?.removeEventListener("abort", cancelPendingDecode);
+		}
 	}
 
 	private async resolveFrame({
 		sinkData,
 		time,
+		signal,
+		prefetch,
+		requestId,
 	}: {
 		sinkData: VideoSinkData;
 		time: number;
+		signal?: AbortSignal;
+		prefetch: boolean;
+		requestId: symbol;
 	}): Promise<WrappedCanvas | null> {
+		throwIfAborted(signal);
+		if (sinkData.latestRequestId !== requestId) {
+			return null;
+		}
 		if (sinkData.nextFrame && sinkData.nextFrame.timestamp <= time) {
 			sinkData.currentFrame = sinkData.nextFrame;
 			sinkData.nextFrame = null;
-			this.startPrefetch({ sinkData });
+			if (prefetch) this.startPrefetch({ sinkData, requestId });
 		}
 
 		if (
 			sinkData.currentFrame &&
 			this.isFrameValid({ frame: sinkData.currentFrame, time })
 		) {
-			if (!sinkData.nextFrame && !sinkData.prefetching) {
-				this.startPrefetch({ sinkData });
+			if (prefetch && !sinkData.nextFrame && !sinkData.prefetching) {
+				this.startPrefetch({ sinkData, requestId });
 			}
 			return sinkData.currentFrame;
 		}
@@ -83,16 +141,24 @@ export class VideoCache {
 			time >= sinkData.lastTime &&
 			time < sinkData.lastTime + 2.0
 		) {
-			const frame = await this.iterateToTime({ sinkData, targetTime: time });
+			const frame = await this.iterateToTime({
+				sinkData,
+				targetTime: time,
+				signal,
+				requestId,
+			});
+			if (sinkData.latestRequestId !== requestId) {
+				return null;
+			}
 			if (frame) {
-				if (!sinkData.nextFrame && !sinkData.prefetching) {
-					this.startPrefetch({ sinkData });
+				if (prefetch && !sinkData.nextFrame && !sinkData.prefetching) {
+					this.startPrefetch({ sinkData, requestId });
 				}
 				return frame;
 			}
 		}
 
-		return this.seekToTime({ sinkData, time });
+		return this.seekToTime({ sinkData, time, signal, requestId });
 	}
 
 	private isFrameValid({
@@ -107,17 +173,25 @@ export class VideoCache {
 	private async iterateToTime({
 		sinkData,
 		targetTime,
+		signal,
+		requestId,
 	}: {
 		sinkData: VideoSinkData;
 		targetTime: number;
+		signal?: AbortSignal;
+		requestId: symbol;
 	}): Promise<WrappedCanvas | null> {
 		if (!sinkData.iterator) return null;
 
 		try {
 			while (true) {
+				throwIfAborted(signal);
+				if (sinkData.latestRequestId !== requestId) return null;
 				// Wait for any pending prefetch to finish before touching iterator
 				if (sinkData.prefetching && sinkData.prefetchPromise) {
 					await sinkData.prefetchPromise;
+					throwIfAborted(signal);
+					if (sinkData.latestRequestId !== requestId) return null;
 				}
 
 				// Check if the nextFrame (which might have just arrived) is what we need
@@ -128,7 +202,11 @@ export class VideoCache {
 					sinkData.currentFrame = sinkData.nextFrame;
 					sinkData.nextFrame = null;
 				} else {
-					const { value: frame, done } = await sinkData.iterator.next();
+					const iterator = sinkData.iterator;
+					if (!iterator) break;
+					const { value: frame, done } = await iterator.next();
+					throwIfAborted(signal);
+					if (sinkData.latestRequestId !== requestId) return null;
 
 					if (done || !frame) break;
 
@@ -147,6 +225,7 @@ export class VideoCache {
 				if (frame.timestamp > targetTime + 1.0) break;
 			}
 		} catch (error) {
+			if (signal?.aborted) throw error;
 			console.warn("Iterator failed, will restart:", error);
 			sinkData.iterator = null;
 		}
@@ -156,75 +235,123 @@ export class VideoCache {
 	private async seekToTime({
 		sinkData,
 		time,
+		signal,
+		requestId,
 	}: {
 		sinkData: VideoSinkData;
 		time: number;
+		signal?: AbortSignal;
+		requestId: symbol;
 	}): Promise<WrappedCanvas | null> {
 		try {
+			throwIfAborted(signal);
+			if (sinkData.latestRequestId !== requestId) return null;
 			if (sinkData.prefetching && sinkData.prefetchPromise) {
 				await sinkData.prefetchPromise;
+				throwIfAborted(signal);
+				if (sinkData.latestRequestId !== requestId) return null;
 			}
 
 			if (sinkData.iterator) {
 				await sinkData.iterator.return();
+				throwIfAborted(signal);
+				if (sinkData.latestRequestId !== requestId) return null;
 				sinkData.iterator = null;
 			}
 
 			sinkData.nextFrame = null;
 			sinkData.iterator = sinkData.sink.canvases(time);
 			sinkData.lastTime = time;
+			sinkData.prefetchRequestId = null;
 
 			// Fetch current frame
-			const { value: frame } = await sinkData.iterator.next();
+			const iterator = sinkData.iterator;
+			if (!iterator) return null;
+			const { value: frame } = await iterator.next();
+			throwIfAborted(signal);
+			if (sinkData.latestRequestId !== requestId) return null;
 
 			if (frame) {
 				sinkData.currentFrame = frame;
 				return frame;
 			}
 		} catch (error) {
+			if (signal?.aborted) throw error;
 			console.warn("Failed to seek video:", error);
 		}
 
 		return null;
 	}
 
-	private startPrefetch({ sinkData }: { sinkData: VideoSinkData }): void {
+	private cancelPendingDecode({ sinkData }: { sinkData: VideoSinkData }): void {
+		sinkData.nextFrame = null;
+		sinkData.activeRequestId = null;
+		sinkData.prefetchRequestId = null;
+		sinkData.prefetching = false;
+		sinkData.prefetchPromise = null;
+		const iterator = sinkData.iterator;
+		sinkData.iterator = null;
+		if (iterator) {
+			void iterator.return().catch(() => {});
+		}
+	}
+
+	private startPrefetch({
+		sinkData,
+		requestId,
+	}: {
+		sinkData: VideoSinkData;
+		requestId: symbol;
+	}): void {
 		if (sinkData.prefetching || !sinkData.iterator || sinkData.nextFrame) {
 			return;
 		}
 
+		const iterator = sinkData.iterator;
 		sinkData.prefetching = true;
-		sinkData.prefetchPromise = this.prefetchNextFrame({ sinkData });
+		sinkData.prefetchRequestId = requestId;
+		sinkData.prefetchPromise = this.prefetchNextFrame({
+			sinkData,
+			iterator,
+			requestId,
+		});
 	}
 
 	private async prefetchNextFrame({
 		sinkData,
+		iterator,
+		requestId,
 	}: {
 		sinkData: VideoSinkData;
+		iterator: AsyncGenerator<WrappedCanvas, void, unknown>;
+		requestId: symbol;
 	}): Promise<void> {
-		if (!sinkData.iterator) {
-			sinkData.prefetching = false;
-			sinkData.prefetchPromise = null;
-			return;
-		}
-
 		try {
-			const { value: frame, done } = await sinkData.iterator.next();
-
-			if (done || !frame) {
-				sinkData.prefetching = false;
-				sinkData.prefetchPromise = null;
+			const { value: frame, done } = await iterator.next();
+			if (
+				sinkData.iterator !== iterator ||
+				sinkData.prefetchRequestId !== requestId
+			) {
 				return;
 			}
 
-			sinkData.nextFrame = frame;
-			sinkData.prefetching = false;
-			sinkData.prefetchPromise = null;
+			if (!done && frame) {
+				sinkData.nextFrame = frame;
+			}
 		} catch (error) {
-			console.warn("Prefetch failed:", error);
-			sinkData.prefetching = false;
-			sinkData.prefetchPromise = null;
-			sinkData.iterator = null;
+			if (
+				sinkData.iterator === iterator &&
+				sinkData.prefetchRequestId === requestId
+			) {
+				console.warn("Prefetch failed:", error);
+				sinkData.iterator = null;
+			}
+		} finally {
+			if (sinkData.prefetchRequestId === requestId) {
+				sinkData.prefetching = false;
+				sinkData.prefetchPromise = null;
+				sinkData.prefetchRequestId = null;
+			}
 		}
 	}
 	private async ensureSink({
@@ -287,6 +414,9 @@ export class VideoCache {
 				lastTime: -1,
 				prefetching: false,
 				prefetchPromise: null,
+				latestRequestId: null,
+				activeRequestId: null,
+				prefetchRequestId: null,
 			});
 		} catch (error) {
 			input.dispose();
@@ -308,7 +438,6 @@ export class VideoCache {
 
 		this.initPromises.delete(mediaId);
 		this.frameChain.delete(mediaId);
-		this.seekGenerations.delete(mediaId);
 	}
 
 	clearAll(): void {
