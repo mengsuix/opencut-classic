@@ -151,7 +151,7 @@ export class AudioManager {
 		if (!audioContext) return;
 
 		this.stopPlayback();
-		const sessionId = ++this.playbackSessionId;
+		const sessionId = this.playbackSessionId;
 		this.playbackLatencyCompensationSeconds = 0;
 
 		const tracks = this.editor.scenes.getActiveScene().tracks;
@@ -163,12 +163,18 @@ export class AudioManager {
 		if (audioContext.state === "suspended") {
 			await audioContext.resume();
 		}
-		if (sessionId !== this.playbackSessionId || !this.editor.playback.getIsPlaying()) {
+		if (
+			sessionId !== this.playbackSessionId ||
+			!this.editor.playback.getIsPlaying()
+		) {
 			return;
 		}
 
 		const clips = await collectAudioClips({ tracks, mediaAssets });
-		if (sessionId !== this.playbackSessionId || !this.editor.playback.getIsPlaying()) {
+		if (
+			sessionId !== this.playbackSessionId ||
+			!this.editor.playback.getIsPlaying()
+		) {
 			return;
 		}
 		this.clips = clips;
@@ -222,6 +228,7 @@ export class AudioManager {
 	}
 
 	private stopPlayback(): void {
+		this.playbackSessionId += 1;
 		if (this.scheduleTimer && typeof window !== "undefined") {
 			window.clearInterval(this.scheduleTimer);
 		}
@@ -236,7 +243,9 @@ export class AudioManager {
 		for (const source of this.queuedSources) {
 			try {
 				source.stop();
-			} catch {}
+			} catch (error) {
+				void error;
+			}
 			source.disconnect();
 		}
 		this.queuedSources.clear();
@@ -350,7 +359,11 @@ export class AudioManager {
 
 			const aheadTime = timelineTime - this.getPlaybackTime();
 			if (aheadTime >= 1) {
-				await this.waitUntilCaughtUp({ timelineTime, targetAhead: 1 });
+				await this.waitUntilCaughtUp({
+					timelineTime,
+					targetAhead: 1,
+					sessionId,
+				});
 				if (sessionId !== this.playbackSessionId) return;
 			}
 		}
@@ -430,13 +443,18 @@ export class AudioManager {
 	private waitUntilCaughtUp({
 		timelineTime,
 		targetAhead,
+		sessionId,
 	}: {
 		timelineTime: number;
 		targetAhead: number;
+		sessionId: number;
 	}): Promise<void> {
 		return new Promise((resolve) => {
 			const checkInterval = setInterval(() => {
-				if (!this.editor.playback.getIsPlaying()) {
+				if (
+					sessionId !== this.playbackSessionId ||
+					!this.editor.playback.getIsPlaying()
+				) {
 					clearInterval(checkInterval);
 					resolve();
 					return;
@@ -481,8 +499,13 @@ export class AudioManager {
 	}
 
 	private hasCurveRetime({ clip }: { clip: AudioClipSource }): boolean {
-		const mode = (clip.retime as { mode?: unknown } | undefined)?.mode;
-		return mode === "curve";
+		const retime: unknown = clip.retime;
+		return (
+			typeof retime === "object" &&
+			retime !== null &&
+			"mode" in retime &&
+			retime.mode === "curve"
+		);
 	}
 
 	private scheduleClipGainAutomation({

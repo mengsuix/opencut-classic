@@ -145,6 +145,7 @@ function PreviewCanvas({
 	const activeRenderControllerRef = useRef<AbortController | null>(null);
 	const seekRevisionRef = useRef(0);
 	const renderedSeekRevisionRef = useRef(0);
+	const renderRef = useRef<(() => void) | null>(null);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -207,7 +208,9 @@ function PreviewCanvas({
 		}
 
 		const controller = new AbortController();
-		const cancelVideoDecode = seekRevision !== renderedSeekRevisionRef.current;
+		const cancelVideoDecode =
+			seekRevision !== renderedSeekRevisionRef.current &&
+			editor.playback.getIsScrubbing();
 		renderingRef.current = true;
 		activeRenderControllerRef.current = controller;
 		void renderer
@@ -218,21 +221,13 @@ function PreviewCanvas({
 				cancelVideoDecode,
 			})
 			.then(() => {
-				const latestTime = Math.min(
-					editor.playback.getCurrentTime(),
-					editor.timeline.getLastFrameTime(),
-				);
-				const latestFrame = Math.floor(latestTime / ticksPerFrame);
-				const isLatestRender =
-					!controller.signal.aborted &&
-					seekRevision === seekRevisionRef.current &&
-					latestFrame === frame &&
-					editor.renderer.getRenderTree() === renderTree;
+				const isStale =
+					controller.signal.aborted ||
+					editor.renderer.getRenderTree() !== renderTree;
 
-				if (!isLatestRender) {
+				if (isStale) {
 					lastSceneRef.current = null;
 					lastFrameRef.current = -1;
-					queueMicrotask(() => render());
 					return;
 				}
 
@@ -252,17 +247,43 @@ function PreviewCanvas({
 				}
 				renderingRef.current = false;
 				if (seekRevision !== seekRevisionRef.current) {
-					queueMicrotask(() => render());
+					queueMicrotask(() => renderRef.current?.());
+				} else if (cancelVideoDecode && !editor.playback.getIsScrubbing()) {
+					lastFrameRef.current = -1;
+					queueMicrotask(() => renderRef.current?.());
 				}
 			});
 	}, [renderer, renderTree, editor]);
+
+	useEffect(() => {
+		renderRef.current = render;
+		return () => {
+			if (renderRef.current === render) {
+				renderRef.current = null;
+			}
+		};
+	}, [render]);
+
+	useEffect(() => {
+		let wasScrubbing = editor.playback.getIsScrubbing();
+		return editor.playback.subscribe(() => {
+			const isScrubbing = editor.playback.getIsScrubbing();
+			if (wasScrubbing && !isScrubbing) {
+				lastFrameRef.current = -1;
+				queueMicrotask(() => renderRef.current?.());
+			}
+			wasScrubbing = isScrubbing;
+		});
+	}, [editor]);
 
 	useRafLoop(render);
 
 	useEffect(() => {
 		const unsubscribe = editor.playback.onSeek(() => {
 			seekRevisionRef.current += 1;
-			activeRenderControllerRef.current?.abort();
+			if (!editor.playback.getIsScrubbing()) {
+				activeRenderControllerRef.current?.abort();
+			}
 			queueMicrotask(() => render());
 		});
 
@@ -367,20 +388,21 @@ function PreviewCanvas({
 								ref={viewportRef}
 								className="relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden"
 							>
-							<div
-								ref={canvasMountRef}
-								className="absolute block border"
-								style={{
-									left: viewport.sceneLeft,
-									top: viewport.sceneTop,
-									width: viewport.sceneWidth,
-									height: viewport.sceneHeight,
-									background:
-										activeProject.settings.background.type === "blur"
-											? "transparent"
-											: activeProject?.settings.background.color,
-								}}
-							/>
+								<div
+									ref={canvasMountRef}
+									className="absolute block border"
+									style={{
+										left: viewport.sceneLeft,
+										top: viewport.sceneTop,
+										width: viewport.sceneWidth,
+										height: viewport.sceneHeight,
+										background:
+											activeProject.settings.background.type === "blur"
+												? "transparent"
+												: activeProject?.settings.background.color,
+									}}
+								/>
+
 								<PreviewOverlayLayer
 									instances={overlayInstances}
 									plane="under-interaction"

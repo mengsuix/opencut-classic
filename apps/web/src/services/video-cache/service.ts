@@ -70,10 +70,10 @@ export class VideoCache {
 
 		const previous = this.frameChain.get(mediaId) ?? Promise.resolve();
 		const current = previous.then(async () => {
-			if (sinkData.latestRequestId !== requestId) {
-				return null;
-			}
 			throwIfAborted(signal);
+			if (sinkData.latestRequestId !== requestId) {
+				return sinkData.currentFrame ?? null;
+			}
 			sinkData.activeRequestId = requestId;
 			try {
 				const frame = await this.resolveFrame({
