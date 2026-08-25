@@ -99,6 +99,15 @@ export class SeekController {
 
 	onTracksMouseDown(event: ReactMouseEvent): void {
 		this.beginPendingSeek({ event, source: "tracks" });
+
+		// Seek on mousedown, same as the ruler's playhead scrub. Deferring to
+		// click/mouseup silently drops the seek whenever the gesture is not
+		// recognized as a click (pointer released over a different element,
+		// moved >5px, or held >500ms) — the user sees "no response".
+		if (event.button !== 0) return;
+		const target = event.target as HTMLElement;
+		if (this.config.getPlayheadEl()?.contains(target)) return;
+		this.seekFromEvent({ event, source: "tracks" });
 	}
 
 	onRulerMouseDown(event: ReactMouseEvent): void {
