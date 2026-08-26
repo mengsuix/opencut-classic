@@ -25,6 +25,7 @@ import type {
 } from "@/transcription/types";
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
+import { validateElementPatchRootKeys } from "./patch-validation";
 
 export interface BridgeElementRef {
 	trackId: string;
@@ -375,7 +376,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.update_elements": {
 		description:
-			"Patch elements (e.g. params like volume, opacity, transform.*, or time fields in seconds).",
+			'Patch elements. Visual props go in patch.params as flat keys, e.g. { params: { "transform.positionX": 120, "transform.positionY": 680, "opacity": 0.5 } }; time fields (startTime/duration/trimStart/trimEnd, seconds) at patch root. Unknown root fields are rejected.',
 		args: {
 			updates: "[{ trackId, elementId, patch }]",
 			pushHistory: "boolean? (default true)",
@@ -383,13 +384,15 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		run: ({ editor, args }) => {
 			const updates = (
 				args.updates as Array<Record<string, unknown>> | undefined
-			)?.map((update) => ({
-				trackId: requireString(update.trackId, "updates[].trackId"),
-				elementId: requireString(update.elementId, "updates[].elementId"),
-				patch: convertTimePatch(
-					(update.patch ?? {}) as Record<string, unknown>,
-				),
-			}));
+			)?.map((update) => {
+				const rawPatch = (update.patch ?? {}) as Record<string, unknown>;
+				validateElementPatchRootKeys(rawPatch);
+				return {
+					trackId: requireString(update.trackId, "updates[].trackId"),
+					elementId: requireString(update.elementId, "updates[].elementId"),
+					patch: convertTimePatch(rawPatch),
+				};
+			});
 			if (!updates || updates.length === 0) {
 				throw new Error("Missing or invalid argument: updates");
 			}
