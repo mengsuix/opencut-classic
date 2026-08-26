@@ -38,14 +38,16 @@ async def _idle_cleanup_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not config.DATABASE_URL:
-        raise RuntimeError("DATABASE_URL 未配置")
+    if config.AUTH_MODE == "better_auth" and not config.DATABASE_URL.startswith(
+        ("postgres://", "postgresql://")
+    ):
+        raise RuntimeError("better_auth 鉴权模式要求 DATABASE_URL 为 postgres://")
     config.AGENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    await db.init_pool(config.DATABASE_URL)
+    await db.init_pool()
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
     logger.info(
         f"Agent Gateway 已启动 (port={config.GATEWAY_PORT}, model={config.AGENT_MODEL}, "
-        f"dev_bypass_auth={config.DEV_BYPASS_AUTH})"
+        f"auth_mode={config.AUTH_MODE})"
     )
     yield
     cleanup_task.cancel()

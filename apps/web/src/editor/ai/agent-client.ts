@@ -43,17 +43,23 @@ function gatewayUrl(): string {
 let tokenCache: { token: string; fetchedAt: number } | null = null;
 const TOKEN_CACHE_MS = 5 * 60 * 1000;
 
+/**
+ * 获取 Gateway 访问凭证。鉴权体系未接入前（Gateway AUTH_MODE=dev），
+ * token 获取失败降级为空串，请求不携带 Authorization 头，Gateway dev 模式直通。
+ */
 async function getGatewayToken(): Promise<string> {
 	if (tokenCache && Date.now() - tokenCache.fetchedAt < TOKEN_CACHE_MS) {
 		return tokenCache.token;
 	}
-	const res = await fetch("/api/agent/gateway-token");
-	if (!res.ok) {
-		throw new Error("未登录或登录已过期");
+	try {
+		const res = await fetch("/api/agent/gateway-token");
+		if (!res.ok) return "";
+		const data = tokenResponseSchema.parse(await res.json());
+		tokenCache = { token: data.token, fetchedAt: Date.now() };
+		return data.token;
+	} catch {
+		return "";
 	}
-	const data = tokenResponseSchema.parse(await res.json());
-	tokenCache = { token: data.token, fetchedAt: Date.now() };
-	return data.token;
 }
 
 async function agentFetch({
@@ -68,7 +74,7 @@ async function agentFetch({
 		...init,
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: `Bearer ${token}`,
+			...(token ? { Authorization: `Bearer ${token}` } : {}),
 			...init.headers,
 		},
 	});
