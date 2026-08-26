@@ -137,6 +137,8 @@ class AgentService:
             resume=session_id if resume else None,
             session_id=session_id if not resume else None,
             stderr=lambda line: logger.error(f"[Agent STDERR] {line}"),
+            # 工具结果（截图/大型工程状态）可能超过默认 1MB 的 JSON 消息缓冲
+            max_buffer_size=8 * 1024 * 1024,
         )
         client = ClaudeSDKClient(options=options)
 

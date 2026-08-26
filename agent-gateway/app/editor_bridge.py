@@ -157,7 +157,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_preview_frame",
-        "Capture a PNG frame of the current preview. Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits.",
+        "Capture a frame of the current preview as a downscaled image. Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits.",
         {
             "type": "object",
             "properties": {
@@ -178,13 +178,16 @@ def build_editor_mcp_server(session_id: str):
             return _error(str(e))
         data_url = (result or {}).get("dataUrl", "")
         base64_data = data_url.split(",", 1)[-1] if "," in data_url else data_url
+        mime = "image/png"
+        if data_url.startswith("data:") and ";" in data_url:
+            mime = data_url[5 : data_url.index(";")]
         meta = {
             k: result[k] for k in ("width", "height", "time") if k in (result or {})
         }
         return {
             "content": [
                 {"type": "text", "text": json.dumps(meta, ensure_ascii=False)},
-                {"type": "image", "data": base64_data, "mimeType": "image/png"},
+                {"type": "image", "data": base64_data, "mimeType": mime},
             ]
         }
 

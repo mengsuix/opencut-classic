@@ -30,7 +30,7 @@ DATABASE_URL = os.environ.get(
 )
 
 # 模型配置：默认 DeepSeek（Anthropic 兼容端点），可用官方 Anthropic 覆盖
-AGENT_MODEL = os.environ.get("AGENT_MODEL", "deepseek-v4-flash[1m]")
+AGENT_MODEL = os.environ.get("AGENT_MODEL", "deepseek-v4-flash-vision-exp")
 
 AGENT_ENV = {
     "ANTHROPIC_BASE_URL": os.environ.get(

@@ -1103,7 +1103,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"preview.capture": {
 		description:
-			"Capture a preview frame as a PNG data URL. Renders at the given time (seconds) or the current playhead.",
+			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead.",
 		args: { time: "seconds?" },
 		run: async ({ editor, args }) => {
 			const renderTree = editor.renderer.getRenderTree();
@@ -1140,10 +1140,32 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				targetCanvas: canvas,
 			});
 
+			// 降采样到长边 1280 并输出 JPEG：全尺寸 PNG base64 后会超过
+			// agent SDK 1MB 消息缓冲上限，且视觉模型本身会再缩放
+			const MAX_EDGE = 1280;
+			const scale = Math.min(
+				1,
+				MAX_EDGE / Math.max(canvas.width, canvas.height),
+			);
+			const outWidth = Math.round(canvas.width * scale);
+			const outHeight = Math.round(canvas.height * scale);
+			let source = canvas;
+			if (scale < 1) {
+				const small = document.createElement("canvas");
+				small.width = outWidth;
+				small.height = outHeight;
+				const ctx = small.getContext("2d");
+				if (!ctx) {
+					throw new Error("Failed to create downscale canvas context");
+				}
+				ctx.drawImage(canvas, 0, 0, outWidth, outHeight);
+				source = small;
+			}
+
 			return {
-				dataUrl: canvas.toDataURL("image/png"),
-				width: canvasSize.width,
-				height: canvasSize.height,
+				dataUrl: source.toDataURL("image/jpeg", 0.85),
+				width: outWidth,
+				height: outHeight,
 				time: toSeconds(renderTime as MediaTime),
 			};
 		},

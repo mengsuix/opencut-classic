@@ -222,7 +222,7 @@ const TOOLS = [
 	{
 		name: "get_preview_frame",
 		description:
-			"Capture a PNG frame of the current preview. Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits.",
+			"Capture a frame of the current preview as a downscaled image. Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -288,7 +288,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 				const result = (await callEditor("preview.capture", {
 					...(typeof time === "number" ? { time } : {}),
 				})) as { dataUrl: string; width: number; height: number; time: number };
-				const base64 = result.dataUrl.replace(/^data:image\/png;base64,/, "");
+				const mimeMatch = result.dataUrl.match(/^data:(image\/[a-z]+);base64,(.*)$/);
+				const mimeType = (mimeMatch?.[1] ?? "image/png") as
+					| "image/png"
+					| "image/jpeg";
+				const base64 = mimeMatch?.[2] ?? result.dataUrl;
 				return {
 					content: [
 						{
@@ -302,7 +306,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 						{
 							type: "image" as const,
 							data: base64,
-							mimeType: "image/png",
+							mimeType,
 						},
 					],
 				};
