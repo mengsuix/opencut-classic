@@ -26,6 +26,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
+import { Sparkles } from "lucide-react";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
+import { EditorCore } from "@/core";
 
 export function EditorHeader() {
 	return (
@@ -35,11 +38,33 @@ export function EditorHeader() {
 				<EditableProjectName />
 			</div>
 			<nav className="flex items-center gap-2">
+				<AiChatToggle />
 				<FeedbackPopover />
 				<ExportButton />
 				<ThemeToggle />
 			</nav>
 		</header>
+	);
+}
+
+function AiChatToggle() {
+	const isOpen = useAiChatStore((state) => state.isOpen);
+	const togglePanel = useAiChatStore((state) => state.togglePanel);
+
+	return (
+		<Button
+			variant={isOpen ? "secondary" : "text"}
+			size="sm"
+			className="gap-1.5"
+			onClick={() => {
+				const project = EditorCore.getInstance().project.getActiveOrNull();
+				if (project) togglePanel({ projectId: project.metadata.id });
+			}}
+			aria-label="AI 剪辑助手"
+		>
+			<Sparkles className="size-4" />
+			AI
+		</Button>
 	);
 }
 

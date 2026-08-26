@@ -12,7 +12,7 @@ interface BridgeRequest {
 	args?: Record<string, unknown>;
 }
 
-export function startEditorCommandBridge(): () => void {
+function createBridgeConnection({ url }: { url: string }): () => void {
 	let socket: WebSocket | null = null;
 	let closed = false;
 	let reconnectTimer: number | null = null;
@@ -72,7 +72,7 @@ export function startEditorCommandBridge(): () => void {
 		if (closed) return;
 
 		try {
-			socket = new WebSocket(BRIDGE_URL);
+			socket = new WebSocket(url);
 		} catch {
 			scheduleReconnect();
 			return;
@@ -122,4 +122,14 @@ export function startEditorCommandBridge(): () => void {
 		}
 		socket?.close();
 	};
+}
+
+/** 本地开发模式：连接本机 MCP server（packages/mcp-server，ws://127.0.0.1:7331） */
+export function startEditorCommandBridge(): () => void {
+	return createBridgeConnection({ url: BRIDGE_URL });
+}
+
+/** 云端模式：AI 面板打开后连接 Agent Gateway（wss://.../ws/editor?session_id=...） */
+export function startCloudEditorBridge({ url }: { url: string }): () => void {
+	return createBridgeConnection({ url });
 }

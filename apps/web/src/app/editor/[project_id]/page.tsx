@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/resizable";
 import { AssetsPanel } from "@/components/editor/panels/assets";
 import { PropertiesPanel } from "@/components/editor/panels/properties";
+import { AiChatPanel } from "@/components/editor/panels/ai-chat";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { Timeline } from "@/timeline/components";
 import { PreviewPanel } from "@/preview/components";
 import { EditorHeader } from "@/components/editor/editor-header";
@@ -81,6 +83,7 @@ function DegradedRendererBanner() {
 function EditorLayout() {
 	usePasteMedia();
 	const { panels, setPanel } = usePanelStore();
+	const aiChatOpen = useAiChatStore((state) => state.isOpen);
 	const activeScene = useEditor((editor) =>
 		editor.scenes.getActiveSceneOrNull(),
 	);
@@ -156,6 +159,9 @@ function EditorLayout() {
 							panel: "properties",
 							size: sizes[2] ?? panels.properties,
 						});
+						if (aiChatOpen) {
+							setPanel({ panel: "ai", size: sizes[3] ?? panels.ai });
+						}
 					}}
 				>
 					<ResizablePanel
@@ -191,6 +197,20 @@ function EditorLayout() {
 					>
 						<PropertiesPanel />
 					</ResizablePanel>
+
+					{aiChatOpen && (
+						<>
+							<ResizableHandle withHandle />
+							<ResizablePanel
+								defaultSize={panels.ai}
+								minSize={15}
+								maxSize={40}
+								className="min-w-0"
+							>
+								<AiChatPanel />
+							</ResizablePanel>
+						</>
+					)}
 				</ResizablePanelGroup>
 			</ResizablePanel>
 

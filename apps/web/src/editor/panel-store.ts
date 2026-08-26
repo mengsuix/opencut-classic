@@ -6,6 +6,7 @@ export interface PanelSizes {
 	tools: number;
 	preview: number;
 	properties: number;
+	ai: number;
 	mainContent: number;
 	timeline: number;
 }
@@ -41,7 +42,7 @@ export const usePanelStore = create<PanelState>()(
 		}),
 		{
 			name: "panel-sizes",
-			version: 2,
+			version: 3,
 			migrate: (persistedState) => {
 				const state = persistedState as
 					| {
@@ -80,6 +81,7 @@ export const usePanelStore = create<PanelState>()(
 							state.properties ??
 							state.propertiesPanel ??
 							PANEL_CONFIG.panels.properties,
+						ai: PANEL_CONFIG.panels.ai,
 						mainContent: state.mainContent ?? PANEL_CONFIG.panels.mainContent,
 						timeline: state.timeline ?? PANEL_CONFIG.panels.timeline,
 					},
