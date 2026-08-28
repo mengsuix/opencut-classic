@@ -94,6 +94,7 @@ import { DragLine } from "./drag-line";
 import { invokeAction } from "@/actions";
 import { resolveTimelineElementIntersections } from "./selection-hit-testing";
 import { cn } from "@/utils/ui";
+import { useT, useLocale } from "@/i18n";
 
 const TRACKS_CONTAINER_MAX_HEIGHT = 800;
 
@@ -123,6 +124,7 @@ const TRACK_ICONS: Record<TimelineTrack["type"], ReactNode> = {
 };
 
 export function Timeline() {
+	const t = useT();
 	const snappingEnabled = useTimelineStore((s) => s.snappingEnabled);
 	const {
 		selectedElements,
@@ -460,7 +462,7 @@ export function Timeline() {
 				"panel bg-background relative flex h-full flex-col overflow-hidden rounded-sm border"
 			}
 			{...dragProps}
-			aria-label="Timeline"
+			aria-label={t("timeline.timeline")}
 		>
 			<TimelineToolbar
 				zoomLevel={zoomLevel}
@@ -631,6 +633,7 @@ function TrackLabelsPanel({
 	hasHorizontalScrollbar: boolean;
 	getTrackExpansionHeight: (trackIndex: number) => number;
 }) {
+	const t = useT();
 	const editor = useEditor();
 	const scene = useEditor((e) => e.scenes.getActiveSceneOrNull());
 	const tracks = useMemo<TimelineTrack[]>(
@@ -692,13 +695,13 @@ function TrackLabelsPanel({
 											style={{ height: `${baseHeight}px` }}
 										>
 											{track.type === "text" && (
-												<span
-													title={
-														track.linkedStyle
-															? "Unlink caption style"
-															: "Link caption style"
-													}
-												>
+											<span
+												title={
+													track.linkedStyle
+														? t("timeline.unlinkCaptionStyle")
+														: t("timeline.linkCaptionStyle")
+												}
+											>
 													<HugeiconsIcon
 														icon={track.linkedStyle ? Link02Icon : Unlink02Icon}
 														className={cn(
@@ -796,6 +799,7 @@ function TimelineTrackRows({
 	isDragOver: boolean;
 	dropTarget: DropTarget | null;
 }) {
+	const t = useT();
 	const timeline = useEditor((e) => e.timeline);
 	const scene = useEditor((e) => e.scenes.getActiveSceneOrNull());
 	const tracks = useMemo<TimelineTrack[]>(
@@ -896,30 +900,30 @@ function TimelineTrackRows({
 								invokeAction("paste-copied");
 							}}
 						>
-							Paste elements
-						</ContextMenuItem>
-						<ContextMenuItem
+							{t("timeline.pasteElements")}
+							</ContextMenuItem>
+							<ContextMenuItem
 							icon={<HugeiconsIcon icon={VolumeHighIcon} />}
 							onClick={(event: React.MouseEvent) => {
 								event.stopPropagation();
 								timeline.toggleTrackMute({ trackId: track.id });
 							}}
-						>
+							>
 							{canTrackHaveAudio(track) && track.muted
-								? "Unmute track"
-								: "Mute track"}
-						</ContextMenuItem>
-						<ContextMenuItem
+								? t("timeline.unmuteTrack")
+								: t("timeline.muteTrack")}
+							</ContextMenuItem>
+							<ContextMenuItem
 							icon={<HugeiconsIcon icon={ViewIcon} />}
 							onClick={(event: React.MouseEvent) => {
 								event.stopPropagation();
 								timeline.toggleTrackVisibility({ trackId: track.id });
 							}}
-						>
+							>
 							{canTrackBeHidden(track) && track.hidden
-								? "Show track"
-								: "Hide track"}
-						</ContextMenuItem>
+								? t("timeline.showTrack")
+								: t("timeline.hideTrack")}
+							</ContextMenuItem>
 						{track.id !== mainTrackId && (
 							<ContextMenuItem
 								icon={<HugeiconsIcon icon={Delete02Icon} />}
@@ -928,9 +932,9 @@ function TimelineTrackRows({
 									timeline.removeTrack({ trackId: track.id });
 								}}
 								variant="destructive"
-							>
-								Delete track
-							</ContextMenuItem>
+								>
+								{t("timeline.deleteTrack")}
+								</ContextMenuItem>
 						)}
 					</ContextMenuContent>
 				</ContextMenu>
@@ -988,6 +992,7 @@ function TrackToggleIcon({
 }
 
 function PropertyTree({ rows }: { rows: ExpandedRow[] }) {
+	useLocale();
 	return (
 		<div className="flex flex-col overflow-hidden">
 			{rows.map((row) => (

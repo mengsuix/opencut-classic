@@ -1,4 +1,5 @@
 import type { ShortcutKey } from "@/actions/keybinding";
+import { t } from "@/i18n";
 import type { TActionWithOptionalArgs } from "./types";
 
 export type TActionCategory =
@@ -23,128 +24,188 @@ export interface TActionDefinition extends TActionBaseDefinition {
 
 export const ACTIONS = {
 	"toggle-play": {
-		description: "Play/Pause",
+		get description() {
+			return t("shell.actionTogglePlay");
+		},
 		category: "playback",
 	},
 	"stop-playback": {
-		description: "Stop playback",
+		get description() {
+			return t("shell.actionStopPlayback");
+		},
 		category: "playback",
 	},
 	"seek-forward": {
-		description: "Seek forward 1 second",
+		get description() {
+			return t("shell.actionSeekForward");
+		},
 		category: "playback",
 		args: { seconds: "number" },
 	},
 	"seek-backward": {
-		description: "Seek backward 1 second",
+		get description() {
+			return t("shell.actionSeekBackward");
+		},
 		category: "playback",
 		args: { seconds: "number" },
 	},
 	"frame-step-forward": {
-		description: "Frame step forward",
+		get description() {
+			return t("shell.actionFrameStepForward");
+		},
 		category: "navigation",
 	},
 	"frame-step-backward": {
-		description: "Frame step backward",
+		get description() {
+			return t("shell.actionFrameStepBackward");
+		},
 		category: "navigation",
 	},
 	"jump-forward": {
-		description: "Jump forward 5 seconds",
+		get description() {
+			return t("shell.actionJumpForward");
+		},
 		category: "navigation",
 		args: { seconds: "number" },
 	},
 	"jump-backward": {
-		description: "Jump backward 5 seconds",
+		get description() {
+			return t("shell.actionJumpBackward");
+		},
 		category: "navigation",
 		args: { seconds: "number" },
 	},
 	"goto-start": {
-		description: "Go to timeline start",
+		get description() {
+			return t("shell.actionGotoStart");
+		},
 		category: "navigation",
 	},
 	"goto-end": {
-		description: "Go to timeline end",
+		get description() {
+			return t("shell.actionGotoEnd");
+		},
 		category: "navigation",
 	},
 	split: {
-		description: "Split elements at playhead",
+		get description() {
+			return t("shell.actionSplit");
+		},
 		category: "editing",
 	},
 	"split-left": {
-		description: "Split and remove left",
+		get description() {
+			return t("shell.actionSplitLeft");
+		},
 		category: "editing",
 	},
 	"split-right": {
-		description: "Split and remove right",
+		get description() {
+			return t("shell.actionSplitRight");
+		},
 		category: "editing",
 	},
 	"delete-selected": {
-		description: "Delete current selection",
+		get description() {
+			return t("shell.actionDeleteSelected");
+		},
 		category: "editing",
 	},
 	"copy-selected": {
-		description: "Copy selected elements",
+		get description() {
+			return t("shell.actionCopySelected");
+		},
 		category: "editing",
 	},
 	"paste-copied": {
-		description: "Paste elements at playhead",
+		get description() {
+			return t("shell.actionPasteCopied");
+		},
 		category: "editing",
 	},
 	"toggle-snapping": {
-		description: "Toggle snapping",
+		get description() {
+			return t("shell.actionToggleSnapping");
+		},
 		category: "editing",
 	},
 	"toggle-ripple-editing": {
-		description: "Toggle ripple editing",
+		get description() {
+			return t("shell.actionToggleRippleEditing");
+		},
 		category: "editing",
 	},
 	"toggle-source-audio": {
-		description: "Extract or recover source audio",
+		get description() {
+			return t("shell.actionToggleSourceAudio");
+		},
 		category: "editing",
 	},
 	"select-all": {
-		description: "Select all elements",
+		get description() {
+			return t("shell.actionSelectAll");
+		},
 		category: "selection",
 	},
 	"cancel-interaction": {
-		description: "Cancel current interaction",
+		get description() {
+			return t("shell.actionCancelInteraction");
+		},
 		category: "controls",
 	},
 	"deselect-all": {
-		description: "Deselect all elements",
+		get description() {
+			return t("shell.actionDeselectAll");
+		},
 		category: "selection",
 	},
 	"duplicate-selected": {
-		description: "Duplicate selected element",
+		get description() {
+			return t("shell.actionDuplicateSelected");
+		},
 		category: "selection",
 	},
 	"toggle-elements-muted-selected": {
-		description: "Mute/unmute selected elements",
+		get description() {
+			return t("shell.actionToggleMutedSelected");
+		},
 		category: "selection",
 	},
 	"toggle-elements-visibility-selected": {
-		description: "Show/hide selected elements",
+		get description() {
+			return t("shell.actionToggleVisibilitySelected");
+		},
 		category: "selection",
 	},
 	"toggle-bookmark": {
-		description: "Toggle bookmark at playhead",
+		get description() {
+			return t("shell.actionToggleBookmark");
+		},
 		category: "timeline",
 	},
 	undo: {
-		description: "Undo",
+		get description() {
+			return t("shell.actionUndo");
+		},
 		category: "history",
 	},
 	redo: {
-		description: "Redo",
+		get description() {
+			return t("shell.actionRedo");
+		},
 		category: "history",
 	},
 	"remove-media-asset": {
-		description: "Remove media asset",
+		get description() {
+			return t("shell.actionRemoveMediaAsset");
+		},
 		category: "assets",
 		args: { projectId: "string", assetId: "string" },
 	},
 	"remove-media-assets": {
-		description: "Remove media assets",
+		get description() {
+			return t("shell.actionRemoveMediaAssets");
+		},
 		category: "assets",
 		args: { projectId: "string", assetIds: "string[]" },
 	},

@@ -14,6 +14,7 @@ import {
 	ColorsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { t } from "@/i18n";
 
 export const TAB_KEYS = [
 	"media",
@@ -38,39 +39,57 @@ const createHugeiconsIcon =
 export const tabs = {
 	media: {
 		icon: createHugeiconsIcon({ icon: Folder03Icon }),
-		label: "Media",
+		get label() {
+			return t("assets.tabMedia");
+		},
 	},
 	sounds: {
 		icon: createHugeiconsIcon({ icon: HeadphonesIcon }),
-		label: "Sounds",
+		get label() {
+			return t("assets.tabSounds");
+		},
 	},
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
-		label: "Text",
+		get label() {
+			return t("assets.tabText");
+		},
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),
-		label: "Stickers",
+		get label() {
+			return t("assets.tabStickers");
+		},
 	},
 	effects: {
 		icon: createHugeiconsIcon({ icon: MagicWand05Icon }),
-		label: "Effects",
+		get label() {
+			return t("assets.tabEffects");
+		},
 	},
 	transitions: {
 		icon: createHugeiconsIcon({ icon: ArrowRightDoubleIcon }),
-		label: "Transitions",
+		get label() {
+			return t("assets.tabTransitions");
+		},
 	},
 	captions: {
 		icon: createHugeiconsIcon({ icon: ClosedCaptionIcon }),
-		label: "Captions",
+		get label() {
+			return t("assets.tabCaptions");
+		},
 	},
 	adjustment: {
 		icon: createHugeiconsIcon({ icon: SlidersHorizontalIcon }),
-		label: "Adjustment",
+		get label() {
+			return t("assets.tabAdjustment");
+		},
 	},
 	settings: {
 		icon: createHugeiconsIcon({ icon: Settings01Icon }),
-		label: "Settings",
+		get label() {
+			return t("assets.tabSettings");
+		},
 	},
 } satisfies Record<
 	Tab,

@@ -1,6 +1,7 @@
 import {
 	STICKER_CATEGORIES,
 } from "@/stickers/categories";
+import { t } from "@/i18n";
 import { STICKER_INTRINSIC_SIZE_FALLBACK } from "@/stickers/intrinsic-size";
 import type { StickerCategory } from "@/stickers/types";
 import { stickersRegistry } from "./registry";
@@ -243,7 +244,7 @@ export async function browseAll({
 	if (recentItems.length > 0) {
 		sections.push({
 			id: "recent",
-			title: "Recently used",
+			title: t("assets.recentlyUsed"),
 			items: recentItems.slice(0, limit),
 			hasMore: recentItems.length > limit,
 			layout: "row",

@@ -10,6 +10,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { useT } from "@/i18n";
 
 export function DeleteProjectDialog({
 	isOpen,
@@ -22,6 +23,7 @@ export function DeleteProjectDialog({
 	onConfirm: () => void;
 	projectNames: string[];
 }) {
+	const t = useT();
 	const count = projectNames.length;
 	const isSingle = count === 1;
 	const singleName = isSingle ? projectNames[0] : null;
@@ -38,29 +40,29 @@ export function DeleteProjectDialog({
 					<DialogTitle>
 						{singleName ? (
 							<>
-								{"Delete '"}
+								{t("shell.deleteSinglePrefix")}
 								<span className="inline-block max-w-[300px] truncate align-bottom">
 									{singleName}
 								</span>
-								{"'?"}
+								{t("shell.deleteSingleSuffix")}
 							</>
 						) : (
-							`Delete ${count} projects?`
+							t("shell.deleteMultipleTitle", { count })
 						)}
 					</DialogTitle>
 				</DialogHeader>
 				<DialogBody>
 					<Alert variant="destructive">
-						<AlertTitle>Warning</AlertTitle>
+						<AlertTitle>{t("shell.deleteWarning")}</AlertTitle>
 						<AlertDescription>
-							This will permanently delete{" "}
-							{singleName ? `"${singleName}"` : `${count} projects`} and all
-							associated files.
+							{singleName
+								? t("shell.deleteConfirmSingle", { name: singleName })
+								: t("shell.deleteConfirmMultiple", { count })}
 						</AlertDescription>
 					</Alert>
 					<div className="flex flex-col gap-3">
 						<Label className="text-xs font-semibold text-slate-500">
-							Type "DELETE" to confirm
+							{t("shell.typeDeleteToConfirm")}
 						</Label>
 						<Input
 							type="text"
@@ -72,10 +74,10 @@ export function DeleteProjectDialog({
 				</DialogBody>
 				<DialogFooter>
 					<Button variant="outline" onClick={() => onOpenChange(false)}>
-						Cancel
+						{t("common.cancel")}
 					</Button>
 					<Button variant="destructive" onClick={onConfirm}>
-						Delete project
+						{t("shell.deleteProject")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { MaskDefinition } from "@/masks/types";
 import {
 	BOX_LIKE_MASK_PARAMS,
@@ -47,7 +48,7 @@ function buildDiamondPath({
 
 export const diamondMaskDefinition: MaskDefinition<"diamond"> = {
 	type: "diamond",
-	name: "Diamond",
+	get name() { return t("properties.maskDiamond"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

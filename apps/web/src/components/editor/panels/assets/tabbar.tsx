@@ -13,8 +13,10 @@ import {
 	tabs,
 	useAssetsPanelStore,
 } from "@/components/editor/panels/assets/assets-panel-store";
+import { useT } from "@/i18n";
 
 export function TabBar() {
+	useT();
 	const { activeTab, setActiveTab } = useAssetsPanelStore();
 	const [showTopFade, setShowTopFade] = useState(false);
 	const [showBottomFade, setShowBottomFade] = useState(false);

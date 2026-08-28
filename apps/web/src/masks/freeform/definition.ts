@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { generateUUID } from "@/utils/id";
 import type { ParamDefinition } from "@/params";
 import { PEN_CURSOR } from "@/preview/components/cursors";
@@ -43,7 +44,7 @@ const PERCENTAGE_DISPLAY = {
 const FREEFORM_PATH_MASK_PARAMS: ParamDefinition<keyof FreeformPathMaskParams & string>[] = [
 	{
 		key: "centerX",
-		label: "X",
+		get label() { return t("properties.maskX"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -52,7 +53,7 @@ const FREEFORM_PATH_MASK_PARAMS: ParamDefinition<keyof FreeformPathMaskParams & 
 	},
 	{
 		key: "centerY",
-		label: "Y",
+		get label() { return t("properties.maskY"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -61,7 +62,7 @@ const FREEFORM_PATH_MASK_PARAMS: ParamDefinition<keyof FreeformPathMaskParams & 
 	},
 	{
 		key: "rotation",
-		label: "Rotation",
+		get label() { return t("properties.rotation"); },
 		type: "number",
 		default: 0,
 		min: 0,
@@ -70,7 +71,7 @@ const FREEFORM_PATH_MASK_PARAMS: ParamDefinition<keyof FreeformPathMaskParams & 
 	},
 	{
 		key: "scale",
-		label: "Scale",
+		get label() { return t("properties.scale"); },
 		type: "number",
 		default: 1,
 		min: 1,
@@ -290,7 +291,7 @@ function computeFreeformParamUpdate({
 
 export const freeformMaskDefinition: MaskDefinition<"freeform"> = {
 	type: "freeform",
-	name: "Pen tool",
+	get name() { return t("properties.maskPenTool"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

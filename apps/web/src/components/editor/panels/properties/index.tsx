@@ -9,6 +9,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEditor } from "@/editor/use-editor";
+import { useT } from "@/i18n";
 import { findTrackInSceneTracks } from "@/timeline";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { usePropertiesStore } from "./stores/properties-store";
@@ -17,6 +18,7 @@ import { cn } from "@/utils/ui";
 import { EmptyView } from "./empty-view";
 
 export function PropertiesPanel() {
+	const t = useT();
 	const editor = useEditor();
 	const tracks = useEditor((e) => e.timeline.getPreviewTracks());
 	useEditor((e) => e.media.getAssets());
@@ -35,7 +37,7 @@ export function PropertiesPanel() {
 		return (
 			<div className="panel bg-background flex h-full flex-col items-center justify-center overflow-hidden rounded-sm border">
 				<p className="text-muted-foreground text-sm">
-					{selectedElements.length} elements selected.0
+					{t("properties.elementsSelected", { count: selectedElements.length })}
 				</p>
 			</div>
 		);

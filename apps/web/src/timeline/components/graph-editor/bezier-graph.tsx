@@ -6,6 +6,7 @@ import { useCommittedRef } from "@/hooks/use-committed-ref";
 import { getBezierPoint } from "@/animation/bezier";
 import type { NormalizedCubicBezier } from "@/animation/types";
 import { cn } from "@/utils/ui";
+import { useT } from "@/i18n";
 
 const GRAPH_WIDTH = 140;
 const GRAPH_HEIGHT = 94;
@@ -85,6 +86,7 @@ export function BezierGraph({
 	onChangeEnd?: (value: NormalizedCubicBezier) => void;
 	onCancel?: () => void;
 }) {
+	const t = useT();
 	const svgRef = useRef<SVGSVGElement>(null);
 	const [activeHandle, setActiveHandle] = useState<BezierHandle | null>(null);
 	const isShiftPressedRef = useShiftKey();
@@ -164,7 +166,7 @@ export function BezierGraph({
 			onPointerUp={onPointerUp}
 			onPointerCancel={onPointerCancel}
 		>
-			<title>Bezier curve editor</title>
+			<title>{t("timeline.bezierCurveEditor")}</title>
 			<line
 				x1={p0.x}
 				y1={p0.y}

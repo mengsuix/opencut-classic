@@ -15,6 +15,7 @@ import {
 	buildTextBackgroundFromElement,
 	buildTextLayoutParamsFromElement,
 } from "@/text/measure-element";
+import { useT } from "@/i18n";
 
 export function TextEditOverlay({
 	trackId,
@@ -27,6 +28,7 @@ export function TextEditOverlay({
 	element: TextElement;
 	onCommit: () => void;
 }) {
+	const t = useT();
 	const editor = useEditor();
 	const viewport = usePreviewViewport();
 	const divRef = useRef<HTMLDivElement>(null);
@@ -122,7 +124,7 @@ export function TextEditOverlay({
 				suppressContentEditableWarning
 				tabIndex={0}
 				role="textbox"
-				aria-label="Edit text"
+				aria-label={t("shell.editText")}
 				className="cursor-text select-text outline-none whitespace-pre"
 				style={{
 					fontSize: resolvedTextLayout.scaledFontSize,

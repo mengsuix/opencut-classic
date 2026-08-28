@@ -67,6 +67,7 @@ import { ProjectInfoDialog } from "@/project/components/project-info-dialog";
 import { RenameProjectDialog } from "@/project/components/rename-project-dialog";
 import { cn } from "@/utils/ui";
 import { ChangelogNotification } from "@/changelog/components/changelog-notification";
+import { t, useLocale, useT } from "@/i18n";
 const formatProjectDuration = ({
 	duration,
 }: {
@@ -82,8 +83,20 @@ const formatProjectDuration = ({
 };
 
 const VIEW_MODE_OPTIONS = [
-	{ mode: "grid" as const, icon: GridViewIcon, label: "Grid view" },
-	{ mode: "list" as const, icon: LeftToRightListDashIcon, label: "List view" },
+	{
+		mode: "grid" as const,
+		icon: GridViewIcon,
+		get label() {
+			return t("shell.gridView");
+		},
+	},
+	{
+		mode: "list" as const,
+		icon: LeftToRightListDashIcon,
+		get label() {
+			return t("shell.listView");
+		},
+	},
 ];
 
 export default function ProjectsPage() {
@@ -138,6 +151,7 @@ export default function ProjectsPage() {
 }
 
 function ProjectsHeader() {
+	const t = useT();
 	const { viewMode, isHydrated, setViewMode } = useProjectsStore();
 
 	return (
@@ -149,14 +163,14 @@ function ProjectsHeader() {
 							<BreadcrumbItem>
 								<BreadcrumbLink asChild>
 									<Link href="/" className="text-sm sm:text-base">
-										Home
+										{t("shell.home")}
 									</Link>
 								</BreadcrumbLink>
 							</BreadcrumbItem>
 							<BreadcrumbSeparator />
 							<BreadcrumbItem>
 								<BreadcrumbPage className="text-sm sm:text-base font-medium">
-									All projects
+									{t("shell.allProjects")}
 								</BreadcrumbPage>
 							</BreadcrumbItem>
 						</BreadcrumbList>
@@ -193,13 +207,22 @@ function ProjectsHeader() {
 }
 
 const SORT_LABELS: Record<TProjectSortKey, string> = {
-	createdAt: "Created",
-	updatedAt: "Modified",
-	name: "Name",
-	duration: "Duration",
+	get createdAt() {
+		return t("shell.created");
+	},
+	get updatedAt() {
+		return t("shell.modified");
+	},
+	get name() {
+		return t("shell.name");
+	},
+	get duration() {
+		return t("shell.duration");
+	},
 };
 
 function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
+	const t = useT();
 	const {
 		selectedProjectIds,
 		sortKey,
@@ -243,7 +266,7 @@ function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
 						}
 					/>
 					<span className="text-muted-foreground hidden md:block">
-						Select all
+						{t("shell.selectAll")}
 					</span>
 				</Label>
 
@@ -269,7 +292,11 @@ function ProjectsToolbar({ projectIds }: { projectIds: string[] }) {
 							});
 						}
 					}}
-					aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
+					aria-label={
+						sortOrder === "asc"
+							? t("shell.sortAscending")
+							: t("shell.sortDescending")
+					}
 				>
 					<HugeiconsIcon
 						icon={ArrowDown02Icon}
@@ -309,6 +336,7 @@ function SearchBar({
 	className?: string;
 	collapsed?: boolean;
 }) {
+	const t = useT();
 	const { searchQuery, setSearchQuery } = useProjectsStore();
 
 	return (
@@ -331,7 +359,7 @@ function SearchBar({
 						aria-hidden="true"
 					/>
 					<Input
-						placeholder="Search..."
+						placeholder={t("shell.searchPlaceholder")}
 						value={searchQuery}
 						onChange={(event) => setSearchQuery({ query: event.target.value })}
 						size="lg"
@@ -346,13 +374,17 @@ function SearchBar({
 const PROJECT_ACTIONS = [
 	{
 		id: "duplicate",
-		label: "Duplicate",
+		get label() {
+			return t("shell.duplicate");
+		},
 		icon: Copy01Icon,
 		variant: "outline" as const,
 	},
 	{
 		id: "delete",
-		label: "Delete",
+		get label() {
+			return t("common.delete");
+		},
 		icon: Delete02Icon,
 		variant: "destructive-foreground" as const,
 	},
@@ -391,6 +423,7 @@ async function renameProject({
 }
 
 function ProjectActions() {
+	useLocale();
 	const editor = useEditor();
 	const { selectedProjectIds, clearSelectedProjects } = useProjectsStore();
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -469,6 +502,7 @@ function ProjectActions() {
 }
 
 function SortDropdown({ children }: { children: React.ReactNode }) {
+	const t = useT();
 	const { sortKey, setSortKey } = useProjectsStore();
 
 	return (
@@ -479,25 +513,25 @@ function SortDropdown({ children }: { children: React.ReactNode }) {
 					checked={sortKey === "createdAt"}
 					onCheckedChange={() => setSortKey({ sortKey: "createdAt" })}
 				>
-					Created
+					{t("shell.created")}
 				</DropdownMenuCheckboxItem>
 				<DropdownMenuCheckboxItem
 					checked={sortKey === "updatedAt"}
 					onCheckedChange={() => setSortKey({ sortKey: "updatedAt" })}
 				>
-					Modified
+					{t("shell.modified")}
 				</DropdownMenuCheckboxItem>
 				<DropdownMenuCheckboxItem
 					checked={sortKey === "name"}
 					onCheckedChange={() => setSortKey({ sortKey: "name" })}
 				>
-					Name
+					{t("shell.name")}
 				</DropdownMenuCheckboxItem>
 				<DropdownMenuCheckboxItem
 					checked={sortKey === "duration"}
 					onCheckedChange={() => setSortKey({ sortKey: "duration" })}
 				>
-					Duration
+					{t("shell.duration")}
 				</DropdownMenuCheckboxItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -505,12 +539,13 @@ function SortDropdown({ children }: { children: React.ReactNode }) {
 }
 
 function NewProjectButton() {
+	const t = useT();
 	const editor = useEditor();
 	const router = useRouter();
 
 	const handleCreateProject = async () => {
 		const projectId = await editor.project.createNewProject({
-			name: "New project",
+			name: t("shell.newProject"),
 		});
 		router.push(`/editor/${projectId}`);
 	};
@@ -521,8 +556,12 @@ function NewProjectButton() {
 			className="flex px-5 md:px-6"
 			onClick={handleCreateProject}
 		>
-			<span className="text-sm font-medium hidden md:block">New project</span>
-			<span className="text-sm font-medium block md:hidden">New</span>
+			<span className="text-sm font-medium hidden md:block">
+				{t("shell.newProject")}
+			</span>
+			<span className="text-sm font-medium block md:hidden">
+				{t("shell.new")}
+			</span>
 		</Button>
 	);
 }
@@ -534,6 +573,7 @@ function ProjectItem({
 	project: TProjectMetadata;
 	allProjectIds: string[];
 }) {
+	const t = useT();
 	const {
 		selectedProjectIds,
 		viewMode,
@@ -584,7 +624,7 @@ function ProjectItem({
 					{project.thumbnail ? (
 						<Image
 							src={project.thumbnail}
-							alt="Project thumbnail"
+							alt={t("header.projectThumbnail")}
 							fill
 							className="object-cover"
 						/>
@@ -608,7 +648,11 @@ function ProjectItem({
 				</h3>
 				<div className="text-muted-foreground flex items-center gap-1.5 text-sm">
 					<HugeiconsIcon icon={Calendar04Icon} className="size-4" />
-					<span>Created {formatDate({ date: project.createdAt })}</span>
+					<span>
+						{t("shell.createdDate", {
+							date: formatDate({ date: project.createdAt }),
+						})}
+					</span>
 				</div>
 			</CardContent>
 		</Card>
@@ -620,7 +664,7 @@ function ProjectItem({
 				{project.thumbnail ? (
 					<Image
 						src={project.thumbnail}
-						alt="Project thumbnail"
+						alt={t("header.projectThumbnail")}
 						fill
 						className="object-cover"
 					/>
@@ -771,25 +815,26 @@ function ProjectContextMenuContent({
 	onDeleteClick: () => void;
 	onInfoClick: () => void;
 }) {
+	const t = useT();
 	return (
 		<ContextMenuContent>
 			<ContextMenuItem
 				icon={<HugeiconsIcon icon={Edit03Icon} />}
 				onClick={onRenameClick}
 			>
-				Rename
+				{t("shell.rename")}
 			</ContextMenuItem>
 			<ContextMenuItem
 				icon={<HugeiconsIcon icon={Copy01Icon} />}
 				onClick={onDuplicateClick}
 			>
-				Duplicate
+				{t("shell.duplicate")}
 			</ContextMenuItem>
 			<ContextMenuItem
 				icon={<HugeiconsIcon icon={InformationCircleIcon} />}
 				onClick={onInfoClick}
 			>
-				Info
+				{t("shell.info")}
 			</ContextMenuItem>
 			<ContextMenuSeparator />
 			<ContextMenuItem
@@ -797,7 +842,7 @@ function ProjectContextMenuContent({
 				icon={<HugeiconsIcon icon={Delete02Icon} />}
 				onClick={onDeleteClick}
 			>
-				Delete
+				{t("common.delete")}
 			</ContextMenuItem>
 		</ContextMenuContent>
 	);
@@ -820,6 +865,7 @@ function ProjectMenu({
 	onDeleteClick: () => void;
 	onInfoClick: () => void;
 }) {
+	const t = useT();
 	const handleMenuClick = ({
 		event,
 	}: {
@@ -874,7 +920,7 @@ function ProjectMenu({
 							: "!bg-transparent !shadow-none"
 					}
 					size="icon"
-					aria-label="Project menu"
+					aria-label={t("shell.projectMenu")}
 					onClick={(event) =>
 						handleMenuClick({
 							event: event as unknown as MouseEvent<HTMLButtonElement>,
@@ -897,19 +943,19 @@ function ProjectMenu({
 			<DropdownMenuContent className="w-48" align="end">
 				<DropdownMenuItem onClick={handleRename}>
 					<HugeiconsIcon icon={Edit03Icon} />
-					Rename
+					{t("shell.rename")}
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={handleDuplicate}>
 					<HugeiconsIcon icon={Copy01Icon} />
-					Duplicate
+					{t("shell.duplicate")}
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={handleInfoClick}>
 					<HugeiconsIcon icon={InformationCircleIcon} />
-					Info
+					{t("shell.info")}
 				</DropdownMenuItem>
 				<DropdownMenuItem variant="destructive" onClick={handleDeleteClick}>
 					<HugeiconsIcon icon={Delete02Icon} />
-					Delete
+					{t("common.delete")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -948,6 +994,7 @@ function ProjectsSkeleton() {
 }
 
 function EmptyState() {
+	const t = useT();
 	const { searchQuery, setSearchQuery } = useProjectsStore();
 	const router = useRouter();
 	const editor = useEditor();
@@ -956,13 +1003,13 @@ function EmptyState() {
 	const handleCreateProject = async () => {
 		try {
 			const projectId = await editor.project.createNewProject({
-				name: "New project",
+				name: t("shell.newProject"),
 			});
 			router.push(`/editor/${projectId}`);
 		} catch (error) {
-			toast.error("Failed to create project", {
+			toast.error(t("shell.createProjectFailed"), {
 				description:
-					error instanceof Error ? error.message : "Please try again",
+					error instanceof Error ? error.message : t("header.tryAgain"),
 			});
 		}
 	};
@@ -976,9 +1023,9 @@ function EmptyState() {
 						className="text-muted-foreground size-16 bg-accent/35 border rounded-md p-4"
 					/>
 					<div className="flex flex-col items-center gap-3">
-						<h3 className="text-lg font-medium">No results found</h3>
+						<h3 className="text-lg font-medium">{t("shell.noResultsFound")}</h3>
 						<p className="text-muted-foreground max-w-md">
-							Your search for "{searchQuery}" did not return any results.
+							{t("shell.searchNoResults", { query: searchQuery })}
 						</p>
 					</div>
 				</div>
@@ -987,7 +1034,7 @@ function EmptyState() {
 					variant="outline"
 					size="lg"
 				>
-					Clear search
+					{t("shell.clearSearch")}
 				</Button>
 			</div>
 		);
@@ -1002,15 +1049,14 @@ function EmptyState() {
 						className="text-muted-foreground size-8"
 					/>
 				</div>
-				<h3 className="text-lg font-medium">No projects yet</h3>
+				<h3 className="text-lg font-medium">{t("shell.noProjectsYet")}</h3>
 				<p className="text-muted-foreground max-w-md">
-					Start creating your first project. Import media, edit, and export your
-					videos. All privately.
+					{t("shell.emptyStateDesc")}
 				</p>
 			</div>
 			<Button size="lg" className="gap-2" onClick={handleCreateProject}>
 				<HugeiconsIcon icon={PlusSignIcon} />
-				Create your first project
+				{t("shell.createFirstProject")}
 			</Button>
 		</div>
 	);

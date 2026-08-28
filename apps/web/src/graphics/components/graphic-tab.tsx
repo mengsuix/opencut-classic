@@ -11,6 +11,7 @@ import type { GraphicElement } from "@/timeline";
 import { graphicsRegistry, registerDefaultGraphics, resolveGraphicElementParamsAtTime } from "@/graphics";
 import { useElementPreview } from "@/timeline/hooks/use-element-preview";
 import { useEditor } from "@/editor/use-editor";
+import { useT } from "@/i18n";
 import {
 	Section,
 	SectionContent,
@@ -36,6 +37,7 @@ export function GraphicTab({
 	element: GraphicElement;
 	trackId: string;
 }) {
+	useT();
 	const definition = graphicsRegistry.get(element.definitionId);
 	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
 		startTime: element.startTime,
@@ -90,6 +92,7 @@ function StrokeSection({
 	element: GraphicElement;
 	trackId: string;
 }) {
+	const t = useT();
 	const editor = useEditor();
 	const definition = graphicsRegistry.get(element.definitionId);
 	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
@@ -166,7 +169,7 @@ function StrokeSection({
 					</Button>
 				}
 			>
-				<SectionTitle>Stroke</SectionTitle>
+				<SectionTitle>{t("properties.stroke")}</SectionTitle>
 			</SectionHeader>
 			<SectionContent
 				className={cn(!isStrokeEnabled && "pointer-events-none opacity-50")}

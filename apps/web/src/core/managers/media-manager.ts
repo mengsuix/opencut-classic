@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import { toast } from "sonner";
+import { t } from "@/i18n";
 import type { MediaAsset } from "@/media/types";
 import { storageService } from "@/services/storage/service";
 import { generateUUID } from "@/utils/id";
@@ -41,7 +42,7 @@ export class MediaManager {
 			this.notify();
 
 			if (storageService.isQuotaExceededError({ error })) {
-				toast.error("Not enough browser storage", {
+				toast.error(t("toasts.notEnoughStorage"), {
 					description: error instanceof Error ? error.message : undefined,
 				});
 			}

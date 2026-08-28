@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { MaskDefinition } from "@/masks/types";
 import {
 	BOX_LIKE_MASK_PARAMS,
@@ -10,7 +11,7 @@ import {
 
 export const ellipseMaskDefinition: MaskDefinition<"ellipse"> = {
 	type: "ellipse",
-	name: "Ellipse",
+	get name() { return t("properties.maskEllipse"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

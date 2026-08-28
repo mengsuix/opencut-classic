@@ -6,10 +6,13 @@ import {
 } from "@/preview/overlays";
 import { getBookmarksActiveAtTime } from "./utils";
 import type { MediaTime } from "@/wasm";
+import { t } from "@/i18n";
 
 export const bookmarkNotesPreviewOverlay: PreviewOverlayDefinition = {
 	id: "bookmark-notes",
-	label: "Show bookmark notes",
+	get label() {
+		return t("timeline.showBookmarkNotes");
+	},
 	defaultVisible: true,
 };
 

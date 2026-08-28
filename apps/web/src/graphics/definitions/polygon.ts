@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { ParamDefinition } from "@/params";
 import { applyAlignedStroke } from "../stroke";
 import { STROKE_ALIGN_PARAM, type GraphicStrokeAlign } from "./shared";
@@ -20,20 +21,20 @@ interface PolygonParams {
 const POLYGON_PARAMS: ParamDefinition<keyof PolygonParams & string>[] = [
 	{
 		key: "fill",
-		label: "Fill",
+		get label() { return t("properties.fill"); },
 		type: "color",
 		default: "#ffffff",
 	},
 	{
 		key: "stroke",
-		label: "Color",
+		get label() { return t("properties.color"); },
 		type: "color",
 		default: "#000000",
 		group: "stroke",
 	},
 	{
 		key: "strokeWidth",
-		label: "Width",
+		get label() { return t("properties.width"); },
 		type: "number",
 		default: 0,
 		min: 0,
@@ -45,7 +46,7 @@ const POLYGON_PARAMS: ParamDefinition<keyof PolygonParams & string>[] = [
 	STROKE_ALIGN_PARAM,
 	{
 		key: "sides",
-		label: "Sides",
+		get label() { return t("properties.sides"); },
 		type: "number",
 		default: 5,
 		min: 3,
@@ -55,7 +56,7 @@ const POLYGON_PARAMS: ParamDefinition<keyof PolygonParams & string>[] = [
 	},
 	{
 		key: "cornerRadius",
-		label: "Corner radius",
+		get label() { return t("properties.cornerRadius"); },
 		type: "number",
 		default: 0,
 		min: 0,
@@ -166,7 +167,7 @@ function traceRoundedPolygonPath({
 
 export const polygonGraphicDefinition: GraphicDefinition = {
 	id: "polygon",
-	name: "Polygon",
+	get name() { return t("properties.graphicPolygon"); },
 	keywords: ["polygon", "triangle", "pentagon", "hexagon", "diamond"],
 	params: POLYGON_PARAMS,
 	render({ ctx, params, width, height }) {

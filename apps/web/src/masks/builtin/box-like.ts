@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import {
 	DEFAULT_SHAPE_MASK_SHORT_SIDE_RATIO,
 	MIN_MASK_DIMENSION,
@@ -31,7 +32,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 >[] = [
 	{
 		key: "centerX",
-		label: "X",
+		get label() { return t("properties.maskX"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -40,7 +41,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "centerY",
-		label: "Y",
+		get label() { return t("properties.maskY"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -49,7 +50,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "width",
-		label: "Width",
+		get label() { return t("properties.width"); },
 		type: "number",
 		default: 0.6,
 		min: 1,
@@ -57,7 +58,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "height",
-		label: "Height",
+		get label() { return t("properties.height"); },
 		type: "number",
 		default: 0.6,
 		min: 1,
@@ -65,7 +66,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "rotation",
-		label: "Rotation",
+		get label() { return t("properties.rotation"); },
 		type: "number",
 		default: 0,
 		min: 0,
@@ -74,7 +75,7 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "scale",
-		label: "Scale",
+		get label() { return t("properties.scale"); },
 		type: "number",
 		default: 1,
 		min: 1,
@@ -83,13 +84,13 @@ export const BOX_LIKE_MASK_PARAMS: ParamDefinition<
 	},
 	{
 		key: "strokeAlign",
-		label: "Stroke Align",
+		get label() { return t("properties.strokeAlign"); },
 		type: "select",
 		default: "center",
 		options: [
-			{ value: "inside", label: "Inside" },
-			{ value: "center", label: "Center" },
-			{ value: "outside", label: "Outside" },
+			{ value: "inside", get label() { return t("properties.strokeInside"); } },
+			{ value: "center", get label() { return t("properties.strokeCenter"); } },
+			{ value: "outside", get label() { return t("properties.strokeOutside"); } },
 		],
 	},
 ];

@@ -8,6 +8,7 @@ import { useEditor } from "@/editor/use-editor";
 import { getRulerConfig, shouldShowLabel } from "@/timeline/ruler-utils";
 import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { TimelineTick } from "./timeline-tick";
+import { useT } from "@/i18n";
 
 /**
  * Fixed overscan in pixels. This used to be a fraction of `scrollLeft`, which
@@ -36,6 +37,7 @@ export function TimelineRuler({
 	handleRulerTrackingMouseDown,
 	handleRulerMouseDown,
 }: TimelineRulerProps) {
+	const t = useT();
 	const durationTicks = useEditor((e) => e.timeline.getTotalDuration());
 	const durationSeconds = mediaTimeToSeconds({ time: durationTicks });
 	const pixelsPerSecond = BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
@@ -101,7 +103,7 @@ export function TimelineRuler({
 		<div
 			role="slider"
 			tabIndex={0}
-			aria-label="Timeline ruler"
+			aria-label={t("timeline.timelineRuler")}
 			aria-valuemin={0}
 			aria-valuemax={effectiveDurationSeconds}
 			aria-valuenow={0}

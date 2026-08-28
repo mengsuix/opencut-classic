@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { MaskDefinition } from "@/masks/types";
 import {
 	BOX_LIKE_MASK_PARAMS,
@@ -87,7 +88,7 @@ function buildOverlayStarPath({
 
 export const starMaskDefinition: MaskDefinition<"star"> = {
 	type: "star",
-	name: "Star",
+	get name() { return t("properties.maskStar"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

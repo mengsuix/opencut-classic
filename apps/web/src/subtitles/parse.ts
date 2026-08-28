@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { parseAss } from "./ass";
 import { parseSrt } from "./srt";
 import type { ParseSubtitleResult } from "./types";
@@ -18,7 +19,7 @@ export function parseSubtitleFile({
 		case "ass":
 			return parseAss({ input });
 		default:
-			throw new Error("Unsupported subtitle format");
+			throw new Error(t("assets.unsupportedSubtitleFormat"));
 	}
 }
 

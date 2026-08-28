@@ -6,14 +6,16 @@ import { DraggableItem } from "@/components/editor/panels/assets/draggable-item"
 import { effectsRegistry, EFFECT_TARGET_ELEMENT_TYPES } from "@/effects";
 import { effectPreviewService } from "@/services/renderer/effect-preview";
 import { useEditor } from "@/editor/use-editor";
+import { useT } from "@/i18n";
 import { buildEffectElement } from "@/timeline/element-utils";
 import type { EffectDefinition } from "@/effects/types";
 
 export function EffectsView() {
+	const t = useT();
 	const effects = effectsRegistry.getAll();
 
 	return (
-		<PanelView title="Effects">
+		<PanelView title={t("properties.tabEffects")}>
 			<EffectsGrid effects={effects} />
 		</PanelView>
 	);
@@ -54,6 +56,7 @@ function EffectPreviewCanvas({ effectType }: { effectType: string }) {
 }
 
 function EffectItem({ effect }: { effect: EffectDefinition }) {
+	useT();
 	const editor = useEditor();
 
 	const handleAddToTimeline = useCallback(() => {

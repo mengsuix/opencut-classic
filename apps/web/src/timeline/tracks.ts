@@ -1,9 +1,20 @@
 import type { TrackType } from "@/timeline";
+import { t } from "@/i18n";
 
 export const DEFAULT_TRACK_NAMES: Record<TrackType, string> = {
-	video: "Video track",
-	text: "Text track",
-	audio: "Audio track",
-	graphic: "Graphic track",
-	effect: "Effect track",
-} as const;
+	get video() {
+		return t("timeline.videoTrack");
+	},
+	get text() {
+		return t("timeline.textTrack");
+	},
+	get audio() {
+		return t("timeline.audioTrack");
+	},
+	get graphic() {
+		return t("timeline.graphicTrack");
+	},
+	get effect() {
+		return t("timeline.effectTrack");
+	},
+};

@@ -13,6 +13,7 @@ import {
 import { usePreviewStore } from "@/preview/preview-store";
 import { clampRound } from "@/utils/math";
 import { cn } from "@/utils/ui";
+import { t } from "@/i18n";
 import type { GuideDefinition } from "@/guides/types";
 
 function GridLines({
@@ -117,7 +118,9 @@ function GridGuideOptions() {
 
 export const gridGuide = {
 	id: "grid",
-	label: "Grid",
+	get label() {
+		return t("shell.guideGrid");
+	},
 	renderPreview: () => <GridGuidePreview />,
 	renderTriggerIcon: () => <HugeiconsIcon icon={GridTableIcon} />,
 	renderOverlay: () => <GridGuideOverlay />,

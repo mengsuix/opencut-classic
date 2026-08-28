@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { MaskDefinition } from "@/masks/types";
 import {
 	BOX_LIKE_MASK_PARAMS,
@@ -47,7 +48,7 @@ function buildRectanglePath({
 
 export const rectangleMaskDefinition: MaskDefinition<"rectangle"> = {
 	type: "rectangle",
-	name: "Rectangle",
+	get name() { return t("properties.maskRectangle"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { ParamDefinition } from "@/params";
 import type {
 	MaskDefinition,
@@ -41,7 +42,7 @@ const TEXT_MASK_ALIGNMENT = "center";
 const TEXT_MASK_PARAMS: ParamDefinition<keyof TextMaskParams & string>[] = [
 	{
 		key: "centerX",
-		label: "X",
+		get label() { return t("properties.maskX"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -50,7 +51,7 @@ const TEXT_MASK_PARAMS: ParamDefinition<keyof TextMaskParams & string>[] = [
 	},
 	{
 		key: "centerY",
-		label: "Y",
+		get label() { return t("properties.maskY"); },
 		type: "number",
 		default: 0,
 		min: -100,
@@ -59,7 +60,7 @@ const TEXT_MASK_PARAMS: ParamDefinition<keyof TextMaskParams & string>[] = [
 	},
 	{
 		key: "fontSize",
-		label: "Size",
+		get label() { return t("properties.size"); },
 		type: "number",
 		default: 15,
 		min: MIN_FONT_SIZE,
@@ -68,7 +69,7 @@ const TEXT_MASK_PARAMS: ParamDefinition<keyof TextMaskParams & string>[] = [
 	},
 	{
 		key: "rotation",
-		label: "Rotation",
+		get label() { return t("properties.rotation"); },
 		type: "number",
 		default: 0,
 		min: 0,
@@ -77,7 +78,7 @@ const TEXT_MASK_PARAMS: ParamDefinition<keyof TextMaskParams & string>[] = [
 	},
 	{
 		key: "scale",
-		label: "Scale",
+		get label() { return t("properties.scale"); },
 		type: "number",
 		default: 1,
 		min: 1,
@@ -208,7 +209,7 @@ function computeTextMaskParamUpdate({
 
 export const textMaskDefinition: MaskDefinition<"text"> = {
 	type: "text",
-	name: "Text",
+	get name() { return t("properties.maskText"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

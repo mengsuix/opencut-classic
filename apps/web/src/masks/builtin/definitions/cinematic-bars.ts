@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type {
 	MaskDefaultContext,
 	MaskDefinition,
@@ -73,7 +74,7 @@ function buildBandPath({
 
 export const cinematicBarsMaskDefinition: MaskDefinition<"cinematic-bars"> = {
 	type: "cinematic-bars",
-	name: "Cinematic Bars",
+	get name() { return t("properties.maskCinematicBars"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,

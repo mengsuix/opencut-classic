@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { EffectDefinition, EffectPass } from "@/effects/types";
 
 export const GAUSSIAN_BLUR_SHADER = "gaussian-blur";
@@ -67,12 +68,12 @@ function parseIntensity(effectParams: Record<string, unknown>): number {
 
 export const blurEffectDefinition: EffectDefinition = {
 	type: "blur",
-	name: "Blur",
+	get name() { return t("properties.effectBlur"); },
 	keywords: ["blur", "soft", "defocus"],
 	params: [
 		{
 			key: "intensity",
-			label: "Intensity",
+			get label() { return t("properties.effectIntensity"); },
 			type: "number",
 			default: 15,
 			min: 0,

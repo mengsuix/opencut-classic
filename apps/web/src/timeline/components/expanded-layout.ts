@@ -5,6 +5,7 @@ import type {
 import type { TimelineTrack } from "@/timeline";
 import { getElementKeyframes } from "@/animation";
 import { KEYFRAME_LANE_HEIGHT_PX } from "./layout";
+import { t } from "@/i18n";
 
 export interface ExpandedRow {
 	propertyPath: AnimationPath;
@@ -24,20 +25,48 @@ const PROPERTY_GROUPS: PropertyGroupDefinition[] = [
 ];
 
 const PROPERTY_LABELS: Partial<Record<string, string>> = {
-	"transform.positionX": "Position X",
-	"transform.positionY": "Position Y",
-	"transform.scaleX": "Scale X",
-	"transform.scaleY": "Scale Y",
-	"transform.rotate": "Rotation",
-	opacity: "Opacity",
-	volume: "Volume",
-	color: "Color",
-	"background.color": "BG Color",
-	"background.paddingX": "BG Pad X",
-	"background.paddingY": "BG Pad Y",
-	"background.offsetX": "BG Offset X",
-	"background.offsetY": "BG Offset Y",
-	"background.cornerRadius": "Corner Radius",
+	get "transform.positionX"() {
+		return t("timeline.propertyPositionX");
+	},
+	get "transform.positionY"() {
+		return t("timeline.propertyPositionY");
+	},
+	get "transform.scaleX"() {
+		return t("timeline.propertyScaleX");
+	},
+	get "transform.scaleY"() {
+		return t("timeline.propertyScaleY");
+	},
+	get "transform.rotate"() {
+		return t("timeline.propertyRotation");
+	},
+	get opacity() {
+		return t("timeline.propertyOpacity");
+	},
+	get volume() {
+		return t("timeline.propertyVolume");
+	},
+	get color() {
+		return t("timeline.propertyColor");
+	},
+	get "background.color"() {
+		return t("timeline.propertyBgColor");
+	},
+	get "background.paddingX"() {
+		return t("timeline.propertyBgPadX");
+	},
+	get "background.paddingY"() {
+		return t("timeline.propertyBgPadY");
+	},
+	get "background.offsetX"() {
+		return t("timeline.propertyBgOffsetX");
+	},
+	get "background.offsetY"() {
+		return t("timeline.propertyBgOffsetY");
+	},
+	get "background.cornerRadius"() {
+		return t("timeline.propertyCornerRadius");
+	},
 };
 
 export function getPropertyLabel(path: AnimationPath): string {

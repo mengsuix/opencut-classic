@@ -11,9 +11,11 @@ import {
 	resolveGraphEditorSelectionState,
 	type GraphEditorSelectionState,
 } from "./session";
+import { t, useLocale } from "@/i18n";
 
 export function useGraphEditorController() {
 	const editor = useEditor();
+	const locale = useLocale();
 	const renderTracks = useEditor(
 		(currentEditor) =>
 			currentEditor.timeline.getPreviewTracks() ??
@@ -33,7 +35,7 @@ export function useGraphEditorController() {
 				selectedKeyframes,
 				preferredComponentKey: activeComponentKey,
 			}),
-		[activeComponentKey, renderTracks, selectedKeyframes],
+		[activeComponentKey, renderTracks, selectedKeyframes, locale],
 	);
 
 	const stateKey =
@@ -168,7 +170,8 @@ export function useGraphEditorController() {
 		open,
 		onOpenChange: handleOpenChange,
 		canOpen: state.status === "ready",
-		tooltip: state.status === "ready" ? "Open graph editor" : state.message,
+		tooltip:
+			state.status === "ready" ? t("timeline.openGraphEditor") : state.message,
 		state,
 		onActiveComponentKeyChange: handleActiveComponentKeyChange,
 		onPreviewValue: handlePreviewValue,

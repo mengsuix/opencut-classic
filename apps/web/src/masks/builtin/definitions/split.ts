@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { computeFeatherUpdate } from "@/masks/param-update";
 import type {
 	MaskDefinition,
@@ -182,7 +183,7 @@ function computeSplitMaskParamUpdate({
 
 export const splitMaskDefinition: MaskDefinition<"split"> = {
 	type: "split",
-	name: "Split",
+	get name() { return t("properties.maskSplit"); },
 	features: {
 		hasPosition: true,
 		hasRotation: true,
@@ -238,7 +239,7 @@ export const splitMaskDefinition: MaskDefinition<"split"> = {
 	params: [
 		{
 			key: "centerX",
-			label: "X",
+			get label() { return t("properties.maskX"); },
 			type: "number",
 			default: 0,
 			min: -100,
@@ -248,7 +249,7 @@ export const splitMaskDefinition: MaskDefinition<"split"> = {
 		},
 		{
 			key: "centerY",
-			label: "Y",
+			get label() { return t("properties.maskY"); },
 			type: "number",
 			default: 0,
 			min: -100,
@@ -258,7 +259,7 @@ export const splitMaskDefinition: MaskDefinition<"split"> = {
 		},
 		{
 			key: "rotation",
-			label: "Rotation",
+			get label() { return t("properties.rotation"); },
 			type: "number",
 			default: 0,
 			min: 0,

@@ -9,6 +9,7 @@ import { TIMELINE_LAYERS } from "./layers";
 import type { ElementDragView } from "@/timeline";
 import { timelineTimeToPixels } from "@/timeline/pixel-utils";
 import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
+import { useT } from "@/i18n";
 
 /**
  * Elements this far outside the viewport are still mounted, so a fast scroll
@@ -54,6 +55,7 @@ export function TimelineTrackContent({
 	shouldIgnoreClick,
 	targetElementId = null,
 }: TimelineTrackContentProps) {
+	const t = useT();
 	const { isElementSelected } = useElementSelection();
 	const { scrollLeft, viewportWidth } = useQuantizedTimelineViewport();
 
@@ -94,7 +96,7 @@ export function TimelineTrackContent({
 			<button
 				type="button"
 				className="absolute inset-0 m-0 size-full appearance-none border-0 bg-transparent p-0"
-				aria-label={`Select ${track.name} track`}
+				aria-label={t("timeline.selectTrack", { name: track.name })}
 				onMouseUp={(event) => {
 					if (shouldIgnoreClick?.()) return;
 					onTrackMouseUp?.(event);

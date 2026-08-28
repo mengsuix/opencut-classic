@@ -1,8 +1,8 @@
 import type { TScene } from "@/timeline";
 import { generateUUID } from "@/utils/id";
 import { calculateTotalDuration } from "@/timeline";
-import { MAIN_TRACK_NAME } from "@/timeline/placement/main-track";
 import { type MediaTime, ZERO_MEDIA_TIME } from "@/wasm";
+import { t } from "@/i18n";
 
 export function getMainScene({ scenes }: { scenes: TScene[] }): TScene | null {
 	return scenes.find((scene) => scene.isMain) || null;
@@ -11,7 +11,10 @@ export function getMainScene({ scenes }: { scenes: TScene[] }): TScene | null {
 export function ensureMainScene({ scenes }: { scenes: TScene[] }): TScene[] {
 	const hasMain = scenes.some((scene) => scene.isMain);
 	if (!hasMain) {
-		const mainScene = buildDefaultScene({ name: "Main scene", isMain: true });
+		const mainScene = buildDefaultScene({
+			name: t("timeline.mainScene"),
+			isMain: true,
+		});
 		return [mainScene, ...scenes];
 	}
 	return scenes;
@@ -32,7 +35,7 @@ export function buildDefaultScene({
 			overlay: [],
 			main: {
 				id: generateUUID(),
-				name: MAIN_TRACK_NAME,
+				name: t("timeline.mainTrack"),
 				type: "video",
 				elements: [],
 				muted: false,
@@ -51,7 +54,7 @@ export function canDeleteScene({ scene }: { scene: TScene }): {
 	reason?: string;
 } {
 	if (scene.isMain) {
-		return { canDelete: false, reason: "Cannot delete main scene" };
+		return { canDelete: false, reason: t("timeline.cannotDeleteMainScene") };
 	}
 	return { canDelete: true };
 }

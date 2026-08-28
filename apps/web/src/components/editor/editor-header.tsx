@@ -29,6 +29,8 @@ import { cn } from "@/utils/ui";
 import { Sparkles } from "lucide-react";
 import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { EditorCore } from "@/core";
+import { LanguageToggle } from "../language-toggle";
+import { useT } from "@/i18n";
 
 export function EditorHeader() {
 	return (
@@ -41,6 +43,7 @@ export function EditorHeader() {
 				<AiChatToggle />
 				<FeedbackPopover />
 				<ExportButton />
+				<LanguageToggle />
 				<ThemeToggle />
 			</nav>
 		</header>
@@ -69,6 +72,7 @@ function AiChatToggle() {
 }
 
 function ProjectDropdown() {
+	const t = useT();
 	const [openDialog, setOpenDialog] = useState<
 		"delete" | "rename" | "shortcuts" | null
 	>(null);
@@ -103,34 +107,34 @@ function ProjectDropdown() {
 					id: activeProject.metadata.id,
 					name: newName.trim(),
 				});
-			} catch (error) {
-				toast.error("Failed to rename project", {
-					description:
-						error instanceof Error ? error.message : "Please try again",
-				});
-			} finally {
-				setOpenDialog(null);
-			}
-		}
-	};
+				} catch (error) {
+					toast.error(t("header.renameFailed"), {
+						description:
+							error instanceof Error ? error.message : t("header.tryAgain"),
+					});
+				} finally {
+					setOpenDialog(null);
+				}
+				}
+				};
 
-	const handleDeleteProject = async () => {
-		if (activeProject) {
-			try {
-				await editor.project.deleteProjects({
-					ids: [activeProject.metadata.id],
-				});
-				router.push("/projects");
-			} catch (error) {
-				toast.error("Failed to delete project", {
-					description:
-						error instanceof Error ? error.message : "Please try again",
-				});
-			} finally {
-				setOpenDialog(null);
-			}
-		}
-	};
+				const handleDeleteProject = async () => {
+				if (activeProject) {
+				try {
+					await editor.project.deleteProjects({
+						ids: [activeProject.metadata.id],
+					});
+					router.push("/projects");
+				} catch (error) {
+					toast.error(t("header.deleteFailed"), {
+						description:
+							error instanceof Error ? error.message : t("header.tryAgain"),
+					});
+				} finally {
+					setOpenDialog(null);
+				}
+				}
+				};
 
 	return (
 		<>
@@ -139,7 +143,7 @@ function ProjectDropdown() {
 					<Button variant="ghost" size="icon" className="p-1 rounded-sm size-8">
 						<Image
 							src={DEFAULT_LOGO_URL}
-							alt="Project thumbnail"
+							alt={t("header.projectThumbnail")}
 							width={32}
 							height={32}
 							className="invert dark:invert-0 size-5"
@@ -152,14 +156,14 @@ function ProjectDropdown() {
 						disabled={isExiting}
 						icon={<HugeiconsIcon icon={Logout05Icon} />}
 					>
-						Exit project
+						{t("header.exitProject")}
 					</DropdownMenuItem>
 
 					<DropdownMenuItem
 						onClick={() => setOpenDialog("shortcuts")}
 						icon={<HugeiconsIcon icon={CommandIcon} />}
 					>
-						Shortcuts
+						{t("header.shortcuts")}
 					</DropdownMenuItem>
 
 					<DropdownMenuSeparator />
@@ -196,6 +200,7 @@ function ProjectDropdown() {
 }
 
 function EditableProjectName() {
+	const t = useT();
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
 	const [isEditing, setIsEditing] = useState(false);
@@ -231,9 +236,9 @@ function EditableProjectName() {
 					name: newName,
 				});
 			} catch (error) {
-				toast.error("Failed to rename project", {
+				toast.error(t("header.renameFailed"), {
 					description:
-						error instanceof Error ? error.message : "Please try again",
+						error instanceof Error ? error.message : t("header.tryAgain"),
 				});
 			}
 		}

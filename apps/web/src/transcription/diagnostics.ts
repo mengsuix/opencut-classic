@@ -1,4 +1,5 @@
 import type { DiagnosticsManager } from "@/core/managers/diagnostics-manager";
+import { t } from "@/i18n";
 import { timelineHasAudio } from "@/media/audio";
 
 export const TRANSCRIPTION_DIAGNOSTICS_SCOPE = "transcription";
@@ -12,7 +13,9 @@ export function registerTranscriptionDiagnostics({
 		id: "transcription.no_audio",
 		scope: TRANSCRIPTION_DIAGNOSTICS_SCOPE,
 		severity: "caution",
-		message: "No audio detected. Add a clip with audio to the timeline first.",
+		get message() {
+			return t("assets.noAudioDetected");
+		},
 		check: (editor) => {
 			const scene = editor.scenes.getActiveSceneOrNull();
 			if (!scene) return false;

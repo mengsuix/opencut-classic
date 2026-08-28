@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type {
 	ParseSubtitleResult,
 	SubtitleCue,
@@ -240,20 +241,18 @@ export function parseAss({ input }: { input: string }): ParseSubtitleResult {
 
 	if (missingStyleCueCount > 0) {
 		warnings.add(
-			`Fell back to default subtitle styling for ${missingStyleCueCount} cue(s) that referenced missing ASS styles.`,
+			t("assets.assMissingStyles", { count: missingStyleCueCount }),
 		);
 	}
 
 	if (skippedNonDialogueEventCount > 0) {
 		warnings.add(
-			`Ignored ${skippedNonDialogueEventCount} non-dialogue ASS event(s).`,
+			t("assets.assNonDialogue", { count: skippedNonDialogueEventCount }),
 		);
 	}
 
 	if (usesHeavilyUnsupportedStyles) {
-		warnings.add(
-			"Ignored unsupported ASS style features such as outline, shadow, rotation, or scaling.",
-		);
+		warnings.add(t("assets.assUnsupportedStyles"));
 	}
 
 	return {

@@ -3,6 +3,7 @@ import type { SoundEffect, SavedSound } from "@/sounds/types";
 import { storageService } from "@/services/storage/service";
 import { toast } from "sonner";
 import { EditorCore } from "@/core";
+import { t } from "@/i18n";
 import { buildLibraryAudioElement } from "@/timeline/element-utils";
 import { mediaTimeFromSeconds } from "@/wasm";
 
@@ -135,7 +136,9 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 			});
 		} catch (error) {
 			const errorMessage =
-				error instanceof Error ? error.message : "Failed to load saved sounds";
+				error instanceof Error
+					? error.message
+					: t("assets.loadSavedSoundsFailed");
 			set({
 				savedSoundsError: errorMessage,
 				isLoadingSavedSounds: false,
@@ -152,9 +155,9 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 			set({ savedSounds: savedSoundsData.sounds });
 		} catch (error) {
 			const errorMessage =
-				error instanceof Error ? error.message : "Failed to save sound";
+				error instanceof Error ? error.message : t("assets.saveSoundFailed");
 			set({ savedSoundsError: errorMessage });
-			toast.error("Failed to save sound");
+			toast.error(t("assets.saveSoundFailed"));
 			console.error("Failed to save sound:", error);
 		}
 	},
@@ -168,9 +171,9 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 			}));
 		} catch (error) {
 			const errorMessage =
-				error instanceof Error ? error.message : "Failed to remove sound";
+				error instanceof Error ? error.message : t("assets.removeSoundFailed");
 			set({ savedSoundsError: errorMessage });
-			toast.error("Failed to remove sound");
+			toast.error(t("assets.removeSoundFailed"));
 			console.error("Failed to remove sound:", error);
 		}
 	},
@@ -199,9 +202,11 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 			});
 		} catch (error) {
 			const errorMessage =
-				error instanceof Error ? error.message : "Failed to clear saved sounds";
+				error instanceof Error
+					? error.message
+					: t("assets.clearSoundsFailed");
 			set({ savedSoundsError: errorMessage });
-			toast.error("Failed to clear saved sounds");
+			toast.error(t("assets.clearSoundsFailed"));
 			console.error("Failed to clear saved sounds:", error);
 		}
 	},
@@ -209,7 +214,7 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 	addSoundToTimeline: async ({ sound }) => {
 		const audioUrl = sound.previewUrl;
 		if (!audioUrl) {
-			toast.error("Sound file not available");
+			toast.error(t("assets.soundFileUnavailable"));
 			return false;
 		}
 
@@ -241,9 +246,7 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 		} catch (error) {
 			console.error("Failed to add sound to timeline:", error);
 			toast.error(
-				error instanceof Error
-					? error.message
-					: "Failed to add sound to timeline",
+				error instanceof Error ? error.message : t("assets.addSoundFailed"),
 				{ id: `sound-${sound.id}` },
 			);
 			return false;

@@ -10,6 +10,7 @@ import type {
 import type { ExportOptions, ExportResult, ExportState } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { toast } from "sonner";
+import { t } from "@/i18n";
 import { generateUUID } from "@/utils/id";
 import { UpdateProjectSettingsCommand } from "@/commands/project";
 import { DEFAULT_BACKGROUND_COLOR } from "@/background/color";
@@ -120,7 +121,7 @@ export class ProjectManager {
 
 			return newProject.metadata.id;
 		} catch (error) {
-			toast.error("Failed to save new project");
+			toast.error(t("toasts.projectSaveFailed"));
 			throw error;
 		}
 	}
@@ -325,8 +326,8 @@ export class ProjectManager {
 		try {
 			const result = await storageService.loadProject({ id });
 			if (!result) {
-				toast.error("Project not found", {
-					description: "Please try again",
+				toast.error(t("toasts.projectNotFound"), {
+					description: t("toasts.tryAgain"),
 				});
 				return;
 			}
@@ -350,9 +351,9 @@ export class ProjectManager {
 			this.updateMetadata(updatedProject);
 		} catch (error) {
 			console.error("Failed to rename project:", error);
-			toast.error("Failed to rename project", {
+			toast.error(t("toasts.projectRenameFailed"), {
 				description:
-					error instanceof Error ? error.message : "Please try again",
+					error instanceof Error ? error.message : t("toasts.tryAgain"),
 			});
 		}
 	}
@@ -383,13 +384,13 @@ export class ProjectManager {
 			if (missingProjectIds.length > 0) {
 				toast.error(
 					missingProjectIds.length === 1
-						? "Project not found"
-						: "Projects not found",
+						? t("toasts.projectNotFound")
+						: t("toasts.projectsNotFound"),
 					{
 						description:
 							missingProjectIds.length === 1
-								? "Please try again"
-								: "Some projects could not be found",
+								? t("toasts.tryAgain")
+								: t("toasts.projectsSomeNotFound"),
 					},
 				);
 				throw new Error(`Projects not found: ${missingProjectIds.join(", ")}`);
@@ -475,9 +476,9 @@ export class ProjectManager {
 			return duplicationPlans.map((plan) => plan.newProjectId);
 		} catch (error) {
 			console.error("Failed to duplicate projects:", error);
-			toast.error("Failed to duplicate projects", {
+			toast.error(t("toasts.projectsDuplicateFailed"), {
 				description:
-					error instanceof Error ? error.message : "Please try again",
+					error instanceof Error ? error.message : t("toasts.tryAgain"),
 			});
 			throw error;
 		}

@@ -18,6 +18,7 @@ import {
 	snapToStep,
 } from "@/utils/math";
 import { cn } from "@/utils/ui";
+import { useT } from "@/i18n";
 
 const HIT_AREA_HEIGHT_PX = 14;
 const TOOLTIP_OFFSET_PX = 10;
@@ -56,6 +57,7 @@ export function AudioVolumeLine({
 	element: AudioElement;
 	trackId: string;
 }) {
+	const t = useT();
 	const editor = useEditor();
 	const surfaceRef = useRef<HTMLDivElement>(null);
 	const activePointerIdRef = useRef<number | null>(null);
@@ -250,7 +252,7 @@ export function AudioVolumeLine({
 					onPointerUp={handlePointerUp}
 					onPointerCancel={handlePointerCancel}
 					onLostPointerCapture={handleLostPointerCapture}
-					title="Drag to adjust clip volume"
+					title={t("timeline.dragToAdjustVolume")}
 				/>
 				{isDragging &&
 					tooltipClientPos &&

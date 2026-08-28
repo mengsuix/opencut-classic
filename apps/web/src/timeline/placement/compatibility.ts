@@ -1,4 +1,23 @@
 import type { ElementType, TrackType } from "@/timeline";
+import { t, type MessageKey } from "@/i18n";
+
+const ELEMENT_TYPE_LABEL_KEYS: Record<ElementType, MessageKey> = {
+	audio: "timeline.typeAudio",
+	text: "timeline.typeText",
+	sticker: "timeline.typeSticker",
+	graphic: "timeline.typeGraphic",
+	effect: "timeline.typeEffect",
+	video: "timeline.typeVideo",
+	image: "timeline.typeImage",
+};
+
+const TRACK_TYPE_LABEL_KEYS: Record<TrackType, MessageKey> = {
+	video: "timeline.typeVideo",
+	text: "timeline.typeText",
+	audio: "timeline.typeAudio",
+	graphic: "timeline.typeGraphic",
+	effect: "timeline.typeEffect",
+};
 
 const ELEMENT_TRACK_MAP: Record<ElementType, TrackType> = {
 	audio: "audio",
@@ -43,7 +62,10 @@ export function validateElementTrackCompatibility({
 	if (!isValid) {
 		return {
 			isValid: false,
-			errorMessage: `${element.type} elements cannot be placed on ${track.type} tracks`,
+			errorMessage: t("timeline.elementCannotBePlaced", {
+				elementType: t(ELEMENT_TYPE_LABEL_KEYS[element.type]),
+				trackType: t(TRACK_TYPE_LABEL_KEYS[track.type]),
+			}),
 		};
 	}
 

@@ -11,8 +11,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/utils/ui";
+import { useT } from "@/i18n";
 
 export function GridPopover({ children }: { children: React.ReactNode }) {
+	const t = useT();
 	const activeGuide = usePreviewStore((state) => state.activeGuide);
 	const toggleGuide = usePreviewStore((state) => state.toggleGuide);
 	const activeGuideDef = getGuideById(activeGuide);
@@ -23,7 +25,7 @@ export function GridPopover({ children }: { children: React.ReactNode }) {
 			<PopoverTrigger>{children}</PopoverTrigger>
 			<PopoverContent sideOffset={8} className="w-60 px-0">
 				<div className="flex flex-col gap-2 px-4">
-					<Label>Guides</Label>
+					<Label>{t("shell.guides")}</Label>
 					<div className="grid grid-cols-3 gap-1">
 						{GUIDE_REGISTRY.map((guide) => (
 							<GridItem

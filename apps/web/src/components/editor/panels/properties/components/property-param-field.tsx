@@ -21,6 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { useT } from "@/i18n";
 import { usePropertyDraft } from "../hooks/use-property-draft";
 import { KeyframeToggle } from "./keyframe-toggle";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +44,7 @@ export function PropertyParamField({
 		onToggle: () => void;
 	};
 }) {
+	const t = useT();
 	return (
 		<SectionField
 			label={param.label}
@@ -51,7 +53,7 @@ export function PropertyParamField({
 					<KeyframeToggle
 						isActive={keyframe.isActive}
 						isDisabled={keyframe.isDisabled}
-						title={`Toggle ${param.label.toLowerCase()} keyframe`}
+						title={t("properties.toggleKeyframe", { name: param.label })}
 						onToggle={keyframe.onToggle}
 					/>
 				) : undefined
