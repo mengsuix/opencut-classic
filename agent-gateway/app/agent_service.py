@@ -120,6 +120,13 @@ class AgentService:
         data_dir = config.AGENT_DATA_DIR / session_id
         config_dir = data_dir / "claude-config"
         config_dir.mkdir(parents=True, exist_ok=True)
+        settings_path = config_dir / "settings.json"
+        if not settings_path.exists():
+            settings_path.write_text(
+                json.dumps({"hasCompletedOnboarding": True}, ensure_ascii=False, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
 
         agent_env = dict(config.AGENT_ENV)
         # CLI 会话数据落盘位置固定，Gateway 重启后 resume 才能找回上下文

@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
     await db.init_pool()
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
     logger.info(
-        f"Agent Gateway 已启动 (port={config.GATEWAY_PORT}, model={config.AGENT_MODEL}, "
-        f"auth_mode={config.AUTH_MODE})"
+        f"Agent Gateway 已启动 (port={config.GATEWAY_PORT}, provider={config.AGENT_PROVIDER}, "
+        f"model={config.AGENT_MODEL}, auth_mode={config.AUTH_MODE})"
     )
     yield
     cleanup_task.cancel()

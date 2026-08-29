@@ -29,24 +29,43 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "mysql://root:password@127.0.0.1:3306/opencut_agent"
 )
 
-# 模型配置：默认 DeepSeek（Anthropic 兼容端点），可用官方 Anthropic 覆盖
-AGENT_MODEL = os.environ.get("AGENT_MODEL", "deepseek-v4-flash-vision-exp")
+# 模型提供商配置：通过 AGENT_PROVIDER 一键切换
+_PROVIDER_CONFIGS = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com/anthropic",
+        "api_key_env": "DEEPSEEK_KEY",
+        "model": "deepseek-v4-flash-vision-exp",
+        "subagent_model": "deepseek-v4-flash",
+    },
+    "zhipu": {
+        "base_url": "https://open.bigmodel.cn/api/anthropic",
+        "api_key_env": "ZHIPU_API_KEY",
+        "model": "glm-5.3-flash[1m]",
+        "subagent_model": "glm-5.3-flash[1m]",
+    },
+}
+
+AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "zhipu").strip().lower()
+if AGENT_PROVIDER not in _PROVIDER_CONFIGS:
+    raise ValueError("AGENT_PROVIDER 必须是 deepseek 或 zhipu")
+
+_provider_config = _PROVIDER_CONFIGS[AGENT_PROVIDER]
+AGENT_MODEL = _provider_config["model"]
+AGENT_HAIKU_MODEL = _provider_config["subagent_model"]
+AGENT_BASE_URL = _provider_config["base_url"]
+AGENT_AUTH_TOKEN = os.environ.get(_provider_config["api_key_env"], "")
 
 AGENT_ENV = {
-    "ANTHROPIC_BASE_URL": os.environ.get(
-        "ANTHROPIC_BASE_URL", "https://api.deepseek.com/anthropic"
-    ),
-    "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    or os.environ.get("DEEPSEEK_KEY", ""),
+    "ANTHROPIC_BASE_URL": AGENT_BASE_URL,
+    "ANTHROPIC_AUTH_TOKEN": AGENT_AUTH_TOKEN,
     "ANTHROPIC_MODEL": AGENT_MODEL,
     "ANTHROPIC_DEFAULT_OPUS_MODEL": AGENT_MODEL,
     "ANTHROPIC_DEFAULT_SONNET_MODEL": AGENT_MODEL,
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": os.environ.get(
-        "ANTHROPIC_HAIKU_MODEL", "deepseek-v4-flash"
-    ),
-    "CLAUDE_CODE_SUBAGENT_MODEL": os.environ.get(
-        "ANTHROPIC_HAIKU_MODEL", "deepseek-v4-flash"
-    ),
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": AGENT_HAIKU_MODEL,
+    "CLAUDE_CODE_SUBAGENT_MODEL": AGENT_HAIKU_MODEL,
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "API_TIMEOUT_MS": "3000000",
 }
 
 MAX_TURNS_PER_SESSION = 1000
