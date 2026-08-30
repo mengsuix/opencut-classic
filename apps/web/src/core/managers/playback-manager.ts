@@ -213,7 +213,7 @@ export class PlaybackManager {
 	private updateTime = (): void => {
 		if (!this.isPlaying) return;
 
-		const fps = this.editor.project.getActive()?.settings.fps;
+		const fps = this.editor.project.getActiveOrNull()?.settings.fps;
 		const elapsedSeconds =
 			(performance.now() - this.playbackStartWallTime) / 1000;
 		const rawTime = addMediaTime({
