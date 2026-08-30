@@ -14,9 +14,20 @@ import {
 } from "@/graphics";
 import {
 	buildTextBackgroundFromElement,
+	buildTextStyleFromElement,
 	getTextMeasurementContext,
 	measureTextElement,
 } from "@/text/measure-element";
+import { readStringParam } from "@/text/param-readers";
+import { resolveTextStyle } from "@/text/style";
+import {
+	buildTextEntranceFromElement,
+	countTextChars,
+	resolveTextEntranceAtTime,
+	truncateTextContent,
+} from "@/text/entrance";
+import { FONT_SIZE_SCALE_REFERENCE } from "@/text/typography";
+import type { TextElement } from "@/timeline";
 import { resolveColorAtTime, resolveOpacityAtTime } from "@/animation/values";
 import { resolveTransformAtTime } from "@/rendering/animation-values";
 import { videoCache } from "@/services/video-cache/service";
@@ -358,17 +369,56 @@ function resolveTextNode({
 	});
 	const background = buildTextBackgroundFromElement({ element: node.params });
 
+	const entrance = resolveTextEntranceAtTime({
+		config: buildTextEntranceFromElement({ element: node.params }),
+		localTime,
+	});
+
+	let elementForMeasure: TextElement = node.params;
+	if (entrance.visibleRatio !== null) {
+		const content = readStringParam({
+			params: node.params.params,
+			key: "content",
+			fallback: "Default text",
+		});
+		const totalChars = countTextChars({ content });
+		const visibleChars = Math.floor(entrance.visibleRatio * totalChars);
+		if (visibleChars <= 0) {
+			return null;
+		}
+		if (visibleChars < totalChars) {
+			elementForMeasure = {
+				...node.params,
+				params: {
+					...node.params.params,
+					content: truncateTextContent({ content, visibleChars }),
+				},
+			};
+		}
+	}
+
+	const baseTransform = resolveTransformAtTime({
+		baseTransform: node.params.transform,
+		animations: node.params.animations,
+		localTime,
+	});
+	const transform =
+		entrance.scaleFactor === 1
+			? baseTransform
+			: {
+					...baseTransform,
+					scaleX: baseTransform.scaleX * entrance.scaleFactor,
+					scaleY: baseTransform.scaleY * entrance.scaleFactor,
+				};
+
 	return {
-		transform: resolveTransformAtTime({
-			baseTransform: node.params.transform,
-			animations: node.params.animations,
-			localTime,
-		}),
-		opacity: resolveOpacityAtTime({
-			baseOpacity: node.params.opacity,
-			animations: node.params.animations,
-			localTime,
-		}),
+		transform,
+		opacity:
+			resolveOpacityAtTime({
+				baseOpacity: node.params.opacity,
+				animations: node.params.animations,
+				localTime,
+			}) * entrance.opacityFactor,
 		textColor: resolveColorAtTime({
 			baseColor:
 				typeof node.params.params.color === "string"
@@ -384,6 +434,10 @@ function resolveTextNode({
 			propertyPath: "background.color",
 			localTime,
 		}),
+		textStyle: resolveTextStyle({
+			style: buildTextStyleFromElement({ element: node.params }),
+			scale: node.params.canvasHeight / FONT_SIZE_SCALE_REFERENCE,
+		}),
 		effectPasses: resolveEffectPassGroups({
 			effects: node.params.effects,
 			animations: node.params.animations,
@@ -392,7 +446,7 @@ function resolveTextNode({
 			height: context.renderer.height,
 		}),
 		measuredText: measureTextElement({
-			element: node.params,
+			element: elementForMeasure,
 			canvasHeight: node.params.canvasHeight,
 			localTime,
 			ctx: getTextMeasurementContext(),

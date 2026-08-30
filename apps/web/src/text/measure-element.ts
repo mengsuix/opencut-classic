@@ -15,6 +15,12 @@ import {
 	type TextFontWeight,
 	type TextLayoutParams,
 } from "./primitives";
+import type { TextStyleParams } from "./style";
+import {
+	readBooleanParam,
+	readNumberParam,
+	readStringParam,
+} from "./param-readers";
 
 export interface ResolvedTextBackground extends TextBackground {
 	paddingX: number;
@@ -223,43 +229,74 @@ export function buildTextBackgroundFromElement({
 	};
 }
 
-function readStringParam({
-	params,
-	key,
-	fallback,
+export function buildTextStyleFromElement({
+	element,
 }: {
-	params: TextElement["params"];
-	key: string;
-	fallback: string;
-}): string {
-	const value = params[key];
-	return typeof value === "string" ? value : fallback;
-}
-
-function readNumberParam({
-	params,
-	key,
-	fallback,
-}: {
-	params: TextElement["params"];
-	key: string;
-	fallback: number;
-}): number {
-	const value = params[key];
-	return typeof value === "number" ? value : fallback;
-}
-
-function readBooleanParam({
-	params,
-	key,
-	fallback,
-}: {
-	params: TextElement["params"];
-	key: string;
-	fallback: boolean;
-}): boolean {
-	const value = params[key];
-	return typeof value === "boolean" ? value : fallback;
+	element: TextElement;
+}): TextStyleParams {
+	return {
+		stroke: {
+			enabled: readBooleanParam({
+				params: element.params,
+				key: "stroke.enabled",
+				fallback: DEFAULTS.text.stroke.enabled,
+			}),
+			color: readStringParam({
+				params: element.params,
+				key: "stroke.color",
+				fallback: DEFAULTS.text.stroke.color,
+			}),
+			width: readNumberParam({
+				params: element.params,
+				key: "stroke.width",
+				fallback: DEFAULTS.text.stroke.width,
+			}),
+		},
+		shadow: {
+			enabled: readBooleanParam({
+				params: element.params,
+				key: "shadow.enabled",
+				fallback: DEFAULTS.text.shadow.enabled,
+			}),
+			color: readStringParam({
+				params: element.params,
+				key: "shadow.color",
+				fallback: DEFAULTS.text.shadow.color,
+			}),
+			blur: readNumberParam({
+				params: element.params,
+				key: "shadow.blur",
+				fallback: DEFAULTS.text.shadow.blur,
+			}),
+			offsetX: readNumberParam({
+				params: element.params,
+				key: "shadow.offsetX",
+				fallback: DEFAULTS.text.shadow.offsetX,
+			}),
+			offsetY: readNumberParam({
+				params: element.params,
+				key: "shadow.offsetY",
+				fallback: DEFAULTS.text.shadow.offsetY,
+			}),
+		},
+		gradient: {
+			enabled: readBooleanParam({
+				params: element.params,
+				key: "gradient.enabled",
+				fallback: DEFAULTS.text.gradient.enabled,
+			}),
+			color: readStringParam({
+				params: element.params,
+				key: "gradient.color",
+				fallback: DEFAULTS.text.gradient.color,
+			}),
+			angle: readNumberParam({
+				params: element.params,
+				key: "gradient.angle",
+				fallback: DEFAULTS.text.gradient.angle,
+			}),
+		},
+	};
 }
 
 function readTextAlign({

@@ -25,6 +25,7 @@ import type {
 } from "@/transcription/types";
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
+import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
 import { validateElementPatchRootKeys } from "./patch-validation";
 
 export interface BridgeElementRef {
@@ -324,16 +325,26 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.add_text": {
 		description:
-			"Add a text element with sensible defaults. Returns the inserted element ref.",
+			"Add a text element with sensible defaults. Returns the inserted element ref. Text style params include stroke.enabled/stroke.color/stroke.width, shadow.enabled/shadow.color/shadow.blur/shadow.offsetX/shadow.offsetY, gradient.enabled/gradient.color/gradient.angle, and entrance animation animIn.type (none|fade|pop|typewriter) + animIn.duration (seconds).",
 		args: {
 			content: "string",
 			startTime: "seconds?",
 			duration: "seconds?",
 			trackId: "string? (omit for auto placement)",
-			params: "object? (override any text params, e.g. fontSize, color)",
+			preset: "string? (text style preset key, see text.list_presets)",
+			params: "object? (override any text params, e.g. fontSize, color; applied after preset)",
 		},
 		run: ({ editor, args }) => {
 			const base = structuredClone(DEFAULTS.text.element);
+			const preset =
+				typeof args.preset === "string"
+					? getTextPreset({ key: args.preset })
+					: null;
+			if (args.preset != null && !preset) {
+				throw new Error(
+					`Unknown text preset: ${String(args.preset)}. Use text.list_presets to discover valid keys.`,
+				);
+			}
 			const element = {
 				...base,
 				startTime: toTicks(Number(args.startTime ?? 0)),
@@ -341,6 +352,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					args.duration != null ? toTicks(Number(args.duration)) : base.duration,
 				params: {
 					...base.params,
+					...(preset?.params ?? {}),
 					...((args.params as Record<string, unknown> | undefined) ?? {}),
 					content: String(args.content ?? base.params.content),
 				},
@@ -350,6 +362,68 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					? { mode: "explicit", trackId: args.trackId }
 					: { mode: "auto", trackType: "text" };
 			return insertAndSelect(editor, element, placement);
+		},
+	},
+
+	"text.list_presets": {
+		description:
+			"List text style presets (花字模板) with their param bundles. Apply when adding via timeline.add_text preset arg, or to an existing element via text.apply_preset.",
+		run: () => ({
+			presets: TEXT_PRESETS.map((preset) => ({
+				key: preset.key,
+				name: preset.name,
+				params: sanitizeJson(preset.params),
+			})),
+		}),
+	},
+
+	"text.apply_preset": {
+		description:
+			"Apply a text style preset to an existing text element (see text.list_presets).",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			preset: "string",
+			pushHistory: "boolean? (default true)",
+		},
+		run: ({ editor, args }) => {
+			const preset = getTextPreset({
+				key: requireString(args.preset, "preset"),
+			});
+			if (!preset) {
+				throw new Error(
+					`Unknown text preset: ${String(args.preset)}. Use text.list_presets to discover valid keys.`,
+				);
+			}
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+			let elementType: string | null = null;
+			if (tracks) {
+				for (const track of [...tracks.overlay, tracks.main, ...tracks.audio]) {
+					for (const candidate of track.elements) {
+						if (candidate.id === elementId) {
+							elementType = candidate.type;
+						}
+					}
+				}
+			}
+			if (elementType !== "text") {
+				throw new Error(`Element ${elementId} is not a text element`);
+			}
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId,
+						elementId,
+						patch: { params: { ...preset.params } },
+					},
+				],
+				...(typeof args.pushHistory === "boolean"
+					? { pushHistory: args.pushHistory }
+					: {}),
+			});
+			return { applied: preset.key };
 		},
 	},
 

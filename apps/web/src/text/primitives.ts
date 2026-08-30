@@ -8,6 +8,11 @@ import {
 	measureTextBlock,
 	setCanvasLetterSpacing,
 } from "./layout";
+import type {
+	ResolvedTextGradient,
+	ResolvedTextShadow,
+	ResolvedTextStroke,
+} from "./style";
 import { FONT_SIZE_SCALE_REFERENCE } from "./typography";
 
 export type TextAlign = "left" | "center" | "right";
@@ -138,12 +143,60 @@ export function measureTextLayout({
 	};
 }
 
+function buildTextFillStyle({
+	ctx,
+	layout,
+	textColor,
+	gradient,
+}: {
+	ctx: TextCanvasContext;
+	layout: MeasuredTextLayout;
+	textColor: string;
+	gradient?: ResolvedTextGradient | null;
+}): string | CanvasGradient {
+	if (!gradient || layout.block.maxWidth <= 0 || layout.block.height <= 0) {
+		return textColor;
+	}
+	const alignToLeft: Record<TextAlign, number> = {
+		left: 0,
+		center: -layout.block.maxWidth / 2,
+		right: -layout.block.maxWidth,
+	};
+	const centerX = alignToLeft[layout.textAlign] + layout.block.maxWidth / 2;
+	const radians = (gradient.angle * Math.PI) / 180;
+	const dirX = Math.cos(radians);
+	const dirY = Math.sin(radians);
+	const halfLength =
+		(layout.block.maxWidth * Math.abs(dirX) +
+			layout.block.height * Math.abs(dirY)) /
+		2;
+	const gradientFill = ctx.createLinearGradient(
+		centerX - dirX * halfLength,
+		-dirY * halfLength,
+		centerX + dirX * halfLength,
+		dirY * halfLength,
+	);
+	gradientFill.addColorStop(0, textColor);
+	gradientFill.addColorStop(1, gradient.color);
+	return gradientFill;
+}
+
+function clearCanvasShadow({ ctx }: { ctx: TextCanvasContext }): void {
+	ctx.shadowColor = "transparent";
+	ctx.shadowBlur = 0;
+	ctx.shadowOffsetX = 0;
+	ctx.shadowOffsetY = 0;
+}
+
 export function drawMeasuredTextLayout({
 	ctx,
 	layout,
 	textColor,
 	background,
 	backgroundColor,
+	stroke,
+	shadow,
+	gradient,
 	textBaseline = "middle",
 }: {
 	ctx: TextCanvasContext;
@@ -151,12 +204,16 @@ export function drawMeasuredTextLayout({
 	textColor: string;
 	background?: ResolvedTextBackgroundLike | null;
 	backgroundColor?: string;
+	stroke?: ResolvedTextStroke | null;
+	shadow?: ResolvedTextShadow | null;
+	gradient?: ResolvedTextGradient | null;
 	textBaseline?: CanvasTextBaseline;
 }): void {
 	ctx.font = layout.fontString;
 	ctx.textAlign = layout.textAlign;
 	ctx.textBaseline = textBaseline;
-	ctx.fillStyle = textColor;
+	const fillStyle = buildTextFillStyle({ ctx, layout, textColor, gradient });
+	ctx.fillStyle = fillStyle;
 	setCanvasLetterSpacing({ ctx, letterSpacingPx: layout.letterSpacing });
 
 	if (
@@ -193,13 +250,36 @@ export function drawMeasuredTextLayout({
 				radius,
 			);
 			ctx.fill();
-			ctx.fillStyle = textColor;
+			ctx.fillStyle = fillStyle;
 		}
+	}
+
+	if (shadow) {
+		ctx.shadowColor = shadow.color;
+		ctx.shadowBlur = shadow.blur;
+		ctx.shadowOffsetX = shadow.offsetX;
+		ctx.shadowOffsetY = shadow.offsetY;
+	}
+
+	if (stroke && layout.lines.length > 0) {
+		ctx.strokeStyle = stroke.color;
+		ctx.lineWidth = stroke.width;
+		ctx.lineJoin = "round";
+		ctx.lineCap = "round";
+		for (let index = 0; index < layout.lines.length; index++) {
+			const lineY =
+				index * layout.lineHeightPx - layout.block.visualCenterOffset;
+			ctx.strokeText(layout.lines[index], 0, lineY);
+		}
+		// The shadow is carried by the stroke pass only, so the fill pass
+		// doesn't draw a second, darker shadow on top.
+		clearCanvasShadow({ ctx });
 	}
 
 	for (let index = 0; index < layout.lines.length; index++) {
 		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
 		ctx.fillText(layout.lines[index], 0, lineY);
+		clearCanvasShadow({ ctx });
 		drawTextDecoration({
 			ctx,
 			textDecoration: layout.textDecoration,

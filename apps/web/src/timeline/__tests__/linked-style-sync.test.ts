@@ -130,6 +130,40 @@ describe("expandLinkedTextStyleUpdates", () => {
 		expect(result).toHaveLength(1);
 	});
 
+	test("propagates stroke and entrance animation keys to siblings", () => {
+		const result = expandLinkedTextStyleUpdates({
+			tracks: buildTracks({ linkedStyle: true }),
+			updates: [
+				{
+					trackId: "text-track",
+					elementId: "caption-1",
+					patch: {
+						params: {
+							"stroke.enabled": true,
+							"stroke.color": "#000000",
+							"stroke.width": 3,
+							"animIn.type": "typewriter",
+						},
+					},
+				},
+			],
+		});
+
+		expect(result).toHaveLength(2);
+		expect(result[1]).toEqual({
+			trackId: "text-track",
+			elementId: "caption-2",
+			patch: {
+				params: {
+					"stroke.enabled": true,
+					"stroke.color": "#000000",
+					"stroke.width": 3,
+					"animIn.type": "typewriter",
+				},
+			},
+		});
+	});
+
 	test("does not propagate on an unlinked track", () => {
 		const result = expandLinkedTextStyleUpdates({
 			tracks: buildTracks({}),

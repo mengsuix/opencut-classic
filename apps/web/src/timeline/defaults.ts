@@ -29,6 +29,31 @@ const defaultTextBackground = {
 	offsetY: 0,
 };
 
+const defaultTextStroke = {
+	enabled: false,
+	color: "#000000",
+	width: 2,
+};
+
+const defaultTextShadow = {
+	enabled: false,
+	color: "#000000",
+	blur: 2,
+	offsetX: 0,
+	offsetY: 1,
+};
+
+const defaultTextGradient = {
+	enabled: false,
+	color: "#ffd700",
+	angle: 90,
+};
+
+const defaultTextAnimIn = {
+	type: "none",
+	duration: 0.5,
+};
+
 const defaultTextElement: Omit<TextElement, "id"> = {
 	type: "text",
 	get name() {
@@ -58,6 +83,19 @@ const defaultTextElement: Omit<TextElement, "id"> = {
 		"background.paddingY": defaultTextBackground.paddingY,
 		"background.offsetX": defaultTextBackground.offsetX,
 		"background.offsetY": defaultTextBackground.offsetY,
+		"stroke.enabled": defaultTextStroke.enabled,
+		"stroke.color": defaultTextStroke.color,
+		"stroke.width": defaultTextStroke.width,
+		"shadow.enabled": defaultTextShadow.enabled,
+		"shadow.color": defaultTextShadow.color,
+		"shadow.blur": defaultTextShadow.blur,
+		"shadow.offsetX": defaultTextShadow.offsetX,
+		"shadow.offsetY": defaultTextShadow.offsetY,
+		"gradient.enabled": defaultTextGradient.enabled,
+		"gradient.color": defaultTextGradient.color,
+		"gradient.angle": defaultTextGradient.angle,
+		"animIn.type": defaultTextAnimIn.type,
+		"animIn.duration": defaultTextAnimIn.duration,
 		"transform.positionX": defaultTransform.position.x,
 		"transform.positionY": defaultTransform.position.y,
 		"transform.scaleX": defaultTransform.scaleX,
@@ -85,6 +123,10 @@ export const DEFAULTS = {
 		letterSpacing: defaultTextLetterSpacing,
 		lineHeight: defaultTextLineHeight,
 		background: defaultTextBackground,
+		stroke: defaultTextStroke,
+		shadow: defaultTextShadow,
+		gradient: defaultTextGradient,
+		animIn: defaultTextAnimIn,
 		element: defaultTextElement,
 	},
 	timeline: {
