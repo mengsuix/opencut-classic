@@ -18,8 +18,13 @@ import {
 	readOpacityFromParams,
 } from "@/rendering";
 import { buildVisualAnimConfig } from "@/animation/visual-anim";
+import { computeTrackTransitions } from "@/timeline/transition";
+import { TICKS_PER_SECOND } from "@/wasm";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
+
+/** Max gap (~1 frame at 30fps) between two elements for a transition. */
+const MAX_TRANSITION_GAP_TICKS = Math.round(TICKS_PER_SECOND / 30);
 
 function getVisibleSortedElements({ track }: { track: TimelineTrack }) {
 	return track.elements
@@ -46,6 +51,13 @@ function buildTrackNodes({
 
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
+		const transitions =
+			track.type === "video"
+				? computeTrackTransitions({
+						elements,
+						maxGapTicks: MAX_TRANSITION_GAP_TICKS,
+					})
+				: null;
 
 		for (const element of elements) {
 			if (element.type === "effect") {
@@ -87,6 +99,8 @@ function buildTrackNodes({
 								params: element.params,
 								phase: "out",
 							}),
+							transitionIn: transitions?.get(element.id)?.transitionIn,
+							transitionOut: transitions?.get(element.id)?.transitionOut,
 							opacity: readOpacityFromParams({ params: element.params }),
 							blendMode: readBlendModeFromParams({ params: element.params }),
 							effects: element.effects ?? [],
@@ -112,6 +126,8 @@ function buildTrackNodes({
 								params: element.params,
 								phase: "out",
 							}),
+							transitionIn: transitions?.get(element.id)?.transitionIn,
+							transitionOut: transitions?.get(element.id)?.transitionOut,
 							opacity: readOpacityFromParams({ params: element.params }),
 							blendMode: readBlendModeFromParams({ params: element.params }),
 							effects: element.effects ?? [],

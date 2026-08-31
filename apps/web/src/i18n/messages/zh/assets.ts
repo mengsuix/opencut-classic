@@ -8,7 +8,7 @@ export const assets = {
 	"assets.tabCaptions": "字幕",
 	"assets.tabAdjustment": "调节",
 	"assets.tabSettings": "设置",
-	"assets.transitionsComingSoon": "转场视图即将推出...",
+	"assets.transitionSelectHint": "选中时间线上的视频或图片片段后，点击应用转场",
 	"assets.adjustmentComingSoon": "调节视图即将推出...",
 	"assets.processingFiles": "正在处理你的文件（{progress}%）",
 	"assets.dragDropHint": "将视频、照片和音频文件拖放到此处",

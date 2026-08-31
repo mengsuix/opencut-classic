@@ -28,14 +28,11 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 局部特效：特效加在副本元素上，再用 masks 限定区域（蒙版羽化过渡）。
 - 色彩罩染：顶层 graphic 纯色矩形（不透明盖住画面），blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
 
-## 转场配方（无内置转场系统，用重叠+关键帧拼）
-- 通用做法：把后一片段 startTime 提前 0.3~0.5s 与前一片段重叠，重叠期内打关键帧驱动透明度/缩放/位置。
-- 叠化：前段 opacity 1→0（或后段 0→1）关键帧。
-- 黑场/白闪：顶层加全屏黑色/白色 graphic 矩形，opacity 0→1→0 三个关键帧卡在切点。
-- 推近切换：前段 transform.scale 1→1.3 且 opacity 1→0，后段 scale 1.3→1 且 opacity 0→1，缓动选 ease-out。
-- 擦除/划像：后段加 rectangle 蒙版，关键帧驱动蒙版尺寸/centerX 从 0 扫到全屏。
-- 旋转切换：前段 rotate 0→8° + scale 拉到 1.2 淡出，后段反向进入。
-- 注意：重叠期两段音频会叠加，重叠段先把音量降到 -60 或 split 分离音频再静音。
+## 转场（video/image 元素 params，用 timeline.update_elements 设置）
+- 内置转场：给前一片段设 transition.type = fade|black|zoom|slide-left|slide-right，transition.duration（秒，0.1~5）。自动作用于同轨道下一个紧邻片段（间隙须 ≤1 帧），无需移动片段。
+- fade 叠化 / black 黑场 / zoom 推近 / slide 滑入滑出；转场区前段音频自动淡出。
+- 转场只渲染画面重叠，后一片段视频会消耗 trimStart 余量，无余量时定格源首帧。
+- 内置类型以外的转场（擦除/旋转/白闪等）才需要手拼：重叠片段 + animIn/animOut 或关键帧。
 
 ## 文字样式参数（text 元素 params，用 timeline.update_elements / add_text 设置）
 - 描边：stroke.enabled=true, stroke.color, stroke.width

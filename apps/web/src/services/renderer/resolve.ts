@@ -1,7 +1,14 @@
 import { mediaTimeToSeconds, roundMediaTime, TICKS_PER_SECOND } from "@/wasm";
 import { getElementLocalTime } from "@/animation";
 import { resolveEffectParamsAtTime } from "@/animation/effect-param-channel";
-import { resolveVisualAnimAtTime } from "@/animation/visual-anim";
+import {
+	combineVisualAnimStates,
+	resolveVisualAnimAtTime,
+} from "@/animation/visual-anim";
+import {
+	resolveElementTransitionAtTime,
+	transitionLeadInTicks,
+} from "@/timeline/transition";
 import {
 	buildGaussianBlurPasses,
 	intensityToSigma,
@@ -173,7 +180,11 @@ function resolveVisualState({
 	sourceHeight: number;
 }): ResolvedVisualNodeState | null {
 	const clipTime = context.time - params.timeOffset;
-	if (clipTime < 0 || clipTime >= params.duration) {
+	const leadIn = transitionLeadInTicks({
+		transitionIn: params.transitionIn,
+		ticksPerSecond: TICKS_PER_SECOND,
+	});
+	if (clipTime < -leadIn || clipTime >= params.duration) {
 		return null;
 	}
 
@@ -200,19 +211,29 @@ function resolveVisualState({
 		canvasWidth: context.renderer.width,
 		canvasHeight: context.renderer.height,
 	});
+	const transition = resolveElementTransitionAtTime({
+		transitionIn: params.transitionIn,
+		transitionOut: params.transitionOut,
+		time: context.time,
+		timeOffset: params.timeOffset,
+		duration: params.duration,
+		canvasWidth: context.renderer.width,
+		ticksPerSecond: TICKS_PER_SECOND,
+	});
+	const motion = combineVisualAnimStates({ a: anim, b: transition });
 	const transform =
-		anim.scaleFactor === 1 && anim.offsetX === 0 && anim.offsetY === 0
+		motion.scaleFactor === 1 && motion.offsetX === 0 && motion.offsetY === 0
 			? baseTransform
 			: {
 					...baseTransform,
-					scaleX: baseTransform.scaleX * anim.scaleFactor,
-					scaleY: baseTransform.scaleY * anim.scaleFactor,
+					scaleX: baseTransform.scaleX * motion.scaleFactor,
+					scaleY: baseTransform.scaleY * motion.scaleFactor,
 					position: {
-						x: baseTransform.position.x + anim.offsetX,
-						y: baseTransform.position.y + anim.offsetY,
+						x: baseTransform.position.x + motion.offsetX,
+						y: baseTransform.position.y + motion.offsetY,
 					},
 				};
-	const opacity = baseOpacity * anim.opacityFactor;
+	const opacity = baseOpacity * motion.opacityFactor;
 	const containScale = Math.min(
 		context.renderer.width / sourceWidth,
 		context.renderer.height / sourceHeight,
@@ -246,16 +267,27 @@ async function resolveVideoNode({
 	context: ResolveContext;
 }): Promise<ResolvedVisualSourceNodeState | null> {
 	const clipTime = context.time - node.params.timeOffset;
-	if (clipTime < 0 || clipTime >= node.params.duration) {
+	const leadIn = transitionLeadInTicks({
+		transitionIn: node.params.transitionIn,
+		ticksPerSecond: TICKS_PER_SECOND,
+	});
+	if (clipTime < -leadIn || clipTime >= node.params.duration) {
 		return null;
 	}
 
-	const sourceTimeTicks =
-		node.params.trimStart +
-		getSourceTimeAtClipTime({
-			clipTime,
-			retime: node.params.retime,
-		});
+	// During the transition lead-in (clipTime < 0) the video consumes
+	// trimStart handles, holding the source's first frame when they run out.
+	const sourceOffsetTicks =
+		clipTime >= 0
+			? getSourceTimeAtClipTime({
+					clipTime,
+					retime: node.params.retime,
+				})
+			: clipTime;
+	const sourceTimeTicks = Math.max(
+		node.params.trimStart + sourceOffsetTicks,
+		0,
+	);
 	const frame = await videoCache.getFrameAt({
 		mediaId: node.params.mediaId,
 		file: node.params.file,

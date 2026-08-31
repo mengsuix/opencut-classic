@@ -2,6 +2,7 @@ import { t } from "@/i18n";
 import type { ParamDefinition, ParamValue, ParamValues } from "@/params";
 import { MIN_TRANSFORM_SCALE } from "@/animation/transform";
 import type { VisualAnimType } from "@/animation/visual-anim";
+import type { TransitionType } from "@/timeline/transition";
 import type { BlendMode } from "@/rendering";
 import type { ElementType, TimelineElement } from "@/timeline";
 import { DEFAULTS } from "@/timeline/defaults";
@@ -337,6 +338,71 @@ const VISUAL_ANIM_TYPE_OPTIONS: Array<{
 		get label() {
 			return t("properties.animSlideRight");
 		},
+	},
+];
+
+const TRANSITION_TYPE_OPTIONS: Array<{ value: TransitionType; label: string }> =
+	[
+		{
+			value: "none",
+			get label() {
+				return t("properties.transitionNone");
+			},
+		},
+		{
+			value: "fade",
+			get label() {
+				return t("properties.transitionFade");
+			},
+		},
+		{
+			value: "black",
+			get label() {
+				return t("properties.transitionBlack");
+			},
+		},
+		{
+			value: "zoom",
+			get label() {
+				return t("properties.transitionZoom");
+			},
+		},
+		{
+			value: "slide-left",
+			get label() {
+				return t("properties.transitionSlideLeft");
+			},
+		},
+		{
+			value: "slide-right",
+			get label() {
+				return t("properties.transitionSlideRight");
+			},
+		},
+	];
+
+const transitionParams: ElementParamDefinition[] = [
+	{
+		key: "transition.type",
+		get label() {
+			return t("properties.transitionType");
+		},
+		type: "select",
+		default: "none",
+		keyframable: false,
+		options: TRANSITION_TYPE_OPTIONS,
+	},
+	{
+		key: "transition.duration",
+		get label() {
+			return t("properties.transitionDuration");
+		},
+		type: "number",
+		default: 0.5,
+		min: 0.1,
+		max: 5,
+		step: 0.1,
+		keyframable: false,
 	},
 ];
 
@@ -795,12 +861,17 @@ elementParamRegistry.register({
 	definition: [
 		...visualElementParams,
 		...visualAnimParams,
+		...transitionParams,
 		...audioElementParams,
 	],
 });
 elementParamRegistry.register({
 	key: "image",
-	definition: [...visualElementParams, ...visualAnimParams],
+	definition: [
+		...visualElementParams,
+		...visualAnimParams,
+		...transitionParams,
+	],
 });
 elementParamRegistry.register({
 	key: "text",

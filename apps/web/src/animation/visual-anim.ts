@@ -186,7 +186,7 @@ function resolveOutState({
 	}
 }
 
-function combineStates({
+export function combineVisualAnimStates({
 	a,
 	b,
 }: {
@@ -229,7 +229,7 @@ export function resolveVisualAnimAtTime({
 			min: 0,
 			max: 1,
 		});
-		state = combineStates({
+		state = combineVisualAnimStates({
 			a: state,
 			b: resolveInState({ config: animIn, progress, canvas }),
 		});
@@ -242,7 +242,7 @@ export function resolveVisualAnimAtTime({
 			min: 0,
 			max: 1,
 		});
-		state = combineStates({
+		state = combineVisualAnimStates({
 			a: state,
 			b: resolveOutState({ config: animOut, progress, canvas }),
 		});

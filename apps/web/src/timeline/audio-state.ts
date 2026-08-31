@@ -1,7 +1,9 @@
 import { hasKeyframesForPath } from "@/animation/keyframe-query";
 import { resolveNumberAtTime } from "@/animation/values";
+import { clamp } from "@/utils/math";
 import { VOLUME_DB_MAX, VOLUME_DB_MIN } from "./audio-constants";
 import { hasAudioFade, readAudioFades, resolveFadeGain } from "./audio-fade";
+import { buildTransitionFromParams, isActiveTransition } from "./transition";
 import type { TimelineElement } from "./types";
 const DEFAULT_STEP_SECONDS = 1 / 60;
 
@@ -79,13 +81,24 @@ export function resolveEffectiveAudioGain({
 		localTime: Math.round(localTime * TICKS_PER_SECOND),
 	});
 
+	const durationSeconds = element.duration / TICKS_PER_SECOND;
 	const fadeGain = resolveFadeGain({
 		...readAudioFades({ params: element.params }),
 		localTimeSeconds: localTime,
-		durationSeconds: element.duration / TICKS_PER_SECOND,
+		durationSeconds,
 	});
 
-	return dBToLinear(resolvedDb) * fadeGain;
+	// A built-in transition out also fades the outgoing element's audio.
+	const transition = buildTransitionFromParams({ params: element.params });
+	const transitionGain = isActiveTransition(transition)
+		? clamp({
+				value: (durationSeconds - localTime) / transition.duration,
+				min: 0,
+				max: 1,
+			})
+		: 1;
+
+	return dBToLinear(resolvedDb) * fadeGain * transitionGain;
 }
 
 export function buildWaveformGainSamples({

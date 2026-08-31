@@ -4,6 +4,7 @@ import type { Effect, EffectPass } from "@/effects/types";
 import type { Mask } from "@/masks/types";
 import type { BlendMode, Transform } from "@/rendering";
 import type { RetimeConfig, VisualElement } from "@/timeline";
+import type { TransitionConfig } from "@/timeline/transition";
 
 export interface VisualNodeParams {
 	duration: number;
@@ -19,6 +20,8 @@ export interface VisualNodeParams {
 	masks?: Mask[];
 	animIn?: VisualAnimConfig;
 	animOut?: VisualAnimConfig;
+	transitionIn?: TransitionConfig;
+	transitionOut?: TransitionConfig;
 }
 
 export interface ResolvedVisualNodeState {

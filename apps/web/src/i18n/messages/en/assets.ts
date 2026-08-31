@@ -8,7 +8,8 @@ export const assets = {
 	"assets.tabCaptions": "Captions",
 	"assets.tabAdjustment": "Adjustment",
 	"assets.tabSettings": "Settings",
-	"assets.transitionsComingSoon": "Transitions view coming soon...",
+	"assets.transitionSelectHint":
+		"Select a video or image clip on the timeline, then click to apply a transition",
 	"assets.adjustmentComingSoon": "Adjustment view coming soon...",
 	"assets.processingFiles": "Processing your files ({progress}%)",
 	"assets.dragDropHint": "Drag and drop videos, photos, and audio files here",
@@ -50,7 +51,8 @@ export const assets = {
 	"assets.saved": "Saved",
 	"assets.searchSoundEffects": "Search sound effects",
 	"assets.showCommercialOnly": "Show only commercially licensed",
-	"assets.commercialOnlyHint": "Only showing sounds licensed for commercial use",
+	"assets.commercialOnlyHint":
+		"Only showing sounds licensed for commercial use",
 	"assets.allLicensesHint": "Showing all sounds regardless of license",
 	"assets.loadingSounds": "Loading sounds...",
 	"assets.searching": "Searching...",
@@ -84,7 +86,7 @@ export const assets = {
 	"assets.stickerCategories": "Sticker categories",
 	"assets.noStickersFound": "No stickers found",
 	"assets.stickerResults": "{count} results",
-	"assets.noStickersForQuery": "No stickers found for \"{query}\"",
+	"assets.noStickersForQuery": 'No stickers found for "{query}"',
 	"assets.noStickersYet": "No stickers available yet.",
 	"assets.noStickersInCategory": "No stickers available in {category} yet.",
 	"assets.clearRecent": "Clear",
@@ -110,7 +112,8 @@ export const assets = {
 	"assets.noCaptionsGenerated": "No captions were generated",
 	"assets.unexpectedError": "An unexpected error occurred",
 	"assets.readingSubtitleFile": "Reading subtitle file...",
-	"assets.noValidCues": "No valid subtitle cues were found in the subtitle file",
+	"assets.noValidCues":
+		"No valid subtitle cues were found in the subtitle file",
 	"assets.importingSubtitles": "Importing subtitles...",
 	"assets.importSummary":
 		"Imported {imported} subtitle cue(s) and skipped {skipped} malformed cue(s).",
@@ -134,5 +137,6 @@ export const assets = {
 	"assets.assUnsupportedStyles":
 		"Ignored unsupported ASS style features such as outline, shadow, rotation, or scaling.",
 	"assets.captionName": "Caption {index}",
-	"assets.noAudioDetected": "No audio detected. Add a clip with audio to the timeline first.",
+	"assets.noAudioDetected":
+		"No audio detected. Add a clip with audio to the timeline first.",
 };
