@@ -45,5 +45,13 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 入场动画：animIn.type = fade|pop|typewriter, animIn.duration（秒）
 - 花字模板：text.list_presets 查看，add_text 传 preset 或 text.apply_preset 应用到已有文字
 
+## 元素动画预设（video/image/sticker/graphic 元素 params，用 timeline.update_elements 设置）
+- 入场：animIn.type = fade|pop|zoom|slide-up|slide-down|slide-left|slide-right, animIn.duration（秒）
+- 出场：animOut.type 同上, animOut.duration（秒）
+- slide 从画布外滑入/滑出；zoom 入场=放大淡入、出场=放大淡出；需要其他运动形式再用关键帧手写
+
+## 音频淡入淡出（audio/video 元素 params，用 timeline.update_elements 设置）
+- fadeIn / fadeOut（秒，默认 0 关闭）：线性增益斜坡，播放、波形与导出自动生效
+
 ## 导出前
 涉及特效的导出无需特殊处理，效果与预览一致。修改视觉后务必 preview.capture 截图确认。`;

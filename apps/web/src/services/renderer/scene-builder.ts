@@ -17,6 +17,7 @@ import {
 	readBlendModeFromParams,
 	readOpacityFromParams,
 } from "@/rendering";
+import { buildVisualAnimConfig } from "@/animation/visual-anim";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
 
@@ -78,6 +79,14 @@ function buildTrackNodes({
 							retime: element.retime,
 							transform: buildTransformFromParams({ params: element.params }),
 							animations: element.animations,
+							animIn: buildVisualAnimConfig({
+								params: element.params,
+								phase: "in",
+							}),
+							animOut: buildVisualAnimConfig({
+								params: element.params,
+								phase: "out",
+							}),
 							opacity: readOpacityFromParams({ params: element.params }),
 							blendMode: readBlendModeFromParams({ params: element.params }),
 							effects: element.effects ?? [],
@@ -95,6 +104,14 @@ function buildTrackNodes({
 							trimEnd: element.trimEnd,
 							transform: buildTransformFromParams({ params: element.params }),
 							animations: element.animations,
+							animIn: buildVisualAnimConfig({
+								params: element.params,
+								phase: "in",
+							}),
+							animOut: buildVisualAnimConfig({
+								params: element.params,
+								phase: "out",
+							}),
 							opacity: readOpacityFromParams({ params: element.params }),
 							blendMode: readBlendModeFromParams({ params: element.params }),
 							effects: element.effects ?? [],
@@ -134,6 +151,14 @@ function buildTrackNodes({
 						trimEnd: element.trimEnd,
 						transform: buildTransformFromParams({ params: element.params }),
 						animations: element.animations,
+						animIn: buildVisualAnimConfig({
+							params: element.params,
+							phase: "in",
+						}),
+						animOut: buildVisualAnimConfig({
+							params: element.params,
+							phase: "out",
+						}),
 						opacity: readOpacityFromParams({ params: element.params }),
 						blendMode: readBlendModeFromParams({ params: element.params }),
 						effects: element.effects ?? [],
@@ -152,6 +177,14 @@ function buildTrackNodes({
 						trimEnd: element.trimEnd,
 						transform: buildTransformFromParams({ params: element.params }),
 						animations: element.animations,
+						animIn: buildVisualAnimConfig({
+							params: element.params,
+							phase: "in",
+						}),
+						animOut: buildVisualAnimConfig({
+							params: element.params,
+							phase: "out",
+						}),
 						opacity: readOpacityFromParams({ params: element.params }),
 						blendMode: readBlendModeFromParams({ params: element.params }),
 						effects: element.effects ?? [],

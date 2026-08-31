@@ -1,6 +1,7 @@
-import { mediaTimeToSeconds, roundMediaTime } from "@/wasm";
+import { mediaTimeToSeconds, roundMediaTime, TICKS_PER_SECOND } from "@/wasm";
 import { getElementLocalTime } from "@/animation";
 import { resolveEffectParamsAtTime } from "@/animation/effect-param-channel";
+import { resolveVisualAnimAtTime } from "@/animation/visual-anim";
 import {
 	buildGaussianBlurPasses,
 	intensityToSigma,
@@ -157,8 +158,8 @@ function resolveEffectPassGroups({
 				height,
 				time: localTime,
 			});
-			});
-			}
+		});
+}
 
 function resolveVisualState({
 	params,
@@ -181,16 +182,37 @@ function resolveVisualState({
 		elementStartTime: params.timeOffset,
 		elementDuration: params.duration,
 	});
-	const transform = resolveTransformAtTime({
+	const baseTransform = resolveTransformAtTime({
 		baseTransform: params.transform,
 		animations: params.animations,
 		localTime,
 	});
-	const opacity = resolveOpacityAtTime({
+	const baseOpacity = resolveOpacityAtTime({
 		baseOpacity: params.opacity,
 		animations: params.animations,
 		localTime,
 	});
+	const anim = resolveVisualAnimAtTime({
+		animIn: params.animIn,
+		animOut: params.animOut,
+		localTime: localTime / TICKS_PER_SECOND,
+		elementDuration: params.duration / TICKS_PER_SECOND,
+		canvasWidth: context.renderer.width,
+		canvasHeight: context.renderer.height,
+	});
+	const transform =
+		anim.scaleFactor === 1 && anim.offsetX === 0 && anim.offsetY === 0
+			? baseTransform
+			: {
+					...baseTransform,
+					scaleX: baseTransform.scaleX * anim.scaleFactor,
+					scaleY: baseTransform.scaleY * anim.scaleFactor,
+					position: {
+						x: baseTransform.position.x + anim.offsetX,
+						y: baseTransform.position.y + anim.offsetY,
+					},
+				};
+	const opacity = baseOpacity * anim.opacityFactor;
 	const containScale = Math.min(
 		context.renderer.width / sourceWidth,
 		context.renderer.height / sourceHeight,
@@ -372,7 +394,7 @@ function resolveTextNode({
 
 	const entrance = resolveTextEntranceAtTime({
 		config: buildTextEntranceFromElement({ element: node.params }),
-		localTime,
+		localTime: localTime / TICKS_PER_SECOND,
 	});
 
 	let elementForMeasure: TextElement = node.params;

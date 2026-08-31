@@ -1,21 +1,12 @@
 import { t } from "@/i18n";
-import type {
-	ParamDefinition,
-	ParamValue,
-	ParamValues,
-} from "@/params";
+import type { ParamDefinition, ParamValue, ParamValues } from "@/params";
 import { MIN_TRANSFORM_SCALE } from "@/animation/transform";
+import type { VisualAnimType } from "@/animation/visual-anim";
 import type { BlendMode } from "@/rendering";
-import type {
-	ElementType,
-	TimelineElement,
-} from "@/timeline";
+import type { ElementType, TimelineElement } from "@/timeline";
 import { DEFAULTS } from "@/timeline/defaults";
 import { VOLUME_DB_MAX, VOLUME_DB_MIN } from "@/timeline/audio-constants";
-import {
-	CORNER_RADIUS_MAX,
-	CORNER_RADIUS_MIN,
-} from "@/text/background";
+import { CORNER_RADIUS_MAX, CORNER_RADIUS_MIN } from "@/text/background";
 
 export type ElementParamDefinition<TKey extends string = string> =
 	ParamDefinition<TKey> & {
@@ -47,13 +38,7 @@ export class DefinitionRegistry<TKey extends string, TDefinition> {
 		this.entityName = entityName;
 	}
 
-	register({
-		key,
-		definition,
-	}: {
-		key: TKey;
-		definition: TDefinition;
-	}): void {
+	register({ key, definition }: { key: TKey; definition: TDefinition }): void {
 		this.definitions.set(key, definition);
 	}
 
@@ -75,29 +60,116 @@ export class DefinitionRegistry<TKey extends string, TDefinition> {
 }
 
 const BLEND_MODE_OPTIONS: Array<{ value: BlendMode; label: string }> = [
-	{ value: "normal", get label() { return t("properties.blendNormal"); } },
-	{ value: "darken", get label() { return t("properties.blendDarken"); } },
-	{ value: "multiply", get label() { return t("properties.blendMultiply"); } },
-	{ value: "color-burn", get label() { return t("properties.blendColorBurn"); } },
-	{ value: "lighten", get label() { return t("properties.blendLighten"); } },
-	{ value: "screen", get label() { return t("properties.blendScreen"); } },
-	{ value: "plus-lighter", get label() { return t("properties.blendPlusLighter"); } },
-	{ value: "color-dodge", get label() { return t("properties.blendColorDodge"); } },
-	{ value: "overlay", get label() { return t("properties.blendOverlay"); } },
-	{ value: "soft-light", get label() { return t("properties.blendSoftLight"); } },
-	{ value: "hard-light", get label() { return t("properties.blendHardLight"); } },
-	{ value: "difference", get label() { return t("properties.blendDifference"); } },
-	{ value: "exclusion", get label() { return t("properties.blendExclusion"); } },
-	{ value: "hue", get label() { return t("properties.blendHue"); } },
-	{ value: "saturation", get label() { return t("properties.blendSaturation"); } },
-	{ value: "color", get label() { return t("properties.blendColor"); } },
-	{ value: "luminosity", get label() { return t("properties.blendLuminosity"); } },
+	{
+		value: "normal",
+		get label() {
+			return t("properties.blendNormal");
+		},
+	},
+	{
+		value: "darken",
+		get label() {
+			return t("properties.blendDarken");
+		},
+	},
+	{
+		value: "multiply",
+		get label() {
+			return t("properties.blendMultiply");
+		},
+	},
+	{
+		value: "color-burn",
+		get label() {
+			return t("properties.blendColorBurn");
+		},
+	},
+	{
+		value: "lighten",
+		get label() {
+			return t("properties.blendLighten");
+		},
+	},
+	{
+		value: "screen",
+		get label() {
+			return t("properties.blendScreen");
+		},
+	},
+	{
+		value: "plus-lighter",
+		get label() {
+			return t("properties.blendPlusLighter");
+		},
+	},
+	{
+		value: "color-dodge",
+		get label() {
+			return t("properties.blendColorDodge");
+		},
+	},
+	{
+		value: "overlay",
+		get label() {
+			return t("properties.blendOverlay");
+		},
+	},
+	{
+		value: "soft-light",
+		get label() {
+			return t("properties.blendSoftLight");
+		},
+	},
+	{
+		value: "hard-light",
+		get label() {
+			return t("properties.blendHardLight");
+		},
+	},
+	{
+		value: "difference",
+		get label() {
+			return t("properties.blendDifference");
+		},
+	},
+	{
+		value: "exclusion",
+		get label() {
+			return t("properties.blendExclusion");
+		},
+	},
+	{
+		value: "hue",
+		get label() {
+			return t("properties.blendHue");
+		},
+	},
+	{
+		value: "saturation",
+		get label() {
+			return t("properties.blendSaturation");
+		},
+	},
+	{
+		value: "color",
+		get label() {
+			return t("properties.blendColor");
+		},
+	},
+	{
+		value: "luminosity",
+		get label() {
+			return t("properties.blendLuminosity");
+		},
+	},
 ];
 
 const visualElementParams: ElementParamDefinition[] = [
 	{
 		key: "transform.positionX",
-		get label() { return t("properties.positionX"); },
+		get label() {
+			return t("properties.positionX");
+		},
 		type: "number",
 		default: DEFAULTS.element.transform.position.x,
 		min: -100_000,
@@ -105,7 +177,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "transform.positionY",
-		get label() { return t("properties.positionY"); },
+		get label() {
+			return t("properties.positionY");
+		},
 		type: "number",
 		default: DEFAULTS.element.transform.position.y,
 		min: -100_000,
@@ -113,7 +187,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "transform.scaleX",
-		get label() { return t("properties.scaleX"); },
+		get label() {
+			return t("properties.scaleX");
+		},
 		type: "number",
 		default: DEFAULTS.element.transform.scaleX,
 		min: MIN_TRANSFORM_SCALE,
@@ -121,7 +197,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "transform.scaleY",
-		get label() { return t("properties.scaleY"); },
+		get label() {
+			return t("properties.scaleY");
+		},
 		type: "number",
 		default: DEFAULTS.element.transform.scaleY,
 		min: MIN_TRANSFORM_SCALE,
@@ -129,7 +207,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "transform.rotate",
-		get label() { return t("properties.rotate"); },
+		get label() {
+			return t("properties.rotate");
+		},
 		type: "number",
 		default: DEFAULTS.element.transform.rotate,
 		min: -360,
@@ -138,7 +218,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "opacity",
-		get label() { return t("properties.opacity"); },
+		get label() {
+			return t("properties.opacity");
+		},
 		type: "number",
 		default: DEFAULTS.element.opacity,
 		min: 0,
@@ -147,7 +229,9 @@ const visualElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "blendMode",
-		get label() { return t("properties.blendMode"); },
+		get label() {
+			return t("properties.blendMode");
+		},
 		type: "select",
 		default: DEFAULTS.element.blendMode,
 		keyframable: false,
@@ -158,7 +242,9 @@ const visualElementParams: ElementParamDefinition[] = [
 const audioElementParams: ElementParamDefinition[] = [
 	{
 		key: "volume",
-		get label() { return t("properties.volume"); },
+		get label() {
+			return t("properties.volume");
+		},
 		type: "number",
 		default: DEFAULTS.element.volume,
 		min: VOLUME_DB_MIN,
@@ -167,9 +253,136 @@ const audioElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "muted",
-		get label() { return t("properties.muted"); },
+		get label() {
+			return t("properties.muted");
+		},
 		type: "boolean",
 		default: false,
+		keyframable: false,
+	},
+	{
+		key: "fadeIn",
+		get label() {
+			return t("properties.audioFadeIn");
+		},
+		type: "number",
+		default: 0,
+		min: 0,
+		max: 30,
+		step: 0.1,
+		keyframable: false,
+	},
+	{
+		key: "fadeOut",
+		get label() {
+			return t("properties.audioFadeOut");
+		},
+		type: "number",
+		default: 0,
+		min: 0,
+		max: 30,
+		step: 0.1,
+		keyframable: false,
+	},
+];
+
+const VISUAL_ANIM_TYPE_OPTIONS: Array<{
+	value: VisualAnimType;
+	label: string;
+}> = [
+	{
+		value: "none",
+		get label() {
+			return t("properties.animNone");
+		},
+	},
+	{
+		value: "fade",
+		get label() {
+			return t("properties.animFade");
+		},
+	},
+	{
+		value: "pop",
+		get label() {
+			return t("properties.animPop");
+		},
+	},
+	{
+		value: "zoom",
+		get label() {
+			return t("properties.animZoom");
+		},
+	},
+	{
+		value: "slide-up",
+		get label() {
+			return t("properties.animSlideUp");
+		},
+	},
+	{
+		value: "slide-down",
+		get label() {
+			return t("properties.animSlideDown");
+		},
+	},
+	{
+		value: "slide-left",
+		get label() {
+			return t("properties.animSlideLeft");
+		},
+	},
+	{
+		value: "slide-right",
+		get label() {
+			return t("properties.animSlideRight");
+		},
+	},
+];
+
+const visualAnimParams: ElementParamDefinition[] = [
+	{
+		key: "animIn.type",
+		get label() {
+			return t("properties.animInType");
+		},
+		type: "select",
+		default: "none",
+		keyframable: false,
+		options: VISUAL_ANIM_TYPE_OPTIONS,
+	},
+	{
+		key: "animIn.duration",
+		get label() {
+			return t("properties.animDuration");
+		},
+		type: "number",
+		default: 0.5,
+		min: 0.1,
+		max: 30,
+		step: 0.1,
+		keyframable: false,
+	},
+	{
+		key: "animOut.type",
+		get label() {
+			return t("properties.animOutType");
+		},
+		type: "select",
+		default: "none",
+		keyframable: false,
+		options: VISUAL_ANIM_TYPE_OPTIONS,
+	},
+	{
+		key: "animOut.duration",
+		get label() {
+			return t("properties.animDuration");
+		},
+		type: "number",
+		default: 0.5,
+		min: 0.1,
+		max: 30,
+		step: 0.1,
 		keyframable: false,
 	},
 ];
@@ -177,21 +390,27 @@ const audioElementParams: ElementParamDefinition[] = [
 const textElementParams: ElementParamDefinition[] = [
 	{
 		key: "content",
-		get label() { return t("properties.content"); },
+		get label() {
+			return t("properties.content");
+		},
 		type: "text",
 		default: "Default text",
 		keyframable: false,
 	},
 	{
 		key: "fontFamily",
-		get label() { return t("properties.fontFamily"); },
+		get label() {
+			return t("properties.fontFamily");
+		},
 		type: "font",
 		default: "Arial",
 		keyframable: false,
 	},
 	{
 		key: "fontSize",
-		get label() { return t("properties.fontSize"); },
+		get label() {
+			return t("properties.fontSize");
+		},
 		type: "number",
 		default: 15,
 		min: 1,
@@ -199,59 +418,121 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "color",
-		get label() { return t("properties.color"); },
+		get label() {
+			return t("properties.color");
+		},
 		type: "color",
 		default: "#ffffff",
 	},
 	{
 		key: "textAlign",
-		get label() { return t("properties.textAlign"); },
+		get label() {
+			return t("properties.textAlign");
+		},
 		type: "select",
 		default: "center",
 		keyframable: false,
 		options: [
-			{ value: "left", get label() { return t("properties.alignLeft"); } },
-			{ value: "center", get label() { return t("properties.alignCenter"); } },
-			{ value: "right", get label() { return t("properties.alignRight"); } },
+			{
+				value: "left",
+				get label() {
+					return t("properties.alignLeft");
+				},
+			},
+			{
+				value: "center",
+				get label() {
+					return t("properties.alignCenter");
+				},
+			},
+			{
+				value: "right",
+				get label() {
+					return t("properties.alignRight");
+				},
+			},
 		],
 	},
 	{
 		key: "fontWeight",
-		get label() { return t("properties.fontWeight"); },
+		get label() {
+			return t("properties.fontWeight");
+		},
 		type: "select",
 		default: "normal",
 		keyframable: false,
 		options: [
-			{ value: "normal", get label() { return t("properties.weightNormal"); } },
-			{ value: "bold", get label() { return t("properties.weightBold"); } },
+			{
+				value: "normal",
+				get label() {
+					return t("properties.weightNormal");
+				},
+			},
+			{
+				value: "bold",
+				get label() {
+					return t("properties.weightBold");
+				},
+			},
 		],
 	},
 	{
 		key: "fontStyle",
-		get label() { return t("properties.fontStyle"); },
+		get label() {
+			return t("properties.fontStyle");
+		},
 		type: "select",
 		default: "normal",
 		keyframable: false,
 		options: [
-			{ value: "normal", get label() { return t("properties.styleNormal"); } },
-			{ value: "italic", get label() { return t("properties.styleItalic"); } },
+			{
+				value: "normal",
+				get label() {
+					return t("properties.styleNormal");
+				},
+			},
+			{
+				value: "italic",
+				get label() {
+					return t("properties.styleItalic");
+				},
+			},
 		],
 	},
 	{
 		key: "textDecoration",
-		get label() { return t("properties.textDecoration"); },
+		get label() {
+			return t("properties.textDecoration");
+		},
 		type: "select",
 		default: "none",
 		keyframable: false,
 		options: [
-			{ value: "none", get label() { return t("properties.decorationNone"); } },
-			{ value: "underline", get label() { return t("properties.decorationUnderline"); } },
-			{ value: "line-through", get label() { return t("properties.decorationLineThrough"); } },
+			{
+				value: "none",
+				get label() {
+					return t("properties.decorationNone");
+				},
+			},
+			{
+				value: "underline",
+				get label() {
+					return t("properties.decorationUnderline");
+				},
+			},
+			{
+				value: "line-through",
+				get label() {
+					return t("properties.decorationLineThrough");
+				},
+			},
 		],
 	},
 	{
 		key: "letterSpacing",
-		get label() { return t("properties.letterSpacing"); },
+		get label() {
+			return t("properties.letterSpacing");
+		},
 		type: "number",
 		default: DEFAULTS.text.letterSpacing,
 		min: -100,
@@ -259,7 +540,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "lineHeight",
-		get label() { return t("properties.lineHeight"); },
+		get label() {
+			return t("properties.lineHeight");
+		},
 		type: "number",
 		default: DEFAULTS.text.lineHeight,
 		min: 0.1,
@@ -267,21 +550,27 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "background.enabled",
-		get label() { return t("properties.backgroundEnabled"); },
+		get label() {
+			return t("properties.backgroundEnabled");
+		},
 		type: "boolean",
 		default: DEFAULTS.text.background.enabled,
 		keyframable: false,
 	},
 	{
 		key: "background.color",
-		get label() { return t("properties.backgroundColor"); },
+		get label() {
+			return t("properties.backgroundColor");
+		},
 		type: "color",
 		default: DEFAULTS.text.background.color,
 		dependencies: [{ param: "background.enabled", equals: true }],
 	},
 	{
 		key: "background.cornerRadius",
-		get label() { return t("properties.backgroundRadius"); },
+		get label() {
+			return t("properties.backgroundRadius");
+		},
 		type: "number",
 		default: DEFAULTS.text.background.cornerRadius,
 		min: CORNER_RADIUS_MIN,
@@ -291,7 +580,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "background.paddingX",
-		get label() { return t("properties.backgroundPaddingX"); },
+		get label() {
+			return t("properties.backgroundPaddingX");
+		},
 		type: "number",
 		default: DEFAULTS.text.background.paddingX,
 		min: 0,
@@ -300,7 +591,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "background.paddingY",
-		get label() { return t("properties.backgroundPaddingY"); },
+		get label() {
+			return t("properties.backgroundPaddingY");
+		},
 		type: "number",
 		default: DEFAULTS.text.background.paddingY,
 		min: 0,
@@ -309,7 +602,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "background.offsetX",
-		get label() { return t("properties.backgroundOffsetX"); },
+		get label() {
+			return t("properties.backgroundOffsetX");
+		},
 		type: "number",
 		default: DEFAULTS.text.background.offsetX,
 		min: -100_000,
@@ -318,7 +613,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "background.offsetY",
-		get label() { return t("properties.backgroundOffsetY"); },
+		get label() {
+			return t("properties.backgroundOffsetY");
+		},
 		type: "number",
 		default: DEFAULTS.text.background.offsetY,
 		min: -100_000,
@@ -327,21 +624,27 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "stroke.enabled",
-		get label() { return t("properties.strokeEnabled"); },
+		get label() {
+			return t("properties.strokeEnabled");
+		},
 		type: "boolean",
 		default: DEFAULTS.text.stroke.enabled,
 		keyframable: false,
 	},
 	{
 		key: "stroke.color",
-		get label() { return t("properties.strokeColor"); },
+		get label() {
+			return t("properties.strokeColor");
+		},
 		type: "color",
 		default: DEFAULTS.text.stroke.color,
 		dependencies: [{ param: "stroke.enabled", equals: true }],
 	},
 	{
 		key: "stroke.width",
-		get label() { return t("properties.strokeWidth"); },
+		get label() {
+			return t("properties.strokeWidth");
+		},
 		type: "number",
 		default: DEFAULTS.text.stroke.width,
 		min: 0,
@@ -351,21 +654,27 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "shadow.enabled",
-		get label() { return t("properties.shadowEnabled"); },
+		get label() {
+			return t("properties.shadowEnabled");
+		},
 		type: "boolean",
 		default: DEFAULTS.text.shadow.enabled,
 		keyframable: false,
 	},
 	{
 		key: "shadow.color",
-		get label() { return t("properties.shadowColor"); },
+		get label() {
+			return t("properties.shadowColor");
+		},
 		type: "color",
 		default: DEFAULTS.text.shadow.color,
 		dependencies: [{ param: "shadow.enabled", equals: true }],
 	},
 	{
 		key: "shadow.blur",
-		get label() { return t("properties.shadowBlur"); },
+		get label() {
+			return t("properties.shadowBlur");
+		},
 		type: "number",
 		default: DEFAULTS.text.shadow.blur,
 		min: 0,
@@ -375,7 +684,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "shadow.offsetX",
-		get label() { return t("properties.shadowOffsetX"); },
+		get label() {
+			return t("properties.shadowOffsetX");
+		},
 		type: "number",
 		default: DEFAULTS.text.shadow.offsetX,
 		min: -1000,
@@ -385,7 +696,9 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "shadow.offsetY",
-		get label() { return t("properties.shadowOffsetY"); },
+		get label() {
+			return t("properties.shadowOffsetY");
+		},
 		type: "number",
 		default: DEFAULTS.text.shadow.offsetY,
 		min: -1000,
@@ -395,21 +708,27 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "gradient.enabled",
-		get label() { return t("properties.gradientEnabled"); },
+		get label() {
+			return t("properties.gradientEnabled");
+		},
 		type: "boolean",
 		default: DEFAULTS.text.gradient.enabled,
 		keyframable: false,
 	},
 	{
 		key: "gradient.color",
-		get label() { return t("properties.gradientColor"); },
+		get label() {
+			return t("properties.gradientColor");
+		},
 		type: "color",
 		default: DEFAULTS.text.gradient.color,
 		dependencies: [{ param: "gradient.enabled", equals: true }],
 	},
 	{
 		key: "gradient.angle",
-		get label() { return t("properties.gradientAngle"); },
+		get label() {
+			return t("properties.gradientAngle");
+		},
 		type: "number",
 		default: DEFAULTS.text.gradient.angle,
 		min: -360,
@@ -419,20 +738,44 @@ const textElementParams: ElementParamDefinition[] = [
 	},
 	{
 		key: "animIn.type",
-		get label() { return t("properties.animInType"); },
+		get label() {
+			return t("properties.animInType");
+		},
 		type: "select",
 		default: DEFAULTS.text.animIn.type,
 		keyframable: false,
 		options: [
-			{ value: "none", get label() { return t("properties.animInNone"); } },
-			{ value: "fade", get label() { return t("properties.animInFade"); } },
-			{ value: "pop", get label() { return t("properties.animInPop"); } },
-			{ value: "typewriter", get label() { return t("properties.animInTypewriter"); } },
+			{
+				value: "none",
+				get label() {
+					return t("properties.animInNone");
+				},
+			},
+			{
+				value: "fade",
+				get label() {
+					return t("properties.animInFade");
+				},
+			},
+			{
+				value: "pop",
+				get label() {
+					return t("properties.animInPop");
+				},
+			},
+			{
+				value: "typewriter",
+				get label() {
+					return t("properties.animInTypewriter");
+				},
+			},
 		],
 	},
 	{
 		key: "animIn.duration",
-		get label() { return t("properties.animInDuration"); },
+		get label() {
+			return t("properties.animInDuration");
+		},
 		type: "number",
 		default: DEFAULTS.text.animIn.duration,
 		min: 0.1,
@@ -449,20 +792,27 @@ export const elementParamRegistry = new DefinitionRegistry<
 
 elementParamRegistry.register({
 	key: "video",
-	definition: [...visualElementParams, ...audioElementParams],
+	definition: [
+		...visualElementParams,
+		...visualAnimParams,
+		...audioElementParams,
+	],
 });
-elementParamRegistry.register({ key: "image", definition: visualElementParams });
+elementParamRegistry.register({
+	key: "image",
+	definition: [...visualElementParams, ...visualAnimParams],
+});
 elementParamRegistry.register({
 	key: "text",
 	definition: [...textElementParams, ...visualElementParams],
 });
 elementParamRegistry.register({
 	key: "sticker",
-	definition: visualElementParams,
+	definition: [...visualElementParams, ...visualAnimParams],
 });
 elementParamRegistry.register({
 	key: "graphic",
-	definition: visualElementParams,
+	definition: [...visualElementParams, ...visualAnimParams],
 });
 elementParamRegistry.register({ key: "audio", definition: audioElementParams });
 elementParamRegistry.register({ key: "effect", definition: [] });
@@ -551,4 +901,3 @@ export function buildElementParamValues({
 	}
 	return values;
 }
-

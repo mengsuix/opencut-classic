@@ -1,6 +1,7 @@
 import { hasKeyframesForPath } from "@/animation/keyframe-query";
 import { resolveNumberAtTime } from "@/animation/values";
 import { VOLUME_DB_MAX, VOLUME_DB_MIN } from "./audio-constants";
+import { hasAudioFade, readAudioFades, resolveFadeGain } from "./audio-fade";
 import type { TimelineElement } from "./types";
 const DEFAULT_STEP_SECONDS = 1 / 60;
 
@@ -38,15 +39,22 @@ export function isElementMuted({
 	return element.params.muted === true;
 }
 
+/**
+ * True when the element's gain varies over time — via volume keyframes or
+ * fade in/out — so callers must evaluate gain per sample instead of using a
+ * static value.
+ */
 export function hasAnimatedVolume({
 	element,
 }: {
 	element: AudioCapableElement;
 }): boolean {
-	return hasKeyframesForPath({
-		animations: element.animations,
-		propertyPath: "volume",
-	});
+	return (
+		hasKeyframesForPath({
+			animations: element.animations,
+			propertyPath: "volume",
+		}) || hasAudioFade(readAudioFades({ params: element.params }))
+	);
 }
 
 import { TICKS_PER_SECOND } from "@/wasm";
@@ -71,7 +79,13 @@ export function resolveEffectiveAudioGain({
 		localTime: Math.round(localTime * TICKS_PER_SECOND),
 	});
 
-	return dBToLinear(resolvedDb);
+	const fadeGain = resolveFadeGain({
+		...readAudioFades({ params: element.params }),
+		localTimeSeconds: localTime,
+		durationSeconds: element.duration / TICKS_PER_SECOND,
+	});
+
+	return dBToLinear(resolvedDb) * fadeGain;
 }
 
 export function buildWaveformGainSamples({

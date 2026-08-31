@@ -1,4 +1,5 @@
 import { BaseNode } from "./base-node";
+import type { VisualAnimConfig } from "@/animation/visual-anim";
 import type { Effect, EffectPass } from "@/effects/types";
 import type { Mask } from "@/masks/types";
 import type { BlendMode, Transform } from "@/rendering";
@@ -16,6 +17,8 @@ export interface VisualNodeParams {
 	blendMode?: BlendMode;
 	effects?: Effect[];
 	masks?: Mask[];
+	animIn?: VisualAnimConfig;
+	animOut?: VisualAnimConfig;
 }
 
 export interface ResolvedVisualNodeState {
