@@ -7,18 +7,18 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 
 ## 原则
 1. 先用 effects.list 查内置特效，有就直接 effects.add，不要组合。
-2. 内置没有时，用下面的配方组合实现；组合也做不到的（如 LUT 风格滤镜、无绿幕人像抠像、逐字符动画、转场、运动跟踪），明确告诉用户做不到，不要硬凑。
+2. 内置没有时，用下面的配方组合实现；组合也做不到的（如 LUT 风格滤镜、无绿幕人像抠像、逐字符动画、运动跟踪），明确告诉用户做不到，不要硬凑。转场没有内置系统，但可用下方"转场配方"拼出常用效果。
 3. 所有特效参数都能打关键帧（effects.upsert_keyframe），"参数随时间变化"类效果优先用关键帧。
 
 ## 内置特效速查
-- blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / distort-wave 波浪扭曲 / noise 噪点
+- blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / noise 噪点 / vignette 暗角
 
 ## 组合配方
-- 发光/霓虹：duplicate_elements 复制元素 → 下层副本 effects.add(blur, intensity 40~80) → update_elements 设 blendMode=screen。加强版：两层模糊副本，一大一小。
+- 发光/霓虹：优先 effects.add(glow, intensity 1.5~3, radius 20~60, color 按需)；要更炸的光晕可再叠一层 duplicate+blur+screen。
 - 抖动：keyframes.upsert 对 transform.positionX/positionY 打多个随机小偏移关键帧。
 - 闪烁：opacity 关键帧在 1 和 0.3 之间交替。
 - 呼吸/脉冲：transform.scaleX/scaleY 关键帧在 1 和 1.05 之间循环。
-- 暗角：顶层加黑色 graphic 矩形 → masks.add(ellipse) → masks.toggle_inverted → masks.update_params feather 50 → update_elements opacity 0.6。
+- 暗角：effects.add(vignette, amount 0.4~0.7, softness 0.4~0.8)。
 - 残影/回声：复制 2~3 份，startTime 依次后移 0.05~0.1s，opacity 递减（0.5/0.3）。
 - 卡拉OK变色字幕：duplicate 文字改成高亮色 → masks.add(rectangle) 盖副本 → 关键帧驱动蒙版 centerX 从左扫到右。
 - 推近冲击（zoom punch）：transform.scale 从 1.6 到 1 打关键帧，缓动选 pop。
@@ -27,6 +27,15 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 老电视扫描线：noise + distort-wave(frequency 拉满, amplitude 1~2)。
 - 局部特效：特效加在副本元素上，再用 masks 限定区域（蒙版羽化过渡）。
 - 色彩罩染：顶层 graphic 纯色矩形（不透明盖住画面），blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
+
+## 转场配方（无内置转场系统，用重叠+关键帧拼）
+- 通用做法：把后一片段 startTime 提前 0.3~0.5s 与前一片段重叠，重叠期内打关键帧驱动透明度/缩放/位置。
+- 叠化：前段 opacity 1→0（或后段 0→1）关键帧。
+- 黑场/白闪：顶层加全屏黑色/白色 graphic 矩形，opacity 0→1→0 三个关键帧卡在切点。
+- 推近切换：前段 transform.scale 1→1.3 且 opacity 1→0，后段 scale 1.3→1 且 opacity 0→1，缓动选 ease-out。
+- 擦除/划像：后段加 rectangle 蒙版，关键帧驱动蒙版尺寸/centerX 从 0 扫到全屏。
+- 旋转切换：前段 rotate 0→8° + scale 拉到 1.2 淡出，后段反向进入。
+- 注意：重叠期两段音频会叠加，重叠段先把音量降到 -60 或 split 分离音频再静音。
 
 ## 文字样式参数（text 元素 params，用 timeline.update_elements / add_text 设置）
 - 描边：stroke.enabled=true, stroke.color, stroke.width

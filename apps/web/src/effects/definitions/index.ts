@@ -5,9 +5,11 @@ import { chromaKeyEffectDefinition } from "./chroma-key";
 import { colorAdjustEffectDefinition } from "./color-adjust";
 import { distortWaveEffectDefinition } from "./distort-wave";
 import { edgeGlowEffectDefinition } from "./edge-glow";
+import { glowEffectDefinition } from "./glow";
 import { noiseEffectDefinition } from "./noise";
 import { pixelateEffectDefinition } from "./pixelate";
 import { sharpenEffectDefinition } from "./sharpen";
+import { vignetteEffectDefinition } from "./vignette";
 
 const defaultEffects = [
 	blurEffectDefinition,
@@ -17,8 +19,10 @@ const defaultEffects = [
 	sharpenEffectDefinition,
 	pixelateEffectDefinition,
 	edgeGlowEffectDefinition,
+	glowEffectDefinition,
 	distortWaveEffectDefinition,
 	noiseEffectDefinition,
+	vignetteEffectDefinition,
 ];
 
 export function registerDefaultEffects(): void {

@@ -63,6 +63,16 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         source: include_str!("shaders/noise.wgsl"),
         uniforms: &["u_amount", "u_time"],
     },
+    ShaderSpec {
+        id: "glow",
+        source: include_str!("shaders/glow.wgsl"),
+        uniforms: &["u_intensity", "u_radius", "u_color"],
+    },
+    ShaderSpec {
+        id: "vignette",
+        source: include_str!("shaders/vignette.wgsl"),
+        uniforms: &["u_amount", "u_softness"],
+    },
 ];
 
 pub struct ApplyEffectsOptions<'a> {
