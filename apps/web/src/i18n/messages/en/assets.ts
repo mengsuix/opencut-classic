@@ -10,7 +10,9 @@ export const assets = {
 	"assets.tabSettings": "Settings",
 	"assets.transitionSelectHint":
 		"Select a video or image clip on the timeline, then click to apply a transition",
-	"assets.adjustmentComingSoon": "Adjustment view coming soon...",
+	"assets.adjustmentCustom": "Custom Adjustment",
+	"assets.adjustmentHint":
+		"Click to insert an adjustment layer at the playhead, affecting all visuals below; select it to adjust params on the right",
 	"assets.processingFiles": "Processing your files ({progress}%)",
 	"assets.dragDropHint": "Drag and drop videos, photos, and audio files here",
 	"assets.addToTimelineOrDrag": "Add to timeline or drag to position",

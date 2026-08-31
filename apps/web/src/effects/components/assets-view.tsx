@@ -34,7 +34,7 @@ function EffectsGrid({ effects }: { effects: EffectDefinition[] }) {
 	);
 }
 
-function EffectPreviewCanvas({ effectType }: { effectType: string }) {
+export function EffectPreviewCanvas({ effectType }: { effectType: string }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {

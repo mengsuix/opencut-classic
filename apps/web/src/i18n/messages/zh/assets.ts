@@ -9,7 +9,9 @@ export const assets = {
 	"assets.tabAdjustment": "调节",
 	"assets.tabSettings": "设置",
 	"assets.transitionSelectHint": "选中时间线上的视频或图片片段后，点击应用转场",
-	"assets.adjustmentComingSoon": "调节视图即将推出...",
+	"assets.adjustmentCustom": "自定义调节",
+	"assets.adjustmentHint":
+		"点击在播放头创建调节层，作用于其下方所有画面；选中调节层后在右侧调整参数",
 	"assets.processingFiles": "正在处理你的文件（{progress}%）",
 	"assets.dragDropHint": "将视频、照片和音频文件拖放到此处",
 	"assets.addToTimelineOrDrag": "添加到时间线，或拖拽到指定位置",
