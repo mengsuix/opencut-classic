@@ -20,6 +20,8 @@ export interface EffectPassTemplate {
 		effectParams: ParamValues;
 		width: number;
 		height: number;
+		/** Element-local time in seconds, for animated shaders (e.g. noise). */
+		time: number;
 	}): Record<string, EffectUniformValue>;
 }
 
@@ -29,6 +31,8 @@ export interface EffectRendererConfig {
 		effectParams: ParamValues;
 		width: number;
 		height: number;
+		/** Element-local time in seconds, for animated shaders (e.g. noise). */
+		time: number;
 	}) => EffectPass[];
 }
 

@@ -1,7 +1,25 @@
 import { effectsRegistry } from "../registry";
 import { blurEffectDefinition } from "./blur";
+import { channelShiftEffectDefinition } from "./channel-shift";
+import { chromaKeyEffectDefinition } from "./chroma-key";
+import { colorAdjustEffectDefinition } from "./color-adjust";
+import { distortWaveEffectDefinition } from "./distort-wave";
+import { edgeGlowEffectDefinition } from "./edge-glow";
+import { noiseEffectDefinition } from "./noise";
+import { pixelateEffectDefinition } from "./pixelate";
+import { sharpenEffectDefinition } from "./sharpen";
 
-const defaultEffects = [blurEffectDefinition];
+const defaultEffects = [
+	blurEffectDefinition,
+	colorAdjustEffectDefinition,
+	chromaKeyEffectDefinition,
+	channelShiftEffectDefinition,
+	sharpenEffectDefinition,
+	pixelateEffectDefinition,
+	edgeGlowEffectDefinition,
+	distortWaveEffectDefinition,
+	noiseEffectDefinition,
+];
 
 export function registerDefaultEffects(): void {
 	for (const definition of defaultEffects) {

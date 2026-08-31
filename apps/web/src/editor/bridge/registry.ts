@@ -26,6 +26,7 @@ import type {
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
+import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
 import { validateElementPatchRootKeys } from "./patch-validation";
 
 export interface BridgeElementRef {
@@ -1394,6 +1395,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				params: sanitizeJson(definition.params),
 			})),
 		}),
+	},
+
+	"effects.guide": {
+		description:
+			"Get the effects composition playbook: how to build looks (glow, shake, vignette, echo, karaoke text, glitch, old film, color wash, ...) by composing built-in effects, masks, keyframes, blend modes and text style params. Call this before attempting complex visual styling.",
+		run: () => ({ guide: EFFECTS_COMPOSITION_GUIDE }),
 	},
 
 	"effects.add": {
