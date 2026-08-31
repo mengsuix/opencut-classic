@@ -73,6 +73,11 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         source: include_str!("shaders/vignette.wgsl"),
         uniforms: &["u_amount", "u_softness"],
     },
+    ShaderSpec {
+        id: "filter",
+        source: include_str!("shaders/filter.wgsl"),
+        uniforms: &["u_style", "u_intensity"],
+    },
 ];
 
 pub struct ApplyEffectsOptions<'a> {

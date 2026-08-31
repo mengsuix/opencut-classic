@@ -5,6 +5,7 @@ import { chromaKeyEffectDefinition } from "./chroma-key";
 import { colorAdjustEffectDefinition } from "./color-adjust";
 import { distortWaveEffectDefinition } from "./distort-wave";
 import { edgeGlowEffectDefinition } from "./edge-glow";
+import { filterEffectDefinition } from "./filter";
 import { glowEffectDefinition } from "./glow";
 import { noiseEffectDefinition } from "./noise";
 import { pixelateEffectDefinition } from "./pixelate";
@@ -23,6 +24,7 @@ const defaultEffects = [
 	distortWaveEffectDefinition,
 	noiseEffectDefinition,
 	vignetteEffectDefinition,
+	filterEffectDefinition,
 ];
 
 export function registerDefaultEffects(): void {

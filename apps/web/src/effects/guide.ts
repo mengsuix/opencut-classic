@@ -7,11 +7,12 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 
 ## 原则
 1. 先用 effects.list 查内置特效，有就直接 effects.add，不要组合。
-2. 内置没有时，用下面的配方组合实现；组合也做不到的（如 LUT 风格滤镜、无绿幕人像抠像、逐字符动画、运动跟踪），明确告诉用户做不到，不要硬凑。转场没有内置系统，但可用下方"转场配方"拼出常用效果。
+2. 内置没有时，用下面的配方组合实现；组合也做不到的（如外部 .cube LUT 导入、无绿幕人像抠像、逐字符动画、运动跟踪），明确告诉用户做不到，不要硬凑。
 3. 所有特效参数都能打关键帧（effects.upsert_keyframe），"参数随时间变化"类效果优先用关键帧。
 
 ## 内置特效速查
 - blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / noise 噪点 / vignette 暗角
+- filter 滤镜（预设风格化调色）：style = film 胶片|teal-orange 青橙|faded 褪色|bw 黑白|warm 暖阳|cool 冷调，intensity 0~1 控制混合强度；风格化需求先用它，别再拿 color-adjust 硬凑
 
 ## 组合配方
 - 发光/霓虹：优先 effects.add(glow, intensity 1.5~3, radius 20~60, color 按需)；要更炸的光晕可再叠一层 duplicate+blur+screen。
