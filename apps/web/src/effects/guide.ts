@@ -26,7 +26,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 推近冲击（zoom punch）：transform.scale 从 1.6 到 1 打关键帧，缓动选 pop。
 - 故障风：channel-shift(offsetX 6~15) + distort-wave(小幅度) + 可选 pixelate 分块。
 - 老电影：color-adjust(saturation -0.6, temperature 0.3, contrast 0.15) + noise(0.2) + opacity 关键帧轻微闪烁。
-- 老电视扫描线：noise + distort-wave(frequency 拉满, amplitude 1~2)。
+- 老电视信号干扰：noise + distort-wave(frequency 拉满, amplitude 1~2)。注意这只是行位移+颗粒，不是真正的逐行扫描线（扫描线需要逐行明暗调制，属逐像素算法，组合做不到，别硬凑）。
 - 局部特效：特效加在副本元素上，再用 masks 限定区域（蒙版羽化过渡）。
 - 色彩罩染：顶层 graphic 纯色矩形（不透明盖住画面），blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
 
