@@ -45,7 +45,7 @@ _PROVIDER_CONFIGS = {
     },
 }
 
-AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "zhipu").strip().lower()
+AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "deepseek").strip().lower()
 if AGENT_PROVIDER not in _PROVIDER_CONFIGS:
     raise ValueError("AGENT_PROVIDER 必须是 deepseek 或 zhipu")
 
