@@ -12,7 +12,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 4. 循环类效果（呼吸/闪烁/抖动等）只需打一个周期的关键帧，然后 keyframes.set_loop 开启循环，关键帧通道会在元素存续期内重复播放；注意首尾关键帧值要相等才能无缝衔接。
 
 ## 内置特效速查
-- blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / noise 噪点 / vignette 暗角
+- blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / swirl 漩涡扭曲(angle/radius/centerX/centerY) / noise 噪点 / vignette 暗角
 - filter 滤镜（预设风格化调色）：style = film 胶片|teal-orange 青橙|faded 褪色|bw 黑白|warm 暖阳|cool 冷调，intensity 0~1 控制混合强度；风格化需求先用它，别再拿 color-adjust 硬凑
 
 ## 组合配方

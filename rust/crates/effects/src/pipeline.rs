@@ -78,6 +78,11 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         source: include_str!("shaders/filter.wgsl"),
         uniforms: &["u_style", "u_intensity"],
     },
+    ShaderSpec {
+        id: "swirl",
+        source: include_str!("shaders/swirl.wgsl"),
+        uniforms: &["u_angle", "u_radius", "u_center"],
+    },
 ];
 
 pub struct ApplyEffectsOptions<'a> {

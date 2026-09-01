@@ -10,6 +10,7 @@ import { glowEffectDefinition } from "./glow";
 import { noiseEffectDefinition } from "./noise";
 import { pixelateEffectDefinition } from "./pixelate";
 import { sharpenEffectDefinition } from "./sharpen";
+import { swirlEffectDefinition } from "./swirl";
 import { vignetteEffectDefinition } from "./vignette";
 
 const defaultEffects = [
@@ -22,6 +23,7 @@ const defaultEffects = [
 	edgeGlowEffectDefinition,
 	glowEffectDefinition,
 	distortWaveEffectDefinition,
+	swirlEffectDefinition,
 	noiseEffectDefinition,
 	vignetteEffectDefinition,
 	filterEffectDefinition,
