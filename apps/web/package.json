@@ -33,8 +33,6 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@types/culori": "^4.0.1",
-    "@upstash/ratelimit": "^2.0.6",
-    "@upstash/redis": "^1.35.4",
     "better-auth": "^1.2.7",
     "botid": "^1.5.11",
     "class-variance-authority": "^0.7.1",

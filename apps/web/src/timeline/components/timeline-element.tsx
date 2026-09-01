@@ -1103,14 +1103,17 @@ function EffectsButton({
 	};
 
 	return (
-		<button
-			type="button"
+		// Not a <button>: it renders inside the element's outer <button>, and
+		// nested buttons are invalid HTML (hydration error).
+		<span
+			role="button"
+			tabIndex={-1}
 			className="flex shrink-0 justify-center text-white cursor-pointer"
 			onMouseDown={(event) => event.stopPropagation()}
 			onClick={handleClick}
 		>
 			<HugeiconsIcon icon={MagicWand05Icon} size={12} />
-		</button>
+		</span>
 	);
 }
 
