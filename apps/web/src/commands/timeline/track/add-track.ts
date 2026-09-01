@@ -8,6 +8,7 @@ import {
 } from "@/timeline/placement";
 
 export class AddTrackCommand extends Command {
+	public preserveEmptyTracks = true;
 	private trackId: string;
 	private savedState: SceneTracks | null = null;
 

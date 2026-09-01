@@ -46,7 +46,11 @@ export class EditorCore {
 		this.diagnostics = new DiagnosticsManager(this);
 		registerTranscriptionDiagnostics({ diagnostics: this.diagnostics });
 		this.playback.bindTimelineScope();
-		this.command.registerReactor(() => {
+		this.command.registerReactor((command) => {
+			if (command.preserveEmptyTracks) {
+				return;
+			}
+
 			const activeScene = this.scenes.getActiveSceneOrNull();
 			if (!activeScene) {
 				return;

@@ -27,7 +27,7 @@ export class CommandManager {
 	public currentMeta: CommandExecutionMeta | null = null;
 	private history: CommandHistoryEntry[] = [];
 	private redoStack: CommandHistoryEntry[] = [];
-	private reactors: Array<() => void> = [];
+	private reactors: Array<(command: Command) => void> = [];
 	private listeners = new Set<() => void>();
 
 	constructor(private editor: EditorCore) {}
@@ -92,7 +92,7 @@ export class CommandManager {
 		const result = command.execute();
 		this.applyRippleIfEnabled({ beforeTracks });
 		const selectionOverride = this.applySelectionOverride(result);
-		this.runReactors();
+		this.runReactors(command);
 		this.history.push(
 			this.buildEntry({
 				command,
@@ -120,7 +120,7 @@ export class CommandManager {
 		this.notify();
 	}
 
-	registerReactor(reactor: () => void): void {
+	registerReactor(reactor: (command: Command) => void): void {
 		this.reactors.push(reactor);
 	}
 
@@ -159,7 +159,7 @@ export class CommandManager {
 		const result = entry.command.redo();
 		this.applyRippleIfEnabled({ beforeTracks });
 		const selectionOverride = this.applySelectionOverride(result);
-		this.runReactors();
+		this.runReactors(entry.command);
 
 		const rebuilt = this.buildEntry({
 			command: entry.command,
@@ -234,9 +234,9 @@ export class CommandManager {
 		});
 	}
 
-	private runReactors(): void {
+	private runReactors(command: Command): void {
 		for (const reactor of this.reactors) {
-			reactor();
+			reactor(command);
 		}
 	}
 

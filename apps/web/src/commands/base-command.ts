@@ -45,6 +45,7 @@ export function describeElementTarget(element: {
 }
 
 export abstract class Command {
+	public preserveEmptyTracks = false;
 	/** Element refs the command operates on. The history panel resolves them
 	 *  to element names before execution to show what was affected. */
 	public affectedElementRefs?: ElementRef[];
