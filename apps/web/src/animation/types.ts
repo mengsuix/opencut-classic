@@ -21,6 +21,7 @@ export const ANIMATION_PROPERTY_PATHS = [
 export type AnimationPropertyPath = (typeof ANIMATION_PROPERTY_PATHS)[number];
 export type GraphicParamPath = `params.${string}`;
 export type EffectParamPath = `effects.${string}.params.${string}`;
+export type MaskParamPath = `masks.${string}.params.${string}`;
 export type AnimationPath = string;
 
 export const ANIMATION_PROPERTY_GROUPS = {
@@ -53,7 +54,7 @@ export type AnimationInterpolation =
 
 export type ScalarSegmentType = "step" | "linear" | "bezier";
 export type TangentMode = "auto" | "aligned" | "broken" | "flat";
-export type ChannelExtrapolationMode = "hold" | "linear";
+export type ChannelExtrapolationMode = "hold" | "linear" | "loop";
 
 export interface CurveHandle {
 	dt: MediaTime;

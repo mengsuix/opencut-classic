@@ -14,6 +14,7 @@ export {
 	retimeElementKeyframe,
 	setBindingComponentChannel,
 	setChannel,
+	setChannelLoop,
 	splitAnimationsAtTime,
 	updateScalarKeyframeCurve,
 	upsertPathKeyframe,
@@ -57,6 +58,14 @@ export {
 	removeEffectParamKeyframe,
 	resolveEffectParamsAtTime,
 } from "./effect-param-channel";
+
+export {
+	buildMaskParamPath,
+	isMaskParamPath,
+	parseMaskParamPath,
+	removeMaskParamKeyframe,
+	resolveMaskParamsAtTime,
+} from "./mask-param-channel";
 
 export {
 	getGroupKeyframesAtTime,

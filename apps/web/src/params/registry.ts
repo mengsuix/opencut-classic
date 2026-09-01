@@ -849,6 +849,100 @@ const textElementParams: ElementParamDefinition[] = [
 		step: 0.1,
 		keyframable: false,
 	},
+	{
+		key: "animOut.type",
+		get label() {
+			return t("properties.animOutType");
+		},
+		type: "select",
+		default: DEFAULTS.text.animOut.type,
+		keyframable: false,
+		options: [
+			{
+				value: "none",
+				get label() {
+					return t("properties.animNone");
+				},
+			},
+			{
+				value: "fade",
+				get label() {
+					return t("properties.animOutFade");
+				},
+			},
+			{
+				value: "pop",
+				get label() {
+					return t("properties.animOutPop");
+				},
+			},
+			{
+				value: "typewriter",
+				get label() {
+					return t("properties.animOutTypewriter");
+				},
+			},
+		],
+	},
+	{
+		key: "animOut.duration",
+		get label() {
+			return t("properties.animDuration");
+		},
+		type: "number",
+		default: DEFAULTS.text.animOut.duration,
+		min: 0.1,
+		max: 30,
+		step: 0.1,
+		keyframable: false,
+	},
+	{
+		key: "animLoop.type",
+		get label() {
+			return t("properties.animLoopType");
+		},
+		type: "select",
+		default: DEFAULTS.text.animLoop.type,
+		keyframable: false,
+		options: [
+			{
+				value: "none",
+				get label() {
+					return t("properties.animNone");
+				},
+			},
+			{
+				value: "pulse",
+				get label() {
+					return t("properties.animLoopPulse");
+				},
+			},
+			{
+				value: "blink",
+				get label() {
+					return t("properties.animLoopBlink");
+				},
+			},
+			{
+				value: "shake",
+				get label() {
+					return t("properties.animLoopShake");
+				},
+			},
+		],
+	},
+	{
+		key: "animLoop.duration",
+		get label() {
+			return t("properties.animLoopDuration");
+		},
+		type: "number",
+		default: DEFAULTS.text.animLoop.duration,
+		min: 0.2,
+		max: 10,
+		step: 0.1,
+		keyframable: false,
+	},
 ];
 
 export const elementParamRegistry = new DefinitionRegistry<

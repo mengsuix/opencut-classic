@@ -9,8 +9,13 @@ import {
 import {
 	parseGraphicParamPath,
 } from "@/animation/graphic-param-channel";
+import {
+	parseMaskParamPath,
+} from "@/animation/mask-param-channel";
 import { effectsRegistry, registerDefaultEffects } from "@/effects";
 import { getGraphicDefinition } from "@/graphics";
+import { getMaskDefinition, registerDefaultMasks } from "@/masks";
+import type { Mask } from "@/masks/types";
 import {
 	coerceParamValue,
 	getParamDefaultInterpolation,
@@ -25,7 +30,7 @@ import {
 	getElementParam,
 } from "@/params/registry";
 import type { TimelineElement } from "@/timeline";
-import { isVisualElement } from "@/timeline/element-utils";
+import { isMaskableElement, isVisualElement } from "@/timeline/element-utils";
 
 export interface AnimationPathDescriptor {
 	channelLayout: ParamChannelLayout;
@@ -174,6 +179,45 @@ function buildEffectParamDescriptor({
 	});
 }
 
+function buildMaskParamDescriptor({
+	element,
+	maskId,
+	paramKey,
+}: {
+	element: TimelineElement;
+	maskId: string;
+	paramKey: string;
+}): AnimationPathDescriptor | null {
+	if (!isMaskableElement(element)) {
+		return null;
+	}
+
+	const mask = element.masks?.find((candidate) => candidate.id === maskId);
+	if (!mask) {
+		return null;
+	}
+
+	registerDefaultMasks();
+	const definition = getMaskDefinition(mask.type);
+	const param = definition.params.find((candidate) => candidate.key === paramKey);
+	if (!param) {
+		return null;
+	}
+
+	return buildParamDescriptor({
+		param,
+		baseParams: mask.params as unknown as ParamValues,
+		setParams: (params) => ({
+			...element,
+			masks: element.masks?.map((candidate): Mask =>
+				candidate.id !== maskId
+					? candidate
+					: ({ ...candidate, params }) as unknown as Mask,
+			),
+		}),
+	});
+}
+
 export function resolveAnimationTarget({
 	element,
 	path,
@@ -203,6 +247,15 @@ export function resolveAnimationTarget({
 			element,
 			effectId: effectParamTarget.effectId,
 			paramKey: effectParamTarget.paramKey,
+		});
+	}
+
+	const maskParamTarget = parseMaskParamPath({ propertyPath: path });
+	if (maskParamTarget) {
+		return buildMaskParamDescriptor({
+			element,
+			maskId: maskParamTarget.maskId,
+			paramKey: maskParamTarget.paramKey,
 		});
 	}
 

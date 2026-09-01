@@ -85,6 +85,7 @@ const COMMAND_CLASS_KEYS: Record<string, MessageKey> = {
 	UpsertKeyframeCommand: "history.keyframesUpsert",
 	RemoveKeyframeCommand: "history.keyframesRemove",
 	RetimeKeyframeCommand: "history.keyframesRetime",
+	SetKeyframeLoopCommand: "history.keyframesSetLoop",
 	UpdateScalarKeyframeCurveCommand: "history.keyframesUpdateCurves",
 	AddClipEffectCommand: "history.effectsAdd",
 	RemoveClipEffectCommand: "history.effectsRemove",

@@ -51,6 +51,7 @@ export const common = {
 	"history.scenesRemoveBookmark": "Remove bookmark",
 	"history.keyframesUpsert": "Add/update keyframe",
 	"history.keyframesRemove": "Remove keyframe",
+	"history.keyframesSetLoop": "Toggle keyframe loop",
 	"history.keyframesRetime": "Move keyframe",
 	"history.keyframesUpdateCurves": "Adjust animation curves",
 	"history.effectsAdd": "Add effect",

@@ -3,6 +3,7 @@ import type {
 	ChannelData,
 	AnimationInterpolation,
 	AnimationPath,
+	ChannelExtrapolationMode,
 	DiscreteAnimationChannel,
 	DiscreteAnimationKey,
 	ElementAnimations,
@@ -1286,6 +1287,44 @@ export function splitAnimationsAtTime({
 		leftAnimations: toAnimation({ animations: leftAnimations }),
 		rightAnimations: toAnimation({ animations: rightAnimations }),
 	};
+}
+
+export function setChannelLoop({
+	animations,
+	propertyPath,
+	loop,
+}: {
+	animations: ElementAnimations | undefined;
+	propertyPath: AnimationPath;
+	loop: boolean;
+}): ElementAnimations | undefined {
+	const data = getChannelData({ animations, propertyPath });
+	if (!data) {
+		return animations;
+	}
+
+	const mode: ChannelExtrapolationMode = loop ? "loop" : "hold";
+	const applyLoop = (
+		channel: AnimationChannel | undefined,
+	): AnimationChannel | undefined =>
+		channel != null && isScalarChannel(channel)
+			? { ...channel, extrapolation: { before: mode, after: mode } }
+			: channel;
+
+	const nextAnimations = cloneAnimationsState({ animations });
+	if (isLeafChannelData(data)) {
+		nextAnimations[propertyPath] = applyLoop(data);
+	} else if (isCompositeChannelData(data)) {
+		nextAnimations[propertyPath] = Object.fromEntries(
+			Object.entries(data).map(([componentKey, channel]) => [
+				componentKey,
+				applyLoop(channel),
+			]),
+		);
+	}
+	return toAnimation({
+		animations: nextAnimations,
+	});
 }
 
 export function removeElementKeyframe({

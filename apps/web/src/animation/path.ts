@@ -2,6 +2,7 @@ import type { AnimationPath, AnimationPropertyPath } from "@/animation/types";
 import { ANIMATION_PROPERTY_PATHS } from "./types";
 import { isEffectParamPath } from "./effect-param-channel";
 import { isGraphicParamPath } from "./graphic-param-channel";
+import { isMaskParamPath } from "./mask-param-channel";
 
 const ANIMATION_PROPERTY_PATH_SET = new Set<string>(ANIMATION_PROPERTY_PATHS);
 
@@ -17,6 +18,7 @@ export function isAnimationPath(
 	return (
 		isAnimationPropertyPath(propertyPath) ||
 		isGraphicParamPath(propertyPath) ||
-		isEffectParamPath(propertyPath)
+		isEffectParamPath(propertyPath) ||
+		isMaskParamPath(propertyPath)
 	);
 }

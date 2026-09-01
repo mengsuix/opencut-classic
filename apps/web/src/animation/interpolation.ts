@@ -2,6 +2,7 @@ import type {
 	AnimationChannel,
 	AnimationInterpolation,
 	Channel,
+	ChannelExtrapolationMode,
 	DiscreteAnimationChannel,
 	DiscreteValue,
 	ScalarAnimationChannel,
@@ -209,12 +210,14 @@ function extrapolateScalarEdge({
 	neighborKey,
 	time,
 }: {
-	mode: "hold" | "linear";
+	mode: ChannelExtrapolationMode;
 	edgeKey: ScalarAnimationKey;
 	neighborKey: ScalarAnimationKey | undefined;
 	time: number;
 }) {
-	if (mode === "hold" || !neighborKey) {
+	// "loop" never reaches here for its own side (time is wrapped beforehand);
+	// treat it as hold defensively.
+	if (mode !== "linear" || !neighborKey) {
 		return edgeKey.value;
 	}
 
@@ -258,26 +261,43 @@ export function getScalarChannelValueAtTime({
 		return fallbackValue;
 	}
 
-	if (time <= firstKey.time) {
-		if (time < firstKey.time) {
+	// Loop extrapolation wraps out-of-range time back into the key span, so the
+	// keyframed cycle repeats. For a seamless loop the first and last keyframe
+	// values should match.
+	const beforeMode = normalizedChannel.extrapolation?.before ?? "hold";
+	const afterMode = normalizedChannel.extrapolation?.after ?? "hold";
+	let evalTime = time;
+	if (lastKey.time > firstKey.time) {
+		const span = lastKey.time - firstKey.time;
+		if (
+			(time < firstKey.time && beforeMode === "loop") ||
+			(time > lastKey.time && afterMode === "loop")
+		) {
+			evalTime =
+				firstKey.time + (((time - firstKey.time) % span) + span) % span;
+		}
+	}
+
+	if (evalTime <= firstKey.time) {
+		if (evalTime < firstKey.time) {
 			return extrapolateScalarEdge({
 				mode: normalizedChannel.extrapolation?.before ?? "hold",
 				edgeKey: firstKey,
 				neighborKey: normalizedChannel.keys[1],
-				time,
+				time: evalTime,
 			});
 		}
 
 		return firstKey.value;
 	}
 
-	if (time >= lastKey.time) {
-		if (time > lastKey.time) {
+	if (evalTime >= lastKey.time) {
+		if (evalTime > lastKey.time) {
 			return extrapolateScalarEdge({
 				mode: normalizedChannel.extrapolation?.after ?? "hold",
 				edgeKey: lastKey,
 				neighborKey: normalizedChannel.keys[normalizedChannel.keys.length - 2],
-				time,
+				time: evalTime,
 			});
 		}
 
@@ -291,13 +311,13 @@ export function getScalarChannelValueAtTime({
 	) {
 		const leftKey = normalizedChannel.keys[keyIndex];
 		const rightKey = normalizedChannel.keys[keyIndex + 1];
-		if (time === rightKey.time) {
+		if (evalTime === rightKey.time) {
 			return rightKey.value;
 		}
 
 		if (
 			!isWithinTimePair({
-				time,
+				time: evalTime,
 				leftTime: leftKey.time,
 				rightTime: rightKey.time,
 			})
@@ -315,7 +335,7 @@ export function getScalarChannelValueAtTime({
 		}
 
 		const progress = clamp({
-			value: (time - leftKey.time) / span,
+			value: (evalTime - leftKey.time) / span,
 			min: 0,
 			max: 1,
 		});
@@ -328,7 +348,7 @@ export function getScalarChannelValueAtTime({
 		}
 
 		const curveProgress = solveBezierProgressForTime({
-			time,
+			time: evalTime,
 			leftKey,
 			rightKey,
 		});

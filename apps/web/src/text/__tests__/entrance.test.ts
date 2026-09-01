@@ -3,8 +3,11 @@ import { describe, expect, test } from "bun:test";
 import type { TextElement } from "@/timeline";
 import {
 	buildTextEntranceFromElement,
+	buildTextLoopFromElement,
 	countTextChars,
 	resolveTextEntranceAtTime,
+	resolveTextLoopAtTime,
+	TEXT_SHAKE_AMPLITUDE,
 	truncateTextContent,
 } from "../entrance";
 
@@ -93,6 +96,135 @@ describe("resolveTextEntranceAtTime", () => {
 		expect(state.visibleRatio).toBe(0.5);
 		expect(state.opacityFactor).toBe(1);
 		expect(state.scaleFactor).toBe(1);
+	});
+});
+
+describe("exit animation (phase=out)", () => {
+	test("reads animOut params", () => {
+		const config = buildTextEntranceFromElement({
+			element: buildElement({
+				params: { "animOut.type": "fade", "animOut.duration": 2 },
+			}),
+			phase: "out",
+		});
+		expect(config).toEqual({ type: "fade", duration: 2 });
+	});
+
+	test("fade ramps opacity down over the last duration seconds", () => {
+		const config = { type: "fade" as const, duration: 1 };
+		expect(
+			resolveTextEntranceAtTime({
+				config,
+				localTime: 0,
+				phase: "out",
+				elementDuration: 4,
+			}).opacityFactor,
+		).toBe(1);
+		expect(
+			resolveTextEntranceAtTime({
+				config,
+				localTime: 3.5,
+				phase: "out",
+				elementDuration: 4,
+			}).opacityFactor,
+		).toBe(0.5);
+		expect(
+			resolveTextEntranceAtTime({
+				config,
+				localTime: 4,
+				phase: "out",
+				elementDuration: 4,
+			}).opacityFactor,
+		).toBe(0);
+	});
+
+	test("typewriter shrinks the visible ratio", () => {
+		const config = { type: "typewriter" as const, duration: 2 };
+		expect(
+			resolveTextEntranceAtTime({
+				config,
+				localTime: 3,
+				phase: "out",
+				elementDuration: 4,
+			}).visibleRatio,
+		).toBe(0.5);
+	});
+
+	test("out phase without elementDuration stays idle", () => {
+		expect(
+			resolveTextEntranceAtTime({
+				config: { type: "fade", duration: 1 },
+				localTime: 3,
+				phase: "out",
+			}),
+		).toEqual({ opacityFactor: 1, scaleFactor: 1, visibleRatio: null });
+	});
+});
+
+describe("loop animation", () => {
+	test("reads animLoop params and falls back to none", () => {
+		expect(
+			buildTextLoopFromElement({
+				element: buildElement({
+					params: { "animLoop.type": "shake", "animLoop.duration": 2 },
+				}),
+			}),
+		).toEqual({ type: "shake", duration: 2 });
+		expect(
+			buildTextLoopFromElement({
+				element: buildElement({ params: { "animLoop.type": "spin" } }),
+			}),
+		).toEqual({ type: "none", duration: 1 });
+	});
+
+	test("pulse oscillates scale around 1", () => {
+		const config = { type: "pulse" as const, duration: 1 };
+		expect(resolveTextLoopAtTime({ config, localTime: 0 }).scaleFactor).toBe(1);
+		expect(
+			resolveTextLoopAtTime({ config, localTime: 0.25 }).scaleFactor,
+		).toBeCloseTo(1.05, 5);
+		expect(
+			resolveTextLoopAtTime({ config, localTime: 0.75 }).scaleFactor,
+		).toBeCloseTo(0.95, 5);
+	});
+
+	test("blink oscillates opacity within [0.3, 1]", () => {
+		const config = { type: "blink" as const, duration: 2 };
+		expect(
+			resolveTextLoopAtTime({ config, localTime: 0.5 }).opacityFactor,
+		).toBeCloseTo(1, 5);
+		expect(
+			resolveTextLoopAtTime({ config, localTime: 1.5 }).opacityFactor,
+		).toBeCloseTo(0.3, 5);
+	});
+
+	test("shake offsets stay bounded and repeat every period", () => {
+		const config = { type: "shake" as const, duration: 2 };
+		for (const localTime of [0, 0.3, 1.1, 1.9]) {
+			const state = resolveTextLoopAtTime({ config, localTime });
+			expect(Math.abs(state.offsetX)).toBeLessThanOrEqual(TEXT_SHAKE_AMPLITUDE);
+			expect(Math.abs(state.offsetY)).toBeLessThanOrEqual(TEXT_SHAKE_AMPLITUDE);
+		}
+		const first = resolveTextLoopAtTime({ config, localTime: 0.4 });
+		const repeated = resolveTextLoopAtTime({ config, localTime: 2.4 });
+		expect(repeated.offsetX).toBeCloseTo(first.offsetX, 10);
+		expect(repeated.offsetY).toBeCloseTo(first.offsetY, 10);
+	});
+
+	test("none and non-positive duration stay idle", () => {
+		const idle = { opacityFactor: 1, scaleFactor: 1, offsetX: 0, offsetY: 0 };
+		expect(
+			resolveTextLoopAtTime({
+				config: { type: "none", duration: 1 },
+				localTime: 0.5,
+			}),
+		).toEqual(idle);
+		expect(
+			resolveTextLoopAtTime({
+				config: { type: "pulse", duration: 0 },
+				localTime: 0.5,
+			}),
+		).toEqual(idle);
 	});
 });
 

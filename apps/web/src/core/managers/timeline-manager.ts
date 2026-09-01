@@ -45,6 +45,7 @@ import {
 	UpsertKeyframeCommand,
 	RemoveKeyframeCommand,
 	RetimeKeyframeCommand,
+	SetKeyframeLoopCommand,
 	UpdateScalarKeyframeCurveCommand,
 	AddClipEffectCommand,
 	DeleteFreeformPathMaskPointsCommand,
@@ -619,6 +620,26 @@ export class TimelineManager {
 			propertyPath,
 			keyframeId,
 			nextTime: time,
+		});
+		this.editor.command.execute({ command });
+	}
+
+	setKeyframeLoop({
+		trackId,
+		elementId,
+		propertyPath,
+		loop,
+	}: {
+		trackId: string;
+		elementId: string;
+		propertyPath: AnimationPath;
+		loop: boolean;
+	}): void {
+		const command = new SetKeyframeLoopCommand({
+			trackId,
+			elementId,
+			propertyPath,
+			loop,
 		});
 		this.editor.command.execute({ command });
 	}

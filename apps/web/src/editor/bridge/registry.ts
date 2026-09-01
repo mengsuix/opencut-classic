@@ -1384,6 +1384,29 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
+	"keyframes.set_loop": {
+		description:
+			"Enable or disable looping on an element's scalar animation channel. When looping, the keyframed cycle repeats for the element's whole lifetime; make the first and last keyframe values equal for a seamless loop.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			propertyPath: "string",
+			loop: "boolean",
+		},
+		run: ({ editor, args }) => {
+			if (typeof args.loop !== "boolean") {
+				throw new Error("Missing or invalid argument: loop");
+			}
+			editor.timeline.setKeyframeLoop({
+				trackId: requireString(args.trackId, "trackId"),
+				elementId: requireString(args.elementId, "elementId"),
+				propertyPath: requireString(args.propertyPath, "propertyPath"),
+				loop: args.loop,
+			});
+			return { updated: true };
+		},
+	},
+
 	"effects.list": {
 		description:
 			"List all registered effect types with their parameter definitions (key, type, default, min, max, options).",

@@ -51,6 +51,7 @@ export const common = {
 	"history.scenesRemoveBookmark": "删除书签",
 	"history.keyframesUpsert": "添加/更新关键帧",
 	"history.keyframesRemove": "删除关键帧",
+	"history.keyframesSetLoop": "开关关键帧循环",
 	"history.keyframesRetime": "移动关键帧",
 	"history.keyframesUpdateCurves": "调整动画曲线",
 	"history.effectsAdd": "添加特效",

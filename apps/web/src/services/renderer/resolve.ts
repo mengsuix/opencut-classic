@@ -30,8 +30,10 @@ import { readStringParam } from "@/text/param-readers";
 import { resolveTextStyle } from "@/text/style";
 import {
 	buildTextEntranceFromElement,
+	buildTextLoopFromElement,
 	countTextChars,
 	resolveTextEntranceAtTime,
+	resolveTextLoopAtTime,
 	truncateTextContent,
 } from "@/text/entrance";
 import { FONT_SIZE_SCALE_REFERENCE } from "@/text/typography";
@@ -424,20 +426,38 @@ function resolveTextNode({
 	});
 	const background = buildTextBackgroundFromElement({ element: node.params });
 
+	const localTimeSeconds = localTime / TICKS_PER_SECOND;
 	const entrance = resolveTextEntranceAtTime({
 		config: buildTextEntranceFromElement({ element: node.params }),
-		localTime: localTime / TICKS_PER_SECOND,
+		localTime: localTimeSeconds,
 	});
+	const exit = resolveTextEntranceAtTime({
+		config: buildTextEntranceFromElement({ element: node.params, phase: "out" }),
+		localTime: localTimeSeconds,
+		phase: "out",
+		elementDuration: node.params.duration / TICKS_PER_SECOND,
+	});
+	const loop = resolveTextLoopAtTime({
+		config: buildTextLoopFromElement({ element: node.params }),
+		localTime: localTimeSeconds,
+	});
+	const motionOpacityFactor =
+		entrance.opacityFactor * exit.opacityFactor * loop.opacityFactor;
+	const motionScaleFactor =
+		entrance.scaleFactor * exit.scaleFactor * loop.scaleFactor;
+	const motionOffsetX = loop.offsetX * node.params.canvasHeight;
+	const motionOffsetY = loop.offsetY * node.params.canvasHeight;
+	const visibleRatio = entrance.visibleRatio ?? exit.visibleRatio;
 
 	let elementForMeasure: TextElement = node.params;
-	if (entrance.visibleRatio !== null) {
+	if (visibleRatio !== null) {
 		const content = readStringParam({
 			params: node.params.params,
 			key: "content",
 			fallback: "Default text",
 		});
 		const totalChars = countTextChars({ content });
-		const visibleChars = Math.floor(entrance.visibleRatio * totalChars);
+		const visibleChars = Math.floor(visibleRatio * totalChars);
 		if (visibleChars <= 0) {
 			return null;
 		}
@@ -458,12 +478,16 @@ function resolveTextNode({
 		localTime,
 	});
 	const transform =
-		entrance.scaleFactor === 1
+		motionScaleFactor === 1 && motionOffsetX === 0 && motionOffsetY === 0
 			? baseTransform
 			: {
 					...baseTransform,
-					scaleX: baseTransform.scaleX * entrance.scaleFactor,
-					scaleY: baseTransform.scaleY * entrance.scaleFactor,
+					scaleX: baseTransform.scaleX * motionScaleFactor,
+					scaleY: baseTransform.scaleY * motionScaleFactor,
+					position: {
+						x: baseTransform.position.x + motionOffsetX,
+						y: baseTransform.position.y + motionOffsetY,
+					},
 				};
 
 	return {
@@ -473,7 +497,7 @@ function resolveTextNode({
 				baseOpacity: node.params.opacity,
 				animations: node.params.animations,
 				localTime,
-			}) * entrance.opacityFactor,
+			}) * motionOpacityFactor,
 		textColor: resolveColorAtTime({
 			baseColor:
 				typeof node.params.params.color === "string"

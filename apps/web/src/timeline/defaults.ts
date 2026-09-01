@@ -54,6 +54,16 @@ const defaultTextAnimIn = {
 	duration: 0.5,
 };
 
+const defaultTextAnimOut = {
+	type: "none",
+	duration: 0.5,
+};
+
+const defaultTextAnimLoop = {
+	type: "none",
+	duration: 1,
+};
+
 const defaultTextElement: Omit<TextElement, "id"> = {
 	type: "text",
 	get name() {
@@ -96,6 +106,10 @@ const defaultTextElement: Omit<TextElement, "id"> = {
 		"gradient.angle": defaultTextGradient.angle,
 		"animIn.type": defaultTextAnimIn.type,
 		"animIn.duration": defaultTextAnimIn.duration,
+		"animOut.type": defaultTextAnimOut.type,
+		"animOut.duration": defaultTextAnimOut.duration,
+		"animLoop.type": defaultTextAnimLoop.type,
+		"animLoop.duration": defaultTextAnimLoop.duration,
 		"transform.positionX": defaultTransform.position.x,
 		"transform.positionY": defaultTransform.position.y,
 		"transform.scaleX": defaultTransform.scaleX,
@@ -127,6 +141,8 @@ export const DEFAULTS = {
 		shadow: defaultTextShadow,
 		gradient: defaultTextGradient,
 		animIn: defaultTextAnimIn,
+		animOut: defaultTextAnimOut,
+		animLoop: defaultTextAnimLoop,
 		element: defaultTextElement,
 	},
 	timeline: {
