@@ -34,8 +34,8 @@ _PROVIDER_CONFIGS = {
     "deepseek": {
         "base_url": "https://api.deepseek.com/anthropic",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "model": "deepseek-v4-flash-vision-exp",
-        "subagent_model": "deepseek-v4-flash",
+        "model": "deepseek-v4-flash-vision-exp[1m]",
+        "subagent_model": "deepseek-v4-flash-vision-exp[1m]",
     },
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/anthropic",
@@ -63,6 +63,7 @@ AGENT_ENV = {
     "ANTHROPIC_DEFAULT_SONNET_MODEL": AGENT_MODEL,
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": AGENT_HAIKU_MODEL,
     "CLAUDE_CODE_SUBAGENT_MODEL": AGENT_HAIKU_MODEL,
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "API_TIMEOUT_MS": "3000000",
