@@ -289,6 +289,46 @@ describe("resolveTrackPlacement", () => {
 		});
 	});
 
+	test("explicit rejects overlapping elements on the requested track", () => {
+		const tracks = buildSceneTracks({
+			overlay: [
+				buildTrack({
+					id: "text-1",
+					type: "text",
+					elements: [
+						buildElement({
+							id: "existing",
+							type: "text",
+							startTime: 0,
+							duration: 5,
+						}),
+					],
+				}),
+			],
+		});
+
+		expect(
+			resolveTrackPlacement({
+				tracks,
+				elementType: "text",
+				timeSpans: [buildTimeSpan({ startTime: 2, duration: 1 })],
+				strategy: { type: "explicit", trackId: "text-1" },
+			}),
+		).toBeNull();
+
+		expect(
+			resolveTrackPlacement({
+				tracks,
+				elementType: "text",
+				timeSpans: [buildTimeSpan({ startTime: 5, duration: 1 })],
+				strategy: { type: "explicit", trackId: "text-1" },
+			}),
+		).toMatchObject({
+			kind: "existingTrack",
+			trackId: "text-1",
+		});
+	});
+
 	test("explicit rejects missing and incompatible tracks", () => {
 		const tracks = buildSceneTracks({
 			main: buildTrack({ id: "video-1", type: "video" }),
@@ -584,6 +624,29 @@ describe("resolveTrackPlacement", () => {
 			kind: "newTrack",
 			trackType: "audio",
 			insertIndex: 1,
+			insertPosition: null,
+		});
+	});
+
+	test("rejects overlapping spans within one placement request", () => {
+		const tracks = buildSceneTracks({
+			overlay: [buildTrack({ id: "text-1", type: "text" })],
+		});
+
+		expect(
+			resolveTrackPlacement({
+				tracks,
+				elementType: "text",
+				timeSpans: [
+					buildTimeSpan({ startTime: 0, duration: 2 }),
+					buildTimeSpan({ startTime: 1, duration: 2 }),
+				],
+				strategy: { type: "firstAvailable" },
+			}),
+		).toEqual({
+			kind: "newTrack",
+			trackType: "text",
+			insertIndex: 0,
 			insertPosition: null,
 		});
 	});

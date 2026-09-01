@@ -262,7 +262,14 @@ export class InsertElementCommand extends Command {
 					element,
 					track: targetTrack,
 				});
-				console.error(validation.errorMessage);
+				if (!validation.isValid) {
+					console.error(validation.errorMessage);
+					return null;
+				}
+
+				throw new Error(
+					"Cannot insert an element on the requested track because its time range overlaps another element.",
+				);
 			}
 
 			return null;

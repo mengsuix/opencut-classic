@@ -26,6 +26,40 @@ function wouldElementOverlap({
 	});
 }
 
+function wouldTimeSpansOverlap({
+	left,
+	right,
+}: {
+	left: PlacementTimeSpan;
+	right: PlacementTimeSpan;
+}): boolean {
+	return (
+		left.startTime < right.startTime + right.duration &&
+		left.startTime + left.duration > right.startTime
+	);
+}
+
+function haveOverlappingTimeSpans(timeSpans: PlacementTimeSpan[]): boolean {
+	for (let leftIndex = 0; leftIndex < timeSpans.length; leftIndex += 1) {
+		for (
+			let rightIndex = leftIndex + 1;
+			rightIndex < timeSpans.length;
+			rightIndex += 1
+		) {
+			if (
+				wouldTimeSpansOverlap({
+					left: timeSpans[leftIndex],
+					right: timeSpans[rightIndex],
+				})
+			) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 export function canPlaceTimeSpansOnTrack({
 	track,
 	timeSpans,
@@ -33,6 +67,10 @@ export function canPlaceTimeSpansOnTrack({
 	track: TrackWithElements;
 	timeSpans: PlacementTimeSpan[];
 }): boolean {
+	if (haveOverlappingTimeSpans(timeSpans)) {
+		return false;
+	}
+
 	return timeSpans.every(({ startTime, duration, excludeElementId }) => {
 		return !wouldElementOverlap({
 			elements: track.elements,

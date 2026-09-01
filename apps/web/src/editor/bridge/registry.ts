@@ -5,6 +5,7 @@ import type { CreateTimelineElement, TrackType } from "@/timeline";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { effectsRegistry } from "@/effects";
+import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
 import type { Mask, MaskType } from "@/masks/types";
 import type { FreeformPathPoint } from "@/masks/freeform/path";
@@ -29,6 +30,7 @@ import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
 import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
+import { normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
 
 export interface BridgeElementRef {
@@ -430,20 +432,39 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
+	"graphics.list": {
+		description:
+			"List all registered graphic definitions and their parameters. Use a returned id as element.definitionId when inserting a graphic.",
+		run: () => {
+			registerDefaultGraphics();
+			return {
+				graphics: graphicsRegistry.getAll().map((definition) => ({
+					id: definition.id,
+					name: definition.name,
+					keywords: definition.keywords,
+					params: sanitizeJson(definition.params),
+				})),
+			};
+		},
+	},
+
 	"timeline.insert_element": {
 		description:
-			"Insert a raw timeline element (times in seconds). For media elements pass mediaId from mediaAssets. Returns the inserted element ref.",
+			"Insert a raw timeline element (times in seconds). For media elements pass mediaId from mediaAssets. Graphic elements require element.definitionId from graphics.list. Returns the inserted element ref.",
 		args: {
-			element: "CreateTimelineElement with seconds for startTime/duration/trimStart/trimEnd",
-			placement: "{ mode: 'explicit', trackId } | { mode: 'auto', trackType? } (default auto)",
+			element:
+				"CreateTimelineElement with seconds for startTime/duration/trimStart/trimEnd. For type:'graphic', include definitionId from graphics.list; params are optional.",
+			placement:
+				"{ mode: 'explicit', trackId } | { mode: 'auto', trackType? } (default auto)",
 		},
 		run: ({ editor, args }) => {
 			const raw = args.element as Record<string, unknown> | undefined;
 			if (!raw || typeof raw.type !== "string") {
 				throw new Error("Missing or invalid argument: element");
 			}
-			const element = convertTimePatch(
-				raw,
+			const converted = convertTimePatch(raw);
+			const element = normalizeGraphicElementInput(
+				converted,
 			) as unknown as CreateTimelineElement;
 			const placement = (args.placement ??
 				({ mode: "auto" } as const)) as InsertElementParams["placement"];

@@ -7,6 +7,7 @@ import { EditorCore } from "@/core";
 import type { SceneTracks, TimelineElement, TimelineTrack } from "@/timeline";
 import {
 	buildEmptyTrack,
+	canPlaceTimeSpansOnTrack,
 	validateElementTrackCompatibility,
 } from "@/timeline/placement";
 import type {
@@ -102,6 +103,37 @@ export class MoveElementCommand extends Command {
 				movedElementsByTargetTrackId.get(move.targetTrackId) ?? [];
 			nextTargetElements.push(movedElement);
 			movedElementsByTargetTrackId.set(move.targetTrackId, nextTargetElements);
+		}
+
+		for (const [targetTrackId, targetMoves] of movedElementsByTargetTrackId) {
+			const targetTrack = findTrackInSceneTracks({
+				tracks: tracksToUpdate,
+				trackId: targetTrackId,
+			});
+			if (!targetTrack) {
+				throw new Error("Target track not found");
+			}
+
+			const timeSpans = targetMoves.map((element) => ({
+				startTime: element.startTime,
+				duration: element.duration,
+			}));
+			const movingElementIds = new Set(
+				targetMoves.map((element) => element.id),
+			);
+			const stationaryElements = targetTrack.elements.filter(
+				(element) => !movingElementIds.has(element.id),
+			);
+			if (
+				!canPlaceTimeSpansOnTrack({
+					track: { elements: stationaryElements },
+					timeSpans,
+				})
+			) {
+				throw new Error(
+					"Cannot move elements because a time range overlaps another element on the target track.",
+				);
+			}
 		}
 
 		const updatedTracks = mapSceneTracks({

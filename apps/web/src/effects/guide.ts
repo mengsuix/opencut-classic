@@ -28,7 +28,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 老电影：color-adjust(saturation -0.6, temperature 0.3, contrast 0.15) + noise(0.2) + opacity 关键帧轻微闪烁。
 - 老电视信号干扰：noise + distort-wave(frequency 拉满, amplitude 1~2)。注意这只是行位移+颗粒，不是真正的逐行扫描线（扫描线需要逐行明暗调制，属逐像素算法，组合做不到，别硬凑）。
 - 局部特效（局部马赛克/模糊等）：duplicate 原片段叠到上层 → 副本 effects.add → 副本 masks.add(rectangle) 圈出区域，蒙版外自动透出下层原画面。定位蒙版优先用 masks.set_canvas_rect：传 left/top/right/bottom（画布 0~1 比例、左上原点，与预览截图目测一致），内部自动换算；元素须处于播放头可见帧（先 playback.seek 到目标帧再截图估算）。手动写蒙版参数时注意坐标系：centerX/centerY 是相对元素中心的偏移（0=中心，+0.5=右/下缘，-0.5=左/上缘），width/height 是相对元素宽高的比例（1=铺满）。视频元素默认铺满画布，此时元素坐标≈画布坐标。
-- 色彩罩染：顶层 graphic 纯色矩形（不透明盖住画面），blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
+- 色彩罩染：先调用 graphics.list 获取合法 definitionId，再用 timeline.insert_element 创建 graphic 纯色矩形；graphic 的 definitionId 必填，不能只传 type。blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
 
 ## 转场（video/image 元素 params，用 timeline.update_elements 设置）
 - 内置转场：给前一片段设 transition.type = fade|black|zoom|slide-left|slide-right，transition.duration（秒，0.1~5）。自动作用于同轨道下一个紧邻片段（间隙须 ≤1 帧），无需移动片段。
