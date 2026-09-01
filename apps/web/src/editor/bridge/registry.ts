@@ -8,6 +8,7 @@ import { effectsRegistry } from "@/effects";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
 import type { Mask, MaskType } from "@/masks/types";
 import type { FreeformPathPoint } from "@/masks/freeform/path";
+import { canvasRectToMaskParams } from "@/masks/canvas-rect";
 import { getVisibleElementsWithBounds } from "@/preview/element-bounds";
 import { generateUUID } from "@/utils/id";
 import type { AnimationInterpolation } from "@/animation/types";
@@ -1756,31 +1757,11 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					`Element ${elementId} is not visible at the playhead. Seek onto the element first (playback.seek), then retry.`,
 				);
 			}
-			const { bounds } = target;
-			const elementWidth = Math.abs(bounds.width);
-			const elementHeight = Math.abs(bounds.height);
-			if (elementWidth === 0 || elementHeight === 0) {
-				throw new Error("Element has zero size on canvas");
-			}
-
-			const rectCenterX = ((left + right) / 2) * canvasSize.width;
-			const rectCenterY = ((top + bottom) / 2) * canvasSize.height;
-			// Undo the element's rotation so the offset lands in the mask's
-			// element-local space; the mask's own rotation then cancels the
-			// element's so the rect stays axis-aligned on canvas.
-			const rotRad = (bounds.rotation * Math.PI) / 180;
-			const dx = rectCenterX - bounds.cx;
-			const dy = rectCenterY - bounds.cy;
-			const localDx = dx * Math.cos(rotRad) + dy * Math.sin(rotRad);
-			const localDy = -dx * Math.sin(rotRad) + dy * Math.cos(rotRad);
-
-			const nextParams = {
-				centerX: localDx / elementWidth,
-				centerY: localDy / elementHeight,
-				width: ((right - left) * canvasSize.width) / elementWidth,
-				height: ((bottom - top) * canvasSize.height) / elementHeight,
-				rotation: ((-bounds.rotation % 360) + 360) % 360,
-			};
+			const nextParams = canvasRectToMaskParams({
+				rect: { left, top, right, bottom },
+				bounds: target.bounds,
+				canvasSize,
+			});
 
 			const nextMasks = masks.map((item) =>
 				item.id === maskId
