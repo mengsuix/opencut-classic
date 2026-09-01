@@ -2,9 +2,13 @@
 import { describe, expect, test } from "bun:test";
 import type { TextElement } from "@/timeline";
 import {
+	buildTextCharStateAt,
 	buildTextEntranceFromElement,
 	buildTextLoopFromElement,
 	countTextChars,
+	getTextCharProgress,
+	isPerCharEntranceType,
+	resolveTextCharAnim,
 	resolveTextEntranceAtTime,
 	resolveTextLoopAtTime,
 	TEXT_SHAKE_AMPLITUDE,
@@ -225,6 +229,79 @@ describe("loop animation", () => {
 				localTime: 0.5,
 			}),
 		).toEqual(idle);
+	});
+});
+
+describe("per-char animation", () => {
+	test("per-char types are detected", () => {
+		expect(isPerCharEntranceType("fade-chars")).toBe(true);
+		expect(isPerCharEntranceType("pop-chars")).toBe(true);
+		expect(isPerCharEntranceType("fade")).toBe(false);
+	});
+
+	test("char progress staggers sequentially and completes at 1", () => {
+		expect(
+			getTextCharProgress({ index: 0, totalChars: 4, overallProgress: 0.25 }),
+		).toBe(1);
+		expect(
+			getTextCharProgress({ index: 1, totalChars: 4, overallProgress: 0.25 }),
+		).toBe(0);
+		expect(
+			getTextCharProgress({ index: 3, totalChars: 4, overallProgress: 1 }),
+		).toBe(1);
+		expect(
+			getTextCharProgress({ index: 1, totalChars: 4, overallProgress: 0.5 }),
+		).toBe(1);
+	});
+
+	test("fade-chars resolves opacity per phase", () => {
+		expect(
+			resolveTextCharAnim({ type: "fade-chars", phase: "in", progress: 0.4 })
+				.opacityFactor,
+		).toBeCloseTo(0.4, 5);
+		expect(
+			resolveTextCharAnim({ type: "fade-chars", phase: "out", progress: 0.4 })
+				.opacityFactor,
+		).toBeCloseTo(0.6, 5);
+	});
+
+	test("buildTextCharStateAt returns null for non-per-char configs", () => {
+		expect(
+			buildTextCharStateAt({
+				inConfig: { type: "fade", duration: 1 },
+				localTime: 0.5,
+				elementDuration: 4,
+				totalChars: 5,
+			}),
+		).toBeNull();
+	});
+
+	test("buildTextCharStateAt staggers chars over the in duration", () => {
+		const stateAt = buildTextCharStateAt({
+			inConfig: { type: "fade-chars", duration: 2 },
+			localTime: 1,
+			elementDuration: 10,
+			totalChars: 4,
+		});
+		expect(stateAt).not.toBeNull();
+		expect(stateAt!(0).opacityFactor).toBe(1);
+		expect(stateAt!(1).opacityFactor).toBe(1);
+		expect(stateAt!(2).opacityFactor).toBe(0);
+		expect(stateAt!(3).opacityFactor).toBe(0);
+	});
+
+	test("out phase shrinks chars near the element end", () => {
+		const stateAt = buildTextCharStateAt({
+			outConfig: { type: "pop-chars", duration: 2 },
+			localTime: 9.5,
+			elementDuration: 10,
+			totalChars: 2,
+		});
+		expect(stateAt).not.toBeNull();
+		expect(stateAt!(0).scaleFactor).toBeLessThan(0.2);
+		// easeOutBack overshoots mid-animation, so the second char is well past
+		// half-scale but not necessarily exactly 1.
+		expect(stateAt!(1).scaleFactor).toBeGreaterThan(0.5);
 	});
 });
 

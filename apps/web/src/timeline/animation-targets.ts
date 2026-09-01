@@ -29,6 +29,8 @@ import {
 import {
 	getElementParam,
 } from "@/params/registry";
+import { NUMBER_CHANNEL_LAYOUT } from "@/params";
+import { TIME_REMAP_PATH } from "@/retime/resolve";
 import type { TimelineElement } from "@/timeline";
 import { isMaskableElement, isVisualElement } from "@/timeline/element-utils";
 
@@ -259,5 +261,32 @@ export function resolveAnimationTarget({
 		});
 	}
 
+	if (path === TIME_REMAP_PATH) {
+		return buildTimeRemapDescriptor({ element });
+	}
+
 	return null;
+}
+
+// Time remapping maps element-local time to a source offset in seconds. There
+// is no static base value: removing the channel restores constant-rate mapping.
+function buildTimeRemapDescriptor({
+	element,
+}: {
+	element: TimelineElement;
+}): AnimationPathDescriptor | null {
+	if (element.type !== "video") {
+		return null;
+	}
+
+	return {
+		channelLayout: NUMBER_CHANNEL_LAYOUT,
+		defaultInterpolation: "bezier",
+		coerceValue: ({ value }) =>
+			typeof value === "number" && Number.isFinite(value) && value >= 0
+				? value
+				: null,
+		getBaseValue: () => null,
+		setBaseValue: () => element,
+	};
 }

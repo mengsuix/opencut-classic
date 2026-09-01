@@ -10,6 +10,7 @@ export const ANIMATION_PROPERTY_PATHS = [
 	"opacity",
 	"volume",
 	"color",
+	"retime.sourceTime",
 	"background.color",
 	"background.paddingX",
 	"background.paddingY",

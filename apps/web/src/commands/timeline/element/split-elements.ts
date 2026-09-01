@@ -8,7 +8,8 @@ import { generateUUID } from "@/utils/id";
 import { EditorCore } from "@/core";
 import { isRetimableElement } from "@/timeline";
 import { splitAnimationsAtTime } from "@/animation";
-import { getSourceSpanAtClipTime } from "@/retime";
+import { getSourceSpanAtClipTime, shiftTimeRemapChannelValues } from "@/retime";
+import { TICKS_PER_SECOND } from "@/wasm";
 import {
 	addMediaTime,
 	type MediaTime,
@@ -101,22 +102,32 @@ export class SplitElementsCommand extends Command {
 					time: getSourceSpanAtClipTime({
 						clipTime: leftVisibleDuration,
 						retime: retimeRef,
+						animations: element.animations,
 					}),
 				});
 				const totalSourceSpan = roundMediaTime({
 					time: getSourceSpanAtClipTime({
 						clipTime: element.duration,
 						retime: retimeRef,
+						animations: element.animations,
 					}),
 				});
 				const rightSourceSpan = subMediaTime({
 					a: totalSourceSpan,
 					b: leftSourceSpan,
 				});
-				const { leftAnimations, rightAnimations } = splitAnimationsAtTime({
-					animations: element.animations,
-					splitTime: relativeTime,
-					shouldIncludeSplitBoundary: true,
+				const { leftAnimations, rightAnimations: rawRightAnimations } =
+					splitAnimationsAtTime({
+						animations: element.animations,
+						splitTime: relativeTime,
+						shouldIncludeSplitBoundary: true,
+					});
+				// Remap values are source offsets relative to trimStart; the right
+				// piece's trimStart advances by the left source span, so its remap
+				// channel shifts by the same amount.
+				const rightAnimations = shiftTimeRemapChannelValues({
+					animations: rawRightAnimations,
+					offsetSeconds: -leftSourceSpan / TICKS_PER_SECOND,
 				});
 				let splitResult: TimelineElement[];
 

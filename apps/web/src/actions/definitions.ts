@@ -165,6 +165,12 @@ export const ACTIONS = {
 		},
 		category: "selection",
 	},
+	"freeze-frame": {
+		get description() {
+			return t("shell.actionFreezeFrame");
+		},
+		category: "timeline",
+	},
 	"toggle-elements-muted-selected": {
 		get description() {
 			return t("shell.actionToggleMutedSelected");

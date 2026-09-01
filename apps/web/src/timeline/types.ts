@@ -122,6 +122,8 @@ export interface VideoElement extends BaseTimelineElement {
 	isSourceAudioEnabled?: boolean;
 	hidden?: boolean;
 	retime?: RetimeConfig;
+	/** Holds the trimStart frame for the whole element duration; audio is muted. */
+	freeze?: boolean;
 	effects?: Effect[];
 	masks?: Mask[];
 }

@@ -63,6 +63,7 @@ export const shell = {
 	"shell.actionCancelInteraction": "取消当前操作",
 	"shell.actionDeselectAll": "取消选中所有元素",
 	"shell.actionDuplicateSelected": "创建选中元素的副本",
+	"shell.actionFreezeFrame": "冻结帧",
 	"shell.actionToggleMutedSelected": "静音/取消静音选中元素",
 	"shell.actionToggleVisibilitySelected": "显示/隐藏选中元素",
 	"shell.actionToggleBookmark": "在播放头处切换书签",

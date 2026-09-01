@@ -52,6 +52,7 @@ export const common = {
 	"history.keyframesUpsert": "Add/update keyframe",
 	"history.keyframesRemove": "Remove keyframe",
 	"history.keyframesSetLoop": "Toggle keyframe loop",
+	"history.freezeFrame": "Freeze frame",
 	"history.keyframesRetime": "Move keyframe",
 	"history.keyframesUpdateCurves": "Adjust animation curves",
 	"history.effectsAdd": "Add effect",

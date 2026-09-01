@@ -1,7 +1,11 @@
 import { PitchShifter } from "soundtouchjs";
 import { clampRetimeRate, shouldMaintainPitch } from "@/retime/rate";
+import type { ElementAnimations } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline";
-import { getSourceTimeAtClipTime } from "./resolve";
+import {
+	getSourceSecondsAtClipSeconds,
+	hasTimeRemap,
+} from "./resolve";
 
 const RATE_EPSILON = 1e-6;
 
@@ -31,6 +35,7 @@ function buildResampledBuffer({
 	clipDuration,
 	targetSampleRate,
 	retime,
+	animations,
 }: {
 	audioContext: BaseAudioContext;
 	sourceBuffer: AudioBuffer;
@@ -38,6 +43,7 @@ function buildResampledBuffer({
 	clipDuration: number;
 	targetSampleRate: number;
 	retime?: RetimeConfig;
+	animations?: ElementAnimations;
 }): AudioBuffer {
 	const outputLength = Math.max(1, Math.ceil(clipDuration * targetSampleRate));
 	const numChannels = Math.max(1, Math.min(2, sourceBuffer.numberOfChannels));
@@ -56,7 +62,12 @@ function buildResampledBuffer({
 		for (let i = 0; i < outputLength; i++) {
 			const clipTime = i / targetSampleRate;
 			const sourceTime =
-				trimStart + getSourceTimeAtClipTime({ clipTime, retime });
+				trimStart +
+				getSourceSecondsAtClipSeconds({
+					clipSeconds: clipTime,
+					retime,
+					animations,
+				});
 			outputData[i] = sampleLinear({
 				channelData: sourceData,
 				position: sourceTime * sourceBuffer.sampleRate,
@@ -147,6 +158,7 @@ export async function renderRetimedBuffer({
 	clipDuration,
 	retime,
 	maintainPitch = false,
+	animations,
 }: {
 	audioContext: BaseAudioContext;
 	sourceBuffer: AudioBuffer;
@@ -154,10 +166,14 @@ export async function renderRetimedBuffer({
 	clipDuration: number;
 	retime?: RetimeConfig;
 	maintainPitch?: boolean;
+	animations?: ElementAnimations;
 }): Promise<AudioBuffer> {
 	const targetSampleRate = audioContext.sampleRate;
 	const rate = clampRetimeRate({ rate: retime?.rate ?? 1 });
+	// Time remapping changes speed continuously; pitch follows the curve
+	// (pitch preservation requires a constant tempo).
 	const usePitchPreservation =
+		!hasTimeRemap({ animations }) &&
 		shouldMaintainPitch({ rate, maintainPitch }) &&
 		Math.abs(rate - 1) > RATE_EPSILON;
 
@@ -178,5 +194,6 @@ export async function renderRetimedBuffer({
 		clipDuration,
 		targetSampleRate,
 		retime,
+		animations,
 	});
 }

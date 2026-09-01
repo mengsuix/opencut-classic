@@ -67,6 +67,7 @@ export const shell = {
 	"shell.actionCancelInteraction": "Cancel current interaction",
 	"shell.actionDeselectAll": "Deselect all elements",
 	"shell.actionDuplicateSelected": "Duplicate selected element",
+	"shell.actionFreezeFrame": "Freeze frame",
 	"shell.actionToggleMutedSelected": "Mute/unmute selected elements",
 	"shell.actionToggleVisibilitySelected": "Show/hide selected elements",
 	"shell.actionToggleBookmark": "Toggle bookmark at playhead",

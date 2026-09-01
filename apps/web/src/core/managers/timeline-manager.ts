@@ -11,7 +11,13 @@ import type {
 import { calculateTotalDuration, expandLinkedTextStyleUpdates } from "@/timeline";
 import { TimelineDragSource } from "@/timeline/drag-source";
 import { findTrackInSceneTracks } from "@/timeline/track-element-update";
-import { lastFrameMediaTime, type MediaTime, ZERO_MEDIA_TIME } from "@/wasm";
+import {
+	lastFrameMediaTime,
+	type MediaTime,
+	mediaTime,
+	TICKS_PER_SECOND,
+	ZERO_MEDIA_TIME,
+} from "@/wasm";
 import {
 	canElementBeHidden,
 	canElementHaveAudio,
@@ -46,6 +52,7 @@ import {
 	RemoveKeyframeCommand,
 	RetimeKeyframeCommand,
 	SetKeyframeLoopCommand,
+	FreezeFrameCommand,
 	UpdateScalarKeyframeCurveCommand,
 	AddClipEffectCommand,
 	DeleteFreeformPathMaskPointsCommand,
@@ -640,6 +647,26 @@ export class TimelineManager {
 			elementId,
 			propertyPath,
 			loop,
+		});
+		this.editor.command.execute({ command });
+	}
+
+	freezeFrame({
+		trackId,
+		elementId,
+		time,
+		duration,
+	}: {
+		trackId: string;
+		elementId: string;
+		time: MediaTime;
+		duration?: MediaTime;
+	}): void {
+		const command = new FreezeFrameCommand({
+			trackId,
+			elementId,
+			time,
+			duration: duration ?? mediaTime({ ticks: 3 * TICKS_PER_SECOND }),
 		});
 		this.editor.command.execute({ command });
 	}

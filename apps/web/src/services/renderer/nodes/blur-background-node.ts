@@ -12,6 +12,7 @@ export type BlurBackgroundNodeParams = {
 	trimStart: number;
 	trimEnd: number;
 	retime?: RetimeConfig;
+	freeze?: boolean;
 	blurIntensity: number;
 };
 

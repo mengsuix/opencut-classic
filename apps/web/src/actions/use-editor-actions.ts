@@ -422,6 +422,25 @@ export function useEditorActions() {
 	);
 
 	useActionHandler(
+		"freeze-frame",
+		() => {
+			const targetRef = selectedElements.find(
+				(ref) =>
+					editor.timeline.getElementsWithTracks({ elements: [ref] })[0]
+						?.element.type === "video",
+			);
+			if (!targetRef) return;
+
+			editor.timeline.freezeFrame({
+				trackId: targetRef.trackId,
+				elementId: targetRef.elementId,
+				time: editor.playback.getCurrentTime(),
+			});
+		},
+		undefined,
+	);
+
+	useActionHandler(
 		"toggle-elements-muted-selected",
 		() => {
 			editor.timeline.toggleElementsMuted({ elements: selectedElements });

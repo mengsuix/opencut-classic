@@ -14,7 +14,7 @@ export const timeline = {
 	"timeline.split": "分割",
 	"timeline.duplicateElement": "创建副本",
 	"timeline.duplicate": "创建副本",
-	"timeline.freezeFrameComingSoon": "冻结帧（即将推出）",
+	"timeline.freezeFrame": "冻结帧",
 	"timeline.deleteElement": "删除元素",
 	"timeline.deleteElements": "删除 {count} 个元素",
 	"timeline.deleteText": "删除文本",

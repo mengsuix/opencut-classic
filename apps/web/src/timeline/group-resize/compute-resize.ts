@@ -170,6 +170,33 @@ function buildResizeUpdate({
 	side: ResizeSide;
 	deltaTime: MediaTime;
 }): GroupResizeUpdate {
+	// Frozen elements never move their trims: both sides only change the
+	// timeline span, the held frame stays at trimStart.
+	if (member.freeze) {
+		if (side === "left") {
+			return {
+				trackId: member.trackId,
+				elementId: member.elementId,
+				patch: {
+					trimStart: member.trimStart,
+					trimEnd: member.trimEnd,
+					startTime: addMediaTime({ a: member.startTime, b: deltaTime }),
+					duration: subMediaTime({ a: member.duration, b: deltaTime }),
+				},
+			};
+		}
+		return {
+			trackId: member.trackId,
+			elementId: member.elementId,
+			patch: {
+				trimStart: member.trimStart,
+				trimEnd: member.trimEnd,
+				startTime: member.startTime,
+				duration: addMediaTime({ a: member.duration, b: deltaTime }),
+			},
+		};
+	}
+
 	const sourceDelta = getSourceDeltaForClipDelta({
 		member,
 		clipDelta: deltaTime,
@@ -223,7 +250,7 @@ function getMinimumAllowedDeltaTime({
 		member.leftNeighborBound !== null
 			? subMediaTime({ a: member.leftNeighborBound, b: member.startTime })
 			: subMediaTime({ a: ZERO_MEDIA_TIME, b: member.startTime });
-	if (member.sourceDuration == null) {
+	if (member.freeze || member.sourceDuration == null) {
 		return leftNeighborFloor;
 	}
 
@@ -261,8 +288,9 @@ function getMaximumAllowedDeltaTime({
 
 	// The right neighbor is not a hard ceiling: overflowing it ripples the
 	// follower elements right (see buildRipplePushUpdates). Only the source
-	// extent can cap a right-side extension.
-	if (member.sourceDuration == null) {
+	// extent can cap a right-side extension. Frozen frames hold a single
+	// frame, so the source extent does not cap them either.
+	if (member.freeze || member.sourceDuration == null) {
 		return null;
 	}
 

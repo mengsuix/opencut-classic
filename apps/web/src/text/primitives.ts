@@ -188,6 +188,66 @@ function clearCanvasShadow({ ctx }: { ctx: TextCanvasContext }): void {
 	ctx.shadowOffsetY = 0;
 }
 
+export interface TextCharRenderState {
+	opacityFactor: number;
+	scaleFactor: number;
+}
+
+function drawTextPerChar({
+	ctx,
+	layout,
+	stroke,
+	charStateAt,
+	textBaseline,
+}: {
+	ctx: TextCanvasContext;
+	layout: MeasuredTextLayout;
+	stroke?: ResolvedTextStroke | null;
+	charStateAt: (index: number) => TextCharRenderState;
+	textBaseline: CanvasTextBaseline;
+}): void {
+	// Canvas letterSpacing only applies between chars of a single draw call, so
+	// per-char draws measure with spacing 0 and advance the cursor manually.
+	setCanvasLetterSpacing({ ctx, letterSpacingPx: 0 });
+	const spacing = layout.letterSpacing;
+
+	let charIndex = 0;
+	for (let index = 0; index < layout.lines.length; index++) {
+		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
+		const lineWidth = layout.lineMetrics[index].width;
+		const alignToLeft: Record<TextAlign, number> = {
+			left: 0,
+			center: -lineWidth / 2,
+			right: -lineWidth,
+		};
+		let cursorX = alignToLeft[layout.textAlign];
+
+		for (const char of Array.from(layout.lines[index])) {
+			const state = charStateAt(charIndex);
+			charIndex += 1;
+			const charWidth = ctx.measureText(char).width;
+			const charCenterX = cursorX + charWidth / 2;
+			cursorX += charWidth + spacing;
+
+			if (state.opacityFactor <= 0.001 || state.scaleFactor <= 0.001) {
+				continue;
+			}
+
+			ctx.save();
+			ctx.textAlign = "left";
+			ctx.textBaseline = textBaseline;
+			ctx.globalAlpha *= state.opacityFactor;
+			ctx.translate(charCenterX, lineY);
+			ctx.scale(state.scaleFactor, state.scaleFactor);
+			if (stroke) {
+				ctx.strokeText(char, -charWidth / 2, 0);
+			}
+			ctx.fillText(char, -charWidth / 2, 0);
+			ctx.restore();
+		}
+	}
+}
+
 export function drawMeasuredTextLayout({
 	ctx,
 	layout,
@@ -198,6 +258,7 @@ export function drawMeasuredTextLayout({
 	shadow,
 	gradient,
 	textBaseline = "middle",
+	charStateAt,
 }: {
 	ctx: TextCanvasContext;
 	layout: MeasuredTextLayout;
@@ -208,6 +269,7 @@ export function drawMeasuredTextLayout({
 	shadow?: ResolvedTextShadow | null;
 	gradient?: ResolvedTextGradient | null;
 	textBaseline?: CanvasTextBaseline;
+	charStateAt?: (index: number) => TextCharRenderState;
 }): void {
 	ctx.font = layout.fontString;
 	ctx.textAlign = layout.textAlign;
@@ -259,6 +321,27 @@ export function drawMeasuredTextLayout({
 		ctx.shadowBlur = shadow.blur;
 		ctx.shadowOffsetX = shadow.offsetX;
 		ctx.shadowOffsetY = shadow.offsetY;
+	}
+
+	// Per-char animation draws each glyph with its own opacity/scale. Text
+	// decoration is skipped in this mode (per-line decoration would span
+	// not-yet-visible chars).
+	if (charStateAt) {
+		if (stroke && layout.lines.length > 0) {
+			ctx.strokeStyle = stroke.color;
+			ctx.lineWidth = stroke.width;
+			ctx.lineJoin = "round";
+			ctx.lineCap = "round";
+		}
+		drawTextPerChar({
+			ctx,
+			layout,
+			stroke: stroke && layout.lines.length > 0 ? stroke : null,
+			charStateAt,
+			textBaseline,
+		});
+		clearCanvasShadow({ ctx });
+		return;
 	}
 
 	if (stroke && layout.lines.length > 0) {

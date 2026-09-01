@@ -12,6 +12,7 @@ export interface VisualNodeParams {
 	trimStart: number;
 	trimEnd: number;
 	retime?: RetimeConfig;
+	freeze?: boolean;
 	transform: Transform;
 	animations?: VisualElement["animations"];
 	opacity: number;

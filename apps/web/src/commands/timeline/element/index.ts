@@ -1,3 +1,4 @@
+export { FreezeFrameCommand } from "./freeze-frame";
 export { InsertElementCommand } from "./insert-element";
 export { RippleShiftElementsCommand } from "./ripple-shift-elements";
 export { DeleteElementsCommand } from "./delete-elements";

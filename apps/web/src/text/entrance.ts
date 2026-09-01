@@ -9,13 +9,21 @@ const FALLBACK_ENTRANCE_DURATION = 0.5;
 const FALLBACK_LOOP_TYPE: TextLoopType = "none";
 const FALLBACK_LOOP_DURATION = 1;
 
-export type TextEntranceType = "none" | "fade" | "pop" | "typewriter";
+export type TextEntranceType =
+	| "none"
+	| "fade"
+	| "pop"
+	| "typewriter"
+	| "fade-chars"
+	| "pop-chars";
 
 export const TEXT_ENTRANCE_TYPES: readonly TextEntranceType[] = [
 	"none",
 	"fade",
 	"pop",
 	"typewriter",
+	"fade-chars",
+	"pop-chars",
 ];
 
 export type TextLoopType = "none" | "pulse" | "blink" | "shake";
@@ -169,6 +177,131 @@ export function resolveTextEntranceAtTime({
 		default:
 			return idle;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Per-character animation ("fade-chars" / "pop-chars")
+// ---------------------------------------------------------------------------
+
+export interface TextCharAnimState {
+	opacityFactor: number;
+	scaleFactor: number;
+}
+
+export function isPerCharEntranceType(type: TextEntranceType): boolean {
+	return type === "fade-chars" || type === "pop-chars";
+}
+
+/** Staggered per-char progress: char `index` sweeps 0→1 as the overall
+ * progress passes its slot; the last char completes exactly at 1. */
+export function getTextCharProgress({
+	index,
+	totalChars,
+	overallProgress,
+}: {
+	index: number;
+	totalChars: number;
+	overallProgress: number;
+}): number {
+	if (totalChars <= 0) {
+		return 1;
+	}
+	return clamp({
+		value: overallProgress * totalChars - index,
+		min: 0,
+		max: 1,
+	});
+}
+
+export function resolveTextCharAnim({
+	type,
+	phase,
+	progress,
+}: {
+	type: TextEntranceType;
+	phase: TextAnimPhase;
+	progress: number;
+}): TextCharAnimState {
+	const shown = phase === "in" ? progress : 1 - progress;
+	switch (type) {
+		case "fade-chars":
+			return { opacityFactor: shown, scaleFactor: 1 };
+		case "pop-chars":
+			return {
+				opacityFactor: shown,
+				scaleFactor: Math.max(easeOutBack(shown), 0.0001),
+			};
+		default:
+			return { opacityFactor: 1, scaleFactor: 1 };
+	}
+}
+
+/** Builds a per-char state resolver when either phase uses a per-char type;
+ * returns null otherwise (the caller measures full content either way). */
+export function buildTextCharStateAt({
+	inConfig,
+	outConfig,
+	localTime,
+	elementDuration,
+	totalChars,
+}: {
+	inConfig?: TextEntranceConfig;
+	outConfig?: TextEntranceConfig;
+	localTime: number;
+	elementDuration: number;
+	totalChars: number;
+}): ((index: number) => TextCharAnimState) | null {
+	const inActive =
+		inConfig != null &&
+		isPerCharEntranceType(inConfig.type) &&
+		inConfig.duration > 0;
+	const outActive =
+		outConfig != null &&
+		isPerCharEntranceType(outConfig.type) &&
+		outConfig.duration > 0;
+	if (!inActive && !outActive) {
+		return null;
+	}
+
+	const inOverall = inActive
+		? clamp({ value: localTime / inConfig.duration, min: 0, max: 1 })
+		: 1;
+	const outOverall = outActive
+		? clamp({
+				value: 1 - (elementDuration - localTime) / outConfig.duration,
+				min: 0,
+				max: 1,
+			})
+		: 0;
+
+	return (index) => {
+		const inState = inActive
+			? resolveTextCharAnim({
+					type: inConfig.type,
+					phase: "in",
+					progress: getTextCharProgress({
+						index,
+						totalChars,
+						overallProgress: inOverall,
+					}),
+				})
+			: { opacityFactor: 1, scaleFactor: 1 };
+		const outState = outActive
+			? resolveTextCharAnim({
+					type: outConfig.type,
+					phase: "out",
+					progress: getTextCharProgress({
+						index,
+						totalChars,
+						overallProgress: outOverall,
+					}),
+				})
+			: { opacityFactor: 1, scaleFactor: 1 };
+		return {
+			opacityFactor: inState.opacityFactor * outState.opacityFactor,
+			scaleFactor: inState.scaleFactor * outState.scaleFactor,
+		};
+	};
 }
 
 export function resolveTextLoopAtTime({

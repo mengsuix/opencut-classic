@@ -11,6 +11,7 @@ import { createAudioMasteringChain } from "@/media/audio-mastering";
 import {
 	getClipTimeAtSourceTime,
 	getSourceTimeAtClipTime,
+	hasTimeRemap,
 	renderRetimedBuffer,
 } from "@/retime";
 import {
@@ -499,13 +500,9 @@ export class AudioManager {
 	}
 
 	private hasCurveRetime({ clip }: { clip: AudioClipSource }): boolean {
-		const retime: unknown = clip.retime;
-		return (
-			typeof retime === "object" &&
-			retime !== null &&
-			"mode" in retime &&
-			retime.mode === "curve"
-		);
+		return hasTimeRemap({
+			animations: clip.timelineElement.animations,
+		});
 	}
 
 	private scheduleClipGainAutomation({
@@ -596,6 +593,7 @@ export class AudioManager {
 				clipDuration: clip.duration,
 				retime: clip.retime,
 				maintainPitch: clip.retime?.maintainPitch === true,
+				animations: clip.timelineElement.animations,
 			});
 		})();
 

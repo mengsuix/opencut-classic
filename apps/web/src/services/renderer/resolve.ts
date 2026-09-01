@@ -29,6 +29,7 @@ import {
 import { readStringParam } from "@/text/param-readers";
 import { resolveTextStyle } from "@/text/style";
 import {
+	buildTextCharStateAt,
 	buildTextEntranceFromElement,
 	buildTextLoopFromElement,
 	countTextChars,
@@ -279,17 +280,18 @@ async function resolveVideoNode({
 
 	// During the transition lead-in (clipTime < 0) the video consumes
 	// trimStart handles, holding the source's first frame when they run out.
+	// Frozen elements hold the trimStart frame for their whole duration.
 	const sourceOffsetTicks =
 		clipTime >= 0
 			? getSourceTimeAtClipTime({
 					clipTime,
 					retime: node.params.retime,
+					animations: node.params.animations,
 				})
 			: clipTime;
-	const sourceTimeTicks = Math.max(
-		node.params.trimStart + sourceOffsetTicks,
-		0,
-	);
+	const sourceTimeTicks = node.params.freeze
+		? node.params.trimStart
+		: Math.max(node.params.trimStart + sourceOffsetTicks, 0);
 	const frame = await videoCache.getFrameAt({
 		mediaId: node.params.mediaId,
 		file: node.params.file,
@@ -427,15 +429,21 @@ function resolveTextNode({
 	const background = buildTextBackgroundFromElement({ element: node.params });
 
 	const localTimeSeconds = localTime / TICKS_PER_SECOND;
+	const entranceConfig = buildTextEntranceFromElement({ element: node.params });
+	const exitConfig = buildTextEntranceFromElement({
+		element: node.params,
+		phase: "out",
+	});
+	const elementDurationSeconds = node.params.duration / TICKS_PER_SECOND;
 	const entrance = resolveTextEntranceAtTime({
-		config: buildTextEntranceFromElement({ element: node.params }),
+		config: entranceConfig,
 		localTime: localTimeSeconds,
 	});
 	const exit = resolveTextEntranceAtTime({
-		config: buildTextEntranceFromElement({ element: node.params, phase: "out" }),
+		config: exitConfig,
 		localTime: localTimeSeconds,
 		phase: "out",
-		elementDuration: node.params.duration / TICKS_PER_SECOND,
+		elementDuration: elementDurationSeconds,
 	});
 	const loop = resolveTextLoopAtTime({
 		config: buildTextLoopFromElement({ element: node.params }),
@@ -449,13 +457,21 @@ function resolveTextNode({
 	const motionOffsetY = loop.offsetY * node.params.canvasHeight;
 	const visibleRatio = entrance.visibleRatio ?? exit.visibleRatio;
 
+	const content = readStringParam({
+		params: node.params.params,
+		key: "content",
+		fallback: "Default text",
+	});
+	const charStateAt = buildTextCharStateAt({
+		inConfig: entranceConfig,
+		outConfig: exitConfig,
+		localTime: localTimeSeconds,
+		elementDuration: elementDurationSeconds,
+		totalChars: countTextChars({ content }),
+	});
+
 	let elementForMeasure: TextElement = node.params;
 	if (visibleRatio !== null) {
-		const content = readStringParam({
-			params: node.params.params,
-			key: "content",
-			fallback: "Default text",
-		});
 		const totalChars = countTextChars({ content });
 		const visibleChars = Math.floor(visibleRatio * totalChars);
 		if (visibleChars <= 0) {
@@ -524,6 +540,7 @@ function resolveTextNode({
 			width: context.renderer.width,
 			height: context.renderer.height,
 		}),
+		charStateAt: charStateAt ?? undefined,
 		measuredText: measureTextElement({
 			element: elementForMeasure,
 			canvasHeight: node.params.canvasHeight,
@@ -587,12 +604,13 @@ async function resolveBackdropSource({
 	requestId: symbol;
 }): Promise<BackdropSource | null> {
 	if (node.params.mediaType === "video") {
-		const sourceTimeTicks =
-			node.params.trimStart +
-			getSourceTimeAtClipTime({
-				clipTime,
-				retime: node.params.retime,
-			});
+		const sourceTimeTicks = node.params.freeze
+			? node.params.trimStart
+			: node.params.trimStart +
+				getSourceTimeAtClipTime({
+					clipTime,
+					retime: node.params.retime,
+				});
 		const frame = await videoCache.getFrameAt({
 			mediaId: node.params.mediaId,
 			file: node.params.file,

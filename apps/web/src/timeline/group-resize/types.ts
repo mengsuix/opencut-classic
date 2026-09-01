@@ -15,6 +15,9 @@ export interface GroupResizeMember extends ElementRef {
 	trimEnd: MediaTime;
 	sourceDuration?: MediaTime;
 	retime?: RetimeConfig;
+	/** Frozen frames hold a single source frame: trims never move and the
+	 * source extent does not cap resizing. */
+	freeze?: boolean;
 	leftNeighborBound: MediaTime | null;
 	rightNeighborBound: MediaTime | null;
 	rightFollowers: GroupResizeFollower[];

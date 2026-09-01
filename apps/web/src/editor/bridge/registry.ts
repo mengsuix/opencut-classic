@@ -582,6 +582,31 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		}),
 	},
 
+	"timeline.freeze_frame": {
+		description:
+			"Freeze a video at a point in time: splits the element, inserts a frozen still segment of `duration` seconds (default 3) holding the frame at `time` (seconds, default: current playhead), and ripples the remainder right. Frozen segments are muted and can be extended by trimming.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			time: "seconds? (default: playhead)",
+			duration: "seconds? (default: 3)",
+		},
+		run: ({ editor, args }) => {
+			editor.timeline.freezeFrame({
+				trackId: requireString(args.trackId, "trackId"),
+				elementId: requireString(args.elementId, "elementId"),
+				time:
+					typeof args.time === "number"
+						? toTicks(args.time)
+						: editor.playback.getCurrentTime(),
+				...(typeof args.duration === "number"
+					? { duration: toTicks(args.duration) }
+					: {}),
+			});
+			return { frozen: true };
+		},
+	},
+
 	"timeline.toggle_muted": {
 		description: "Toggle mute on audio-capable elements.",
 		args: {

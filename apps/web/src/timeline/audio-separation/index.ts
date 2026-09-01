@@ -66,6 +66,11 @@ export function doesElementHaveEnabledAudio({
 		return true;
 	}
 
+	// Frozen frames hold a still image — no source audio plays.
+	if (element.freeze === true) {
+		return false;
+	}
+
 	return (
 		!!mediaAsset &&
 		mediaAsset.hasAudio !== false &&

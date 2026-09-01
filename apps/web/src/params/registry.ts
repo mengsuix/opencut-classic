@@ -835,6 +835,18 @@ const textElementParams: ElementParamDefinition[] = [
 					return t("properties.animInTypewriter");
 				},
 			},
+			{
+				value: "fade-chars",
+				get label() {
+					return t("properties.animInFadeChars");
+				},
+			},
+			{
+				value: "pop-chars",
+				get label() {
+					return t("properties.animInPopChars");
+				},
+			},
 		],
 	},
 	{
@@ -880,6 +892,18 @@ const textElementParams: ElementParamDefinition[] = [
 				value: "typewriter",
 				get label() {
 					return t("properties.animOutTypewriter");
+				},
+			},
+			{
+				value: "fade-chars",
+				get label() {
+					return t("properties.animOutFadeChars");
+				},
+			},
+			{
+				value: "pop-chars",
+				get label() {
+					return t("properties.animOutPopChars");
 				},
 			},
 		],

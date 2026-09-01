@@ -3,6 +3,7 @@ import type { TextElement } from "@/timeline";
 import type { EffectPass } from "@/effects/types";
 import type { BlendMode, Transform } from "@/rendering";
 import { drawMeasuredTextLayout } from "@/text/primitives";
+import type { TextCharRenderState } from "@/text/primitives";
 import type { MeasuredTextElement } from "@/text/measure-element";
 import type { ResolvedTextStyle } from "@/text/style";
 
@@ -22,6 +23,7 @@ export interface ResolvedTextNodeState {
 	backgroundColor: string;
 	textStyle: ResolvedTextStyle;
 	effectPasses: EffectPass[][];
+	charStateAt?: (index: number) => TextCharRenderState;
 	measuredText: MeasuredTextElement;
 }
 
@@ -60,6 +62,7 @@ export function renderTextToContext({
 		shadow: resolved.textStyle.shadow,
 		gradient: resolved.textStyle.gradient,
 		textBaseline: baseline,
+		charStateAt: resolved.charStateAt,
 	});
 
 	ctx.restore();

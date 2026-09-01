@@ -138,6 +138,7 @@ export function buildResizeMembers({
 				trimEnd: element.trimEnd,
 				sourceDuration: element.sourceDuration,
 				retime: isRetimableElement(element) ? element.retime : undefined,
+				freeze: element.type === "video" ? element.freeze : undefined,
 				leftNeighborBound,
 				rightNeighborBound,
 				rightFollowers,

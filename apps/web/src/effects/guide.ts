@@ -7,7 +7,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 
 ## 原则
 1. 先用 effects.list 查内置特效，有就直接 effects.add，不要组合。
-2. 内置没有时，用下面的配方组合实现；组合也做不到的（如外部 .cube LUT 导入、无绿幕人像抠像、逐字符动画、运动跟踪），明确告诉用户做不到，不要硬凑。
+2. 内置没有时，用下面的配方组合实现；组合也做不到的（如外部 .cube LUT 导入、无绿幕人像抠像、运动跟踪），明确告诉用户做不到，不要硬凑。
 3. 所有特效参数都能打关键帧（effects.upsert_keyframe），"参数随时间变化"类效果优先用关键帧。蒙版的数值参数同样可打关键帧：用 keyframes.upsert，propertyPath 为 masks.<maskId>.params.<参数名>（如 masks.xxx.params.centerX）。
 4. 循环类效果（呼吸/闪烁/抖动等）只需打一个周期的关键帧，然后 keyframes.set_loop 开启循环，关键帧通道会在元素存续期内重复播放；注意首尾关键帧值要相等才能无缝衔接。
 
@@ -41,8 +41,8 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 阴影：shadow.enabled=true, shadow.color, shadow.blur, shadow.offsetX, shadow.offsetY
 - 渐变填充：gradient.enabled=true, gradient.color(第二色), gradient.angle
 - 背景框：background.enabled=true, background.color, background.cornerRadius, background.paddingX/Y
-- 入场动画：animIn.type = fade|pop|typewriter, animIn.duration（秒）
-- 出场动画：animOut.type = fade|pop|typewriter, animOut.duration（秒），作用于元素结束前
+- 入场动画：animIn.type = fade|pop|typewriter|fade-chars|pop-chars, animIn.duration（秒）；fade-chars/pop-chars 为逐字错帧动画
+- 出场动画：animOut.type = fade|pop|typewriter|fade-chars|pop-chars, animOut.duration（秒），作用于元素结束前
 - 循环动画：animLoop.type = pulse|blink|shake, animLoop.duration（秒，循环周期），全程生效
 - 花字模板：text.list_presets 查看，add_text 传 preset 或 text.apply_preset 应用到已有文字
 
@@ -50,6 +50,11 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 入场：animIn.type = fade|pop|zoom|slide-up|slide-down|slide-left|slide-right, animIn.duration（秒）
 - 出场：animOut.type 同上, animOut.duration（秒）
 - slide 从画布外滑入/滑出；zoom 入场=放大淡入、出场=放大淡出；需要其他运动形式再用关键帧手写
+
+## 变速与冻结（video 元素）
+- 恒定变速：timeline.retime_element，rate 0.01~5，maintainPitch 可选。
+- 速度曲线（坡度变速/时间重映射）：keyframes.upsert，propertyPath = retime.sourceTime，值为"源时间偏移（秒）"、时间为元素本地时间（秒）。曲线单调增=变速，斜率即速度倍率；值递减=倒放；平台段=定格。默认 bezier 平滑。音频会跟随曲线变速（音高随速度变化）。分割元素时曲线自动正确拆分。删除全部关键帧即恢复恒定 rate。
+- 冻结帧：timeline.freeze_frame（默认在播放头位置冻结 3 秒，可传 time/duration），冻结段静音，可拖右缘延长。
 
 ## 音频淡入淡出（audio/video 元素 params，用 timeline.update_elements 设置）
 - fadeIn / fadeOut（秒，默认 0 关闭）：线性增益斜坡，播放、波形与导出自动生效

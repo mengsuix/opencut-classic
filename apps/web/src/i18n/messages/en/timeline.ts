@@ -14,7 +14,7 @@ export const timeline = {
 	"timeline.split": "Split",
 	"timeline.duplicateElement": "Duplicate element",
 	"timeline.duplicate": "Duplicate",
-	"timeline.freezeFrameComingSoon": "Freeze frame (coming soon)",
+	"timeline.freezeFrame": "Freeze Frame",
 	"timeline.deleteElement": "Delete element",
 	"timeline.deleteElements": "Delete {count} elements",
 	"timeline.deleteText": "Delete text",
