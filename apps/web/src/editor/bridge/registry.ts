@@ -1078,6 +1078,21 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		}),
 	},
 
+	"history.jumpTo": {
+		description:
+			"Jump to a specific history position by undoing/redoing as needed. targetLength = number of commands that remain applied: 0 undoes everything, history.length keeps all applied. To undo the entry at index i from history.list, jump to targetLength = i. Always call history.list first to choose the position.",
+		args: { targetLength: "number" },
+		run: ({ editor, args }) => {
+			editor.command.jumpTo({
+				targetLength: requireNumber(args.targetLength, "targetLength"),
+			});
+			return {
+				appliedCount: editor.command.getHistory().length,
+				redoCount: editor.command.getRedoStack().length,
+			};
+		},
+	},
+
 	"scenes.list": {
 		description: "List scenes and the active scene id.",
 		run: ({ editor }) => ({
