@@ -22,12 +22,12 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 呼吸/脉冲：transform.scaleX/scaleY 关键帧一个周期（1 → 1.05 → 1），再 keyframes.set_loop 循环。文字元素可直接用 animLoop.type=pulse/blink/shake，无需关键帧。
 - 暗角：effects.add(vignette, amount 0.4~0.7, softness 0.4~0.8)。
 - 残影/回声：复制 2~3 份，startTime 依次后移 0.05~0.1s，opacity 递减（0.5/0.3）。
-- 卡拉OK变色字幕：duplicate 文字改成高亮色 → masks.add(rectangle) 盖副本 → keyframes.upsert 驱动蒙版中心从左扫到右（propertyPath: masks.<maskId>.params.centerX，值为 0~1 小数，0=左缘 1=右缘）。
+- 卡拉OK变色字幕：duplicate 文字改成高亮色 → masks.add(rectangle) 盖副本 → keyframes.upsert 驱动蒙版中心从左扫到右（propertyPath: masks.<maskId>.params.centerX；蒙版坐标以元素中心为原点，-0.5=左缘、0=中心、+0.5=右缘，扫动即 -0.5 → +0.5）。
 - 推近冲击（zoom punch）：transform.scale 从 1.6 到 1 打关键帧，缓动选 pop。
 - 故障风：channel-shift(offsetX 6~15) + distort-wave(小幅度) + 可选 pixelate 分块。
 - 老电影：color-adjust(saturation -0.6, temperature 0.3, contrast 0.15) + noise(0.2) + opacity 关键帧轻微闪烁。
 - 老电视信号干扰：noise + distort-wave(frequency 拉满, amplitude 1~2)。注意这只是行位移+颗粒，不是真正的逐行扫描线（扫描线需要逐行明暗调制，属逐像素算法，组合做不到，别硬凑）。
-- 局部特效：特效加在副本元素上，再用 masks 限定区域（蒙版羽化过渡）。
+- 局部特效（局部马赛克/模糊等）：duplicate 原片段叠到上层 → 副本 effects.add → 副本 masks.add(rectangle) 圈出区域，蒙版外自动透出下层原画面。定位蒙版优先用 masks.set_canvas_rect：传 left/top/right/bottom（画布 0~1 比例、左上原点，与预览截图目测一致），内部自动换算；元素须处于播放头可见帧（先 playback.seek 到目标帧再截图估算）。手动写蒙版参数时注意坐标系：centerX/centerY 是相对元素中心的偏移（0=中心，+0.5=右/下缘，-0.5=左/上缘），width/height 是相对元素宽高的比例（1=铺满）。视频元素默认铺满画布，此时元素坐标≈画布坐标。
 - 色彩罩染：顶层 graphic 纯色矩形（不透明盖住画面），blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
 
 ## 转场（video/image 元素 params，用 timeline.update_elements 设置）

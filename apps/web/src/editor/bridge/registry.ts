@@ -8,6 +8,7 @@ import { effectsRegistry } from "@/effects";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
 import type { Mask, MaskType } from "@/masks/types";
 import type { FreeformPathPoint } from "@/masks/freeform/path";
+import { getVisibleElementsWithBounds } from "@/preview/element-bounds";
 import { generateUUID } from "@/utils/id";
 import type { AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
@@ -1591,7 +1592,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"masks.list": {
 		description:
-			"List all mask types (rectangle, ellipse, star, freeform, ...) with their parameter definitions.",
+			"List all mask types (rectangle, ellipse, star, freeform, ...) with their parameter definitions. Box-like masks use element-center-origin coords: centerX/centerY are offsets from the element center in element-size units (0=center, +0.5=right/bottom edge, -0.5=left/top edge); width/height are fractions of element size (1=full).",
 		run: () => ({
 			masks: getMaskDefinitionsForMenu().map((definition) => ({
 				type: definition.type,
@@ -1603,7 +1604,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"masks.add": {
 		description:
-			"Add a mask with default params to an element. Returns the new maskId. Use masks.list to discover maskType values.",
+			"Add a mask with default params to an element (shape masks start as a centered box covering ~60% of the element's short side). Returns the new maskId. Use masks.list to discover maskType values, then masks.set_canvas_rect to place the mask over a canvas region.",
 		args: { trackId: "string", elementId: "string", maskType: "string" },
 		run: ({ editor, args }) => {
 			const trackId = requireString(args.trackId, "trackId");
@@ -1652,7 +1653,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"masks.update_params": {
-		description: "Patch a mask's params (e.g. feather, centerX, centerY).",
+		description:
+			"Patch a mask's params. Box-like masks (rectangle/ellipse/...): centerX/centerY are offsets from the element CENTER in element-size units (0=center, +0.5=right/bottom edge, -0.5=left/top edge), width/height are fractions of element size (1=full). To position a mask from a preview screenshot, prefer masks.set_canvas_rect (takes a canvas-fraction rect with top-left origin) instead of raw params.",
 		args: {
 			trackId: "string",
 			elementId: "string",
@@ -1691,6 +1693,110 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				],
 			});
 			return { updated: true };
+		},
+	},
+
+	"masks.set_canvas_rect": {
+		description:
+			"Position a box-like mask (rectangle/ellipse/heart/diamond/star/cinematic-bars) over a canvas region. rect = { left, top, right, bottom } as canvas fractions (0~1) with top-left origin — the same mental model as estimating a region from a preview screenshot. Converts to the mask's center-origin params internally (handles element scale/offset/rotation). The element must be visible at the playhead — seek onto it first (playback.seek).",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			maskId: "string",
+			rect: "{ left, top, right, bottom } — canvas fractions, top-left origin",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const maskId = requireString(args.maskId, "maskId");
+			const rect = args.rect as Record<string, unknown> | undefined;
+			if (!rect || typeof rect !== "object") {
+				throw new Error("Missing or invalid argument: rect");
+			}
+			const left = requireNumber(rect.left, "rect.left");
+			const top = requireNumber(rect.top, "rect.top");
+			const right = requireNumber(rect.right, "rect.right");
+			const bottom = requireNumber(rect.bottom, "rect.bottom");
+			if (right <= left || bottom <= top) {
+				throw new Error("rect must satisfy right > left and bottom > top");
+			}
+
+			const masks = getElementMasks(editor, trackId, elementId);
+			const mask = masks.find((item) => item.id === maskId);
+			if (!mask) {
+				throw new Error(`Mask not found: ${maskId}`);
+			}
+			const maskParams = mask.params as unknown as Record<string, unknown>;
+			if (
+				typeof maskParams.centerX !== "number" ||
+				typeof maskParams.width !== "number"
+			) {
+				throw new Error(
+					`Mask type "${mask.type}" has no box params (centerX/centerY/width/height). Use masks.update_params or masks.freeform_set_path instead.`,
+				);
+			}
+
+			const scene = editor.scenes.getActiveSceneOrNull();
+			const project = editor.project.getActiveOrNull();
+			if (!scene || !project) {
+				throw new Error("No active scene or project");
+			}
+			const canvasSize = project.settings.canvasSize;
+			const withBounds = getVisibleElementsWithBounds({
+				tracks: scene.tracks,
+				currentTime: editor.playback.getCurrentTime(),
+				canvasSize,
+				mediaAssets: editor.media.getAssets(),
+			});
+			const target = withBounds.find(
+				(item) => item.trackId === trackId && item.elementId === elementId,
+			);
+			if (!target) {
+				throw new Error(
+					`Element ${elementId} is not visible at the playhead. Seek onto the element first (playback.seek), then retry.`,
+				);
+			}
+			const { bounds } = target;
+			const elementWidth = Math.abs(bounds.width);
+			const elementHeight = Math.abs(bounds.height);
+			if (elementWidth === 0 || elementHeight === 0) {
+				throw new Error("Element has zero size on canvas");
+			}
+
+			const rectCenterX = ((left + right) / 2) * canvasSize.width;
+			const rectCenterY = ((top + bottom) / 2) * canvasSize.height;
+			// Undo the element's rotation so the offset lands in the mask's
+			// element-local space; the mask's own rotation then cancels the
+			// element's so the rect stays axis-aligned on canvas.
+			const rotRad = (bounds.rotation * Math.PI) / 180;
+			const dx = rectCenterX - bounds.cx;
+			const dy = rectCenterY - bounds.cy;
+			const localDx = dx * Math.cos(rotRad) + dy * Math.sin(rotRad);
+			const localDy = -dx * Math.sin(rotRad) + dy * Math.cos(rotRad);
+
+			const nextParams = {
+				centerX: localDx / elementWidth,
+				centerY: localDy / elementHeight,
+				width: ((right - left) * canvasSize.width) / elementWidth,
+				height: ((bottom - top) * canvasSize.height) / elementHeight,
+				rotation: ((-bounds.rotation % 360) + 360) % 360,
+			};
+
+			const nextMasks = masks.map((item) =>
+				item.id === maskId
+					? { ...item, params: { ...item.params, ...nextParams } }
+					: item,
+			);
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId,
+						elementId,
+						patch: { masks: nextMasks } as never,
+					},
+				],
+			});
+			return { updated: true, params: nextParams };
 		},
 	},
 
