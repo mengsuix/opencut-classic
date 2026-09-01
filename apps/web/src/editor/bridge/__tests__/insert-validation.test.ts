@@ -14,7 +14,28 @@ mock.module("@/wasm", () => ({
 	minMediaTime: ({ a, b }: { a: number; b: number }) => Math.min(a, b),
 }));
 
+const fakeEditor = {
+	scenes: {
+		getActiveScene: () => ({
+			tracks: {
+				overlay: [],
+				main: { id: "main", type: "video", elements: [] },
+				audio: [],
+			},
+		}),
+	},
+	timeline: { updateTracks: mock() },
+	media: { getAssets: () => [] },
+	project: { getActiveOrNull: () => null, updateSettings: mock() },
+};
+
+mock.module("@/core", () => ({
+	EditorCore: { getInstance: () => fakeEditor },
+}));
+
 const { normalizeGraphicElementInput } = await import("../insert-validation");
+const { InsertElementCommand } =
+	await import("@/commands/timeline/element/insert-element");
 
 describe("normalizeGraphicElementInput", () => {
 	test("rejects a graphic without definitionId", () => {
@@ -46,5 +67,25 @@ describe("normalizeGraphicElementInput", () => {
 			"transform.positionX": 0,
 			"transform.positionY": 0,
 		});
+	});
+});
+
+describe("InsertElementCommand", () => {
+	test("rejects a stale explicit track ID without mutating the timeline", () => {
+		const command = new InsertElementCommand({
+			element: {
+				type: "text",
+				name: "Text",
+				startTime: 0,
+				duration: 1,
+				trimStart: 0,
+				trimEnd: 0,
+				params: { content: "hello" },
+			} as never,
+			placement: { mode: "explicit", trackId: "stale-track" },
+		});
+
+		expect(() => command.execute()).toThrow("Track not found: stale-track");
+		expect(fakeEditor.timeline.updateTracks).not.toHaveBeenCalled();
 	});
 });

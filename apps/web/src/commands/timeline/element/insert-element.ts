@@ -254,8 +254,7 @@ export class InsertElementCommand extends Command {
 						: (tracks.overlay.find((track) => track.id === placement.trackId) ??
 							tracks.audio.find((track) => track.id === placement.trackId));
 				if (!targetTrack) {
-					console.error("Track not found:", placement.trackId);
-					return null;
+					throw new Error(`Track not found: ${placement.trackId}`);
 				}
 
 				const validation = validateElementTrackCompatibility({
