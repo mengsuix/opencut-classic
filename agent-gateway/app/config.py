@@ -33,7 +33,7 @@ DATABASE_URL = os.environ.get(
 _PROVIDER_CONFIGS = {
     "deepseek": {
         "base_url": "https://api.deepseek.com/anthropic",
-        "api_key_env": "DEEPSEEK_KEY",
+        "api_key_env": "DEEPSEEK_API_KEY",
         "model": "deepseek-v4-flash-vision-exp",
         "subagent_model": "deepseek-v4-flash",
     },
