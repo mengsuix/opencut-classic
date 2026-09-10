@@ -35,6 +35,11 @@ function clampZoom({
 	maxZoom: number;
 }): number {
 	const safeMax = Math.max(minZoom, maxZoom);
+	// NaN compares false against both bounds, so it survives Math.min/Math.max
+	// untouched and would then poison every time→pixel conversion downstream
+	// (`mediaTime()` throws on a NaN tick count). Corrupted persisted view state
+	// and garbage wheel deltas both land here, so fall back to the fit zoom.
+	if (!Number.isFinite(zoomLevel)) return minZoom;
 	return Math.max(minZoom, Math.min(safeMax, zoomLevel));
 }
 
@@ -102,6 +107,9 @@ export class ZoomController {
 			typeof zoomLevelOrUpdater === "function"
 				? zoomLevelOrUpdater(this.zoomLevelValue)
 				: zoomLevelOrUpdater;
+		// Unusable input keeps the current zoom instead of snapping to the minimum.
+		if (!Number.isFinite(nextZoomRaw)) return;
+
 		const nextZoom = clampZoom({
 			zoomLevel: nextZoomRaw,
 			minZoom: this.config.minZoom,
