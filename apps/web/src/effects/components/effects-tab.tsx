@@ -57,8 +57,11 @@ export function StandaloneEffectTab({
 
 	return (
 		<div className="flex flex-col h-full">
-			<div className="border-b px-3.5 h-11 shrink-0 flex items-center">
+			<div className="border-b px-3.5 h-11 shrink-0 flex items-center justify-between gap-2">
 				<SectionTitle>{t("properties.effect")}</SectionTitle>
+				<span className="text-muted-foreground shrink-0 text-xs">
+					{t("properties.effectScopeScene")}
+				</span>
 			</div>
 			<EffectSection
 				effect={effect}
@@ -145,8 +148,11 @@ export function ClipEffectsTab({
 
 	return (
 		<div className="flex flex-col h-full">
-			<div className="border-b px-3.5 h-11 shrink-0 flex items-center">
+			<div className="border-b px-3.5 h-11 shrink-0 flex items-center justify-between gap-2">
 				<SectionTitle>{t("properties.tabEffects")}</SectionTitle>
+				<span className="text-muted-foreground shrink-0 text-xs">
+					{t("properties.effectScopeClip")}
+				</span>
 			</div>
 			{effects.length === 0 ? (
 				<EmptyView />

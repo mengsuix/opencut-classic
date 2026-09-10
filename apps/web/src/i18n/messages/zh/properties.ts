@@ -147,6 +147,8 @@ export const properties = {
 	"properties.noMasks": "暂无蒙版",
 	"properties.noMasksHint": "添加蒙版以隐藏或显示此图层的部分内容。",
 	"properties.effect": "特效",
+	"properties.effectScopeScene": "作用于下方画面",
+	"properties.effectScopeClip": "作用于本素材",
 	"properties.effectBlur": "模糊",
 	"properties.effectIntensity": "强度",
 	"properties.effectColorAdjust": "调色",

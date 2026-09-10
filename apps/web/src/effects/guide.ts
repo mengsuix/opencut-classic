@@ -11,6 +11,11 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 3. 所有特效参数都能打关键帧（effects.upsert_keyframe），"参数随时间变化"类效果优先用关键帧。蒙版的数值参数同样可打关键帧：用 keyframes.upsert，propertyPath 为 masks.<maskId>.params.<参数名>（如 masks.xxx.params.centerX）。
 4. 循环类效果（呼吸/闪烁/抖动等）只需打一个周期的关键帧，然后 keyframes.set_loop 开启循环，关键帧通道会在元素存续期内重复播放；注意首尾关键帧值要相等才能无缝衔接。
 
+## 特效形态：挂素材 vs 特效轨（先选对形态）
+- 效果属于"这个素材"（抠像/锐化/调色）→ effects.add：跟随素材，只作用于该素材，素材移动/裁剪时自动跟随。
+- 效果属于"这一段时间的画面"（光效/故障/模糊/老电影/暗角）→ effects.add_layer：独立特效轨，作用于时间窗口内其下方已合成的整幅画面，不跟随素材（素材挪动后需手动对齐）。
+- 判断口诀：效果是"这个素材自带的"就挂载；是"覆盖在这段画面上的氛围"就上特效轨。
+
 ## 内置特效速查
 - blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / swirl 漩涡扭曲(angle/radius/centerX/centerY) / noise 噪点 / vignette 暗角
 - filter 滤镜（预设风格化调色）：style = film 胶片|teal-orange 青橙|faded 褪色|bw 黑白|warm 暖阳|cool 冷调，intensity 0~1 控制混合强度；风格化需求先用它，别再拿 color-adjust 硬凑

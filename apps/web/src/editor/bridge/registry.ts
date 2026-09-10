@@ -1,7 +1,11 @@
 import type { EditorCore } from "@/core";
 import { mediaTimeFromSeconds, mediaTimeToSeconds, type MediaTime } from "@/wasm";
 import { DEFAULTS } from "@/timeline/defaults";
-import type { CreateTimelineElement, TrackType } from "@/timeline";
+import {
+	buildEffectElement,
+	type CreateTimelineElement,
+	type TrackType,
+} from "@/timeline";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { effectsRegistry } from "@/effects";
@@ -1491,7 +1495,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"effects.add": {
 		description:
-			"Add an effect to a visual element with default params. Returns the new effectId. Use effects.list to discover effectType values.",
+			"Add an effect to a visual element with default params. Returns the new effectId. Use effects.list to discover effectType values. The effect follows its clip; for a full-screen look covering a span of the timeline use effects.add_layer instead.",
 		args: { trackId: "string", elementId: "string", effectType: "string" },
 		run: ({ editor, args }) => ({
 			effectId: editor.timeline.addClipEffect({
@@ -1500,6 +1504,33 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				effectType: requireString(args.effectType, "effectType"),
 			}),
 		}),
+	},
+
+	"effects.add_layer": {
+		description:
+			"Add a standalone scene-effect layer: a full-screen look applied to the composited picture (all layers below it) during its time window, instead of following a single clip. Use this for atmosphere covering a span of the timeline (glow, glitch, blur, old film, vignette). For per-clip effects that move with one element, use effects.add. Returns the selected element ref.",
+		args: {
+			effectType: "string",
+			startTime: "number (seconds)",
+			duration: "number? (seconds, default 5)",
+		},
+		run: ({ editor, args }) => {
+			const effectType = requireString(args.effectType, "effectType");
+			if (!effectsRegistry.has(effectType)) {
+				throw new Error(`Unknown effectType: ${effectType}`);
+			}
+			const element = buildEffectElement({
+				effectType,
+				startTime: toTicks(requireNumber(args.startTime, "startTime")),
+				...(typeof args.duration === "number"
+					? { duration: toTicks(args.duration) }
+					: {}),
+			});
+			return insertAndSelect(editor, element, {
+				mode: "auto",
+				trackType: "effect",
+			});
+		},
 	},
 
 	"effects.remove": {

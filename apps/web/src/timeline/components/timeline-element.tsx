@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import { useEditor } from "@/editor/use-editor";
+import { buildEffectParamSummary, effectsRegistry } from "@/effects";
 import { useAssetsPanelStore } from "@/components/editor/panels/assets/assets-panel-store";
 import { AudioWaveform, WAVEFORM_GAIN_SAMPLE_COUNT } from "./audio-waveform";
 import { AudioVolumeLine } from "./audio-volume-line";
@@ -560,10 +561,10 @@ function ElementInner({
 	elementWidthPx: number;
 	elementLeftPx: number;
 }) {
+	const t = useT();
 	const visibleElement = displayElement ?? element;
 	const isReducedOpacity =
-		(canElementBeHidden(visibleElement) && visibleElement.hidden) ||
-		isDropTarget;
+		canElementBeHidden(visibleElement) && visibleElement.hidden;
 	return (
 		<div
 			className="absolute top-0 bottom-0"
@@ -579,7 +580,11 @@ function ElementInner({
 						? {
 								boxShadow: `0 0 0 ${ELEMENT_RING_WIDTH_PX}px var(--primary)`,
 							}
-						: undefined
+						: isDropTarget
+							? {
+									boxShadow: `0 0 0 ${ELEMENT_RING_WIDTH_PX * 2}px var(--primary)`,
+								}
+							: undefined
 				}
 			>
 				<div
@@ -619,6 +624,13 @@ function ElementInner({
 						{expandedContent}
 					</button>
 				</div>
+				{isDropTarget && (
+					<div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+						<span className="bg-primary text-primary-foreground rounded-b-sm px-1.5 py-0.5 text-[10px] leading-none">
+							{t("properties.effectScopeClip")}
+						</span>
+					</div>
+				)}
 			</div>
 
 			{isSelected && (
@@ -947,6 +959,13 @@ function EffectElementContent({
 }: {
 	element: Extract<TimelineElementType, { type: "effect" }>;
 }) {
+	const definition = effectsRegistry.has(element.effectType)
+		? effectsRegistry.get(element.effectType)
+		: null;
+	const summary = definition
+		? buildEffectParamSummary({ definition, params: element.params })
+		: null;
+
 	return (
 		<div className="flex size-full items-center justify-start gap-1 pl-2">
 			<HugeiconsIcon
@@ -954,6 +973,9 @@ function EffectElementContent({
 				className="size-4 shrink-0 text-white"
 			/>
 			<span className="truncate text-xs text-white">{element.name}</span>
+			{summary !== null && (
+				<span className="shrink-0 text-xs text-white/70">{summary}</span>
+			)}
 		</div>
 	);
 }

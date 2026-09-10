@@ -47,3 +47,25 @@ export function buildDefaultEffectInstance({
 		enabled: true,
 	};
 }
+
+/**
+ * Compact one-line summary of an effect instance for dense UI such as
+ * timeline clips (e.g. `15` for blur intensity). Uses the first numeric
+ * parameter, which is the primary control for most effects (intensity,
+ * amount, size...). Returns null when there is nothing worth showing.
+ */
+export function buildEffectParamSummary({
+	definition,
+	params,
+}: {
+	definition: EffectDefinition;
+	params: ParamValues;
+}): string | null {
+	const numberParam = definition.params.find(
+		(param) => param.type === "number",
+	);
+	if (!numberParam) return null;
+	const value = params[numberParam.key];
+	if (typeof value !== "number" || Number.isNaN(value)) return null;
+	return String(Math.round(value * 100) / 100);
+}

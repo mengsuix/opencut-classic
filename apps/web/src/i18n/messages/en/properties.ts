@@ -148,6 +148,8 @@ export const properties = {
 	"properties.noMasks": "No masks",
 	"properties.noMasksHint": "Add a mask to hide or reveal parts of this layer.",
 	"properties.effect": "Effect",
+	"properties.effectScopeScene": "Applies to layers below",
+	"properties.effectScopeClip": "Applies to this clip",
 	"properties.effectBlur": "Blur",
 	"properties.effectIntensity": "Intensity",
 	"properties.effectColorAdjust": "Color Adjust",
