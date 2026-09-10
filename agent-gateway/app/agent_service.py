@@ -21,6 +21,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    StreamEvent as SDKStreamEvent,
     TextBlock,
     ThinkingBlock,
     ToolUseBlock,
@@ -81,6 +82,11 @@ class _SessionState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_activity: float = 0.0
     interrupted: bool = False
+    # SDK 消息流由常驻消息泵消费后写入此队列，轮次从队列取消息。
+    # 好处：客户端断流后消息泵继续消费，残留消息在下一轮开始前被丢弃，
+    # 不会像直接迭代 receive_response() 那样被下一轮误当成自己的结果。
+    messages: asyncio.Queue = field(default_factory=asyncio.Queue)
+    pump_task: asyncio.Task | None = None
 
     def __post_init__(self):
         if self.last_activity == 0.0:
@@ -146,6 +152,9 @@ class AgentService:
             stderr=lambda line: logger.error(f"[Agent STDERR] {line}"),
             # 工具结果（截图/大型工程状态）可能超过默认 1MB 的 JSON 消息缓冲
             max_buffer_size=8 * 1024 * 1024,
+            # 增量流式：CLI 推送 stream_event（thinking/text delta），
+            # 前端可实时显示"思考中"与逐字输出，而不是等整条消息生成完
+            include_partial_messages=True,
         )
         client = ClaudeSDKClient(options=options)
 
@@ -168,6 +177,9 @@ class AgentService:
             self._sessions.pop(session_id, None)
             logger.error(f"[Agent] 创建 session 未知异常: {type(e).__name__}: {e}")
             raise
+
+        # 启动常驻消息泵：唯一消费者，断流后仍持续消费 SDK 消息流
+        state.pump_task = asyncio.create_task(self._message_pump(session_id))
 
         logger.info(
             f"[Agent] Session 已创建: {session_id[:8]}, project={project_id}, resume={resume}"
@@ -219,16 +231,64 @@ class AgentService:
         async with state.lock:
             interrupted = False
             state.interrupted = False
+            # 增量流式状态：saw_delta 标记本轮是否收到过增量事件
+            # （用于跳过完整消息里的文本块，避免与增量重复输出）
+            saw_delta = False
+            thinking_status_sent = False
             try:
+                # 丢弃上一轮残留（断流后消息泵仍在消费，队列里可能留有旧消息）
+                dropped = await self._discard_pending_messages(state)
+                if dropped:
+                    logger.info(f"[Agent] [{session_id[:8]}] 丢弃上一轮残留消息: {dropped} 条")
+
                 await state.client.query(message)
 
                 cost_usd = 0.0
-                async for msg in state.client.receive_response():
-                    if isinstance(msg, AssistantMessage):
+                while True:
+                    msg = await state.messages.get()
+                    if msg is None:
+                        # 消息泵已退出（CLI 进程结束/连接断开）
+                        logger.warning(
+                            f"[Agent] [{session_id[:8]}] 消息泵已退出，本轮提前结束"
+                        )
+                        state.is_active = False
+                        yield StreamEvent(
+                            event="error",
+                            data={"error": "Agent 连接已断开，请重试", "recoverable": True},
+                        )
+                        break
+                    if isinstance(msg, SDKStreamEvent):
+                        event = msg.event or {}
+                        event_type = event.get("type")
+                        if event_type == "content_block_start":
+                            block = event.get("content_block") or {}
+                            if block.get("type") == "thinking":
+                                thinking_status_sent = False
+                        elif event_type == "content_block_delta":
+                            delta = event.get("delta") or {}
+                            delta_type = delta.get("type")
+                            if delta_type == "text_delta":
+                                text = delta.get("text") or ""
+                                if text:
+                                    saw_delta = True
+                                    yield StreamEvent(event="text", data={"text": text})
+                            elif delta_type == "thinking_delta":
+                                saw_delta = True
+                                # 每个 thinking 块只推一次状态事件，避免刷屏
+                                if not thinking_status_sent:
+                                    thinking_status_sent = True
+                                    yield StreamEvent(
+                                        event="thinking", data={"thinking": "思考中"}
+                                    )
+                    elif isinstance(msg, AssistantMessage):
                         for block in msg.content:
                             if isinstance(block, TextBlock):
+                                if saw_delta:
+                                    continue  # 已按增量推送过，跳过完整消息避免重复
                                 yield StreamEvent(event="text", data={"text": block.text})
                             elif isinstance(block, ThinkingBlock):
+                                if saw_delta:
+                                    continue
                                 yield StreamEvent(
                                     event="thinking",
                                     data={"thinking": block.thinking[:200]},
@@ -272,6 +332,7 @@ class AgentService:
                                     "recoverable": True,
                                 },
                             )
+                        break  # 本轮结束
 
                 state.turn_count += 1
                 state.total_cost_usd += cost_usd
@@ -310,9 +371,88 @@ class AgentService:
                 logger.error(f"[Agent] [{session_id[:8]}] 未知异常: {type(e).__name__}: {e}")
                 yield StreamEvent(event="error", data={"error": f"{type(e).__name__}: {e}"})
 
+    # ------------------------------------------------------------------
+    # 消息泵 / 残留清理（防止上一轮结果污染下一轮）
+    # ------------------------------------------------------------------
+
+    async def _message_pump(self, session_id: str) -> None:
+        """常驻消费 SDK 消息流并写入会话队列（每个 session 唯一的消费者）。
+
+        客户端断流后仍继续消费：本轮剩余消息会堆积在队列里，
+        由下一轮开始前的 _discard_pending_messages 统一丢弃。
+        """
+        state = self._sessions.get(session_id)
+        if not state or not state.client:
+            return
+        try:
+            async for msg in state.client.receive_messages():
+                await state.messages.put(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"[Agent] [{session_id[:8]}] 消息泵退出: {type(e).__name__}: {e}")
+        finally:
+            state.pump_task = None
+            try:
+                state.messages.put_nowait(None)  # 唤醒等待中的消费者
+            except Exception:
+                pass
+
+    async def _discard_pending_messages(self, state: _SessionState) -> int:
+        """丢弃上一轮残留消息。
+
+        - 队列为空：短暂探测后返回 0（正常无残留的快速路径）
+        - 有残留：丢弃到上一轮的 ResultMessage 为止，确保上一轮彻底结束；
+          上一轮迟迟不结束时主动 interrupt，避免新轮次被旧消息污染
+        """
+        dropped = 0
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 20.0
+        interrupted = False
+        while True:
+            if dropped == 0:
+                try:
+                    msg = await asyncio.wait_for(state.messages.get(), timeout=0.3)
+                except TimeoutError:
+                    return 0
+            else:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    logger.warning(
+                        f"[Agent] [{state.session_id[:8]}] 残留消息清理超时，可能有旧消息混入本轮"
+                    )
+                    return dropped
+                try:
+                    msg = await asyncio.wait_for(
+                        state.messages.get(), timeout=min(remaining, 1.0)
+                    )
+                except TimeoutError:
+                    # 上一轮迟迟不结束：主动打断一次（用户已发新消息，旧轮次已无人接收）
+                    if not interrupted and state.client:
+                        interrupted = True
+                        try:
+                            await state.client.interrupt()
+                        except Exception:
+                            pass
+                    continue
+            dropped += 1
+            if msg is None:
+                return dropped  # 消息泵已退出，无需继续等待
+            if isinstance(msg, ResultMessage):
+                return dropped
+
     async def close_session(self, session_id: str) -> None:
         state = self._sessions.pop(session_id, None)
-        if state and state.client:
+        if not state:
+            return
+        if state.pump_task:
+            state.pump_task.cancel()
+            try:
+                await state.pump_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            state.pump_task = None
+        if state.client:
             try:
                 await state.client.disconnect()
             except Exception as e:
@@ -344,7 +484,9 @@ class AgentService:
         idle = [
             sid
             for sid, state in self._sessions.items()
-            if state.is_active and now - state.last_activity >= max_idle_seconds
+            if state.is_active
+            and not state.lock.locked()  # 正在进行一轮对话，不能清理
+            and now - state.last_activity >= max_idle_seconds
         ]
         for sid in idle:
             logger.info(f"[Agent] 清理空闲 session: {sid[:8]}")

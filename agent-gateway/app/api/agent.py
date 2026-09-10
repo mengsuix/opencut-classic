@@ -145,33 +145,41 @@ async def send_message_stream(
     async def event_generator():
         reply_parts: list[str] = []
         user_timestamp = time.time()
-        async for event in agent_service.send_message_stream(session_id, req.message):
-            if event.event == "text" and "text" in event.data:
-                reply_parts.append(event.data["text"])
-            elif event.event == "result":
-                try:
-                    await db.execute(
-                        "INSERT INTO agent_messages (session_id, role, content, created_at) "
-                        "VALUES ($1, 'user', $2, $3)",
-                        session_id,
-                        req.message,
-                        user_timestamp,
-                    )
-                    await db.execute(
-                        "INSERT INTO agent_messages (session_id, role, content, created_at) "
-                        "VALUES ($1, 'assistant', $2, $3)",
-                        session_id,
-                        "".join(reply_parts),
-                        time.time(),
-                    )
-                    await db.execute(
-                        "UPDATE agent_sessions SET last_activity = $2 WHERE session_id = $1",
-                        session_id,
-                        time.time(),
-                    )
-                except Exception:
-                    pass
-            yield event.to_sse()
+        stream = agent_service.send_message_stream(session_id, req.message)
+        try:
+            async for event in stream:
+                if event.event == "text" and "text" in event.data:
+                    reply_parts.append(event.data["text"])
+                elif event.event == "result":
+                    try:
+                        await db.execute(
+                            "INSERT INTO agent_messages (session_id, role, content, created_at) "
+                            "VALUES ($1, 'user', $2, $3)",
+                            session_id,
+                            req.message,
+                            user_timestamp,
+                        )
+                        await db.execute(
+                            "INSERT INTO agent_messages (session_id, role, content, created_at) "
+                            "VALUES ($1, 'assistant', $2, $3)",
+                            session_id,
+                            "".join(reply_parts),
+                            time.time(),
+                        )
+                        await db.execute(
+                            "UPDATE agent_sessions SET last_activity = $2 WHERE session_id = $1",
+                            session_id,
+                            time.time(),
+                        )
+                    except Exception:
+                        pass
+                yield event.to_sse()
+        finally:
+            # 客户端断流时显式关闭生成器：确保会话锁释放并触发断流收尾（清理残留结果）
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_generator(),
