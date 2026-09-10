@@ -24,6 +24,8 @@ import {
 	usePreviewViewportState,
 } from "./preview-viewport";
 
+const MAX_RENDER_RETRIES = 3;
+
 function usePreviewSize() {
 	const canvasSize = useEditor(
 		(e) => e.project.getActive()?.settings.canvasSize,
@@ -144,6 +146,9 @@ function PreviewCanvas({
 	const activeRenderControllerRef = useRef<AbortController | null>(null);
 	const seekRevisionRef = useRef(0);
 	const renderedSeekRevisionRef = useRef(0);
+	const renderFailureRef = useRef<{ key: string; count: number } | null>(
+		null,
+	);
 	const renderRef = useRef<(() => void) | null>(null);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
@@ -213,6 +218,15 @@ function PreviewCanvas({
 			return;
 		}
 
+		// A failed render used to re-queue itself from `finally`, so a
+		// deterministic failure (e.g. a rejected frame descriptor) spun the
+		// main thread forever. Cap retries per frame instead.
+		const renderKey = `${seekRevision}:${frame}`;
+		const failure = renderFailureRef.current;
+		if (failure?.key === renderKey && failure.count >= MAX_RENDER_RETRIES) {
+			return;
+		}
+
 		const controller = new AbortController();
 		// Any render that is behind the latest seek drops prefetching and
 		// cancels pending decodes, so the seek target frame gets decoded first.
@@ -241,9 +255,18 @@ function PreviewCanvas({
 				lastSceneRef.current = renderTree;
 				lastFrameRef.current = frame;
 				renderedSeekRevisionRef.current = seekRevision;
+				renderFailureRef.current = null;
 			})
 			.catch((error) => {
 				if (controller.signal.aborted) return;
+				const previousFailure = renderFailureRef.current;
+				renderFailureRef.current = {
+					key: renderKey,
+					count:
+						previousFailure?.key === renderKey
+							? previousFailure.count + 1
+							: 1,
+				};
 				lastSceneRef.current = null;
 				lastFrameRef.current = -1;
 				console.warn("Preview render failed:", error);
@@ -251,6 +274,11 @@ function PreviewCanvas({
 			.finally(() => {
 				if (activeRenderControllerRef.current === controller) {
 					activeRenderControllerRef.current = null;
+				}
+				// Failed renders retry on the next RAF tick (bounded by
+				// MAX_RENDER_RETRIES) instead of re-queueing immediately.
+				if (renderFailureRef.current?.key === renderKey) {
+					return;
 				}
 				if (seekRevision !== seekRevisionRef.current) {
 					queueMicrotask(() => renderRef.current?.());

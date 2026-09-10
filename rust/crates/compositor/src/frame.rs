@@ -24,6 +24,7 @@ pub struct CanvasClearDescriptor {
 pub enum FrameItemDescriptor {
     Layer(LayerDescriptor),
     SceneEffect {
+        #[serde(rename = "effectPassGroups")]
         effect_pass_groups: Vec<Vec<EffectPassDescriptor>>,
     },
 }
