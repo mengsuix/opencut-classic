@@ -56,12 +56,14 @@ export class CanvasRenderer {
 		signal,
 		cancelVideoDecode = false,
 		requestId,
+		shouldRender,
 	}: {
 		node: AnyBaseNode;
 		time: number;
 		signal?: AbortSignal;
 		cancelVideoDecode?: boolean;
 		requestId?: symbol;
+		shouldRender?: () => boolean;
 	}) {
 		const renderRequestId = requestId ?? Symbol("canvas-render");
 		throwIfAborted(signal);
@@ -83,6 +85,12 @@ export class CanvasRenderer {
 			fn: () => buildFrameDescriptor({ node, renderer: this }),
 		});
 		throwIfAborted(signal);
+		// A newer render can supersede this one while it awaited resolve/build.
+		// Skipping the upload + present step keeps a stale frame from
+		// overwriting the compositor output, and avoids evicting textures the
+		// newer render still needs (syncTextures releases anything not in its
+		// own list).
+		if (shouldRender && !shouldRender()) return;
 		wasmCompositor.ensureInitialized({
 			width: this.width,
 			height: this.height,

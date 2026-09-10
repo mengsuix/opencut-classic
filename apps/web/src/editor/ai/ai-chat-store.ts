@@ -27,6 +27,8 @@ interface AiChatState {
 	loading: boolean;
 	streamingText: string;
 	toolStatus: string;
+	/** 本轮请求开始时间戳（ms），用于展示等待秒数；非发送中为 null */
+	sendStartedAt: number | null;
 
 	togglePanel: ({ projectId }: { projectId: string }) => void;
 	setInput: ({ value }: { value: string }) => void;
@@ -66,14 +68,20 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		data: Record<string, unknown>;
 	}) => {
 		if (event === "text" && typeof data.text === "string") {
-			set((state) => ({ streamingText: state.streamingText + data.text, toolStatus: "" }));
+			set((state) => ({
+				streamingText: state.streamingText + data.text,
+				toolStatus: "",
+			}));
 		} else if (event === "thinking") {
 			commitStreamingText();
 			set({ toolStatus: "思考中..." });
 		} else if (event === "tool_use") {
 			commitStreamingText();
 			const tool = typeof data.tool === "string" ? data.tool : "工具";
-			const summary = typeof data.summary === "string" && data.summary ? ` → ${data.summary}` : "";
+			const summary =
+				typeof data.summary === "string" && data.summary
+					? ` → ${data.summary}`
+					: "";
 			set({ toolStatus: `正在执行: ${tool}${summary}` });
 		} else if (event === "result") {
 			commitStreamingText();
@@ -89,10 +97,14 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		}
 	};
 
-	const consumeSSEStream = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+	/** 消费 SSE 流；返回本轮是否收到过 result 事件（false 说明流被中断/异常结束） */
+	const consumeSSEStream = async (
+		reader: ReadableStreamDefaultReader<Uint8Array>,
+	): Promise<boolean> => {
 		const decoder = new TextDecoder();
 		let buffer = "";
 		let currentEvent = "";
+		let sawResult = false;
 
 		while (true) {
 			const { done, value } = await reader.read();
@@ -110,6 +122,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 							event: currentEvent,
 							data: JSON.parse(line.slice(6)),
 						});
+						if (currentEvent === "result") sawResult = true;
 					} catch {
 						// 忽略单行解析错误
 					}
@@ -120,6 +133,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			}
 		}
 		commitStreamingText();
+		return sawResult;
 	};
 
 	const connectEditorBridge = async ({ sessionId }: { sessionId: string }) => {
@@ -180,6 +194,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		loading: false,
 		streamingText: "",
 		toolStatus: "",
+		sendStartedAt: null,
 
 		togglePanel: ({ projectId }) => {
 			if (get().isOpen) {
@@ -216,8 +231,17 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			if (!message || sending || !sessionId) return;
 
 			pushMessage({ role: "user", content: message, timestamp: nowSeconds() });
-			set({ input: "", sending: true, streamingText: "" });
+			// 立即给出等待提示：首 token 到达前（长上下文可达 1-2 分钟）界面不能空着
+			set({
+				input: "",
+				sending: true,
+				streamingText: "",
+				toolStatus: "思考中...",
+				sendStartedAt: Date.now(),
+			});
 
+			let sawResult = false;
+			let failed = false;
 			try {
 				abortController = new AbortController();
 				const res = await sendAgentMessage({
@@ -226,8 +250,9 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 					signal: abortController.signal,
 				});
 				const reader = res.body?.getReader();
-				if (reader) await consumeSSEStream(reader);
+				if (reader) sawResult = await consumeSSEStream(reader);
 			} catch (error) {
+				failed = true;
 				if (error instanceof DOMException && error.name === "AbortError") {
 					if (abortedByUser) commitStreamingText("\n\n_(已停止)_");
 				} else {
@@ -239,7 +264,15 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 					});
 				}
 			} finally {
-				set({ sending: false, toolStatus: "" });
+				// 流已结束但没收到 result：连接中断/被截断，明确告知用户，避免"静默结束"
+				if (!sawResult && !failed && !abortedByUser) {
+					pushMessage({
+						role: "system",
+						content: "连接中断：未收到完整回复，请重试",
+						timestamp: nowSeconds(),
+					});
+				}
+				set({ sending: false, toolStatus: "", sendStartedAt: null });
 				abortController = null;
 				abortedByUser = false;
 			}

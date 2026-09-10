@@ -302,6 +302,10 @@ async function resolveVideoNode({
 		prefetch: !context.cancelVideoDecode,
 		requestId: context.requestId,
 	});
+	// A superseded render must not publish its (stale) resolved state: the
+	// assignment in resolveNode happens right after this function returns, and
+	// a newer render may already have resolved the same node for a newer time.
+	throwIfAborted(context.signal);
 	if (!frame) {
 		return null;
 	}
@@ -335,6 +339,7 @@ async function resolveImageNode({
 		url: node.params.url,
 		maxSourceSize: node.params.maxSourceSize,
 	});
+	throwIfAborted(context.signal);
 	const visualState = resolveVisualState({
 		params: node.params,
 		context,
@@ -361,6 +366,7 @@ async function resolveStickerNode({
 	context: ResolveContext;
 }): Promise<ResolvedVisualSourceNodeState | null> {
 	const source = await loadStickerSource({ stickerId: node.params.stickerId });
+	throwIfAborted(context.signal);
 	const sourceWidth = node.params.intrinsicWidth ?? source.width;
 	const sourceHeight = node.params.intrinsicHeight ?? source.height;
 	const visualState = resolveVisualState({
@@ -569,6 +575,7 @@ async function resolveBlurBackgroundNode({
 		prefetch: !context.cancelVideoDecode,
 		requestId: context.requestId,
 	});
+	throwIfAborted(context.signal);
 	if (!backdropSource) {
 		return null;
 	}
@@ -633,6 +640,7 @@ async function resolveBackdropSource({
 	}
 
 	const source = await loadImageSource({ url: node.params.url });
+	throwIfAborted(signal);
 	return {
 		source: source.source,
 		width: source.width,

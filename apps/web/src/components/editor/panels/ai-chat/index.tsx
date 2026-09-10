@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,18 @@ import { PlusIcon, Square, SendHorizonal } from "lucide-react";
 function getProjectId(): string | null {
 	const project = EditorCore.getInstance().project.getActiveOrNull();
 	return project?.metadata.id ?? null;
+}
+
+/** 等待秒数：基于请求开始时间每秒刷新，让用户确认请求没有卡死 */
+function useElapsedSeconds(startedAt: number | null): number {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (!startedAt) return;
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, [startedAt]);
+	if (!startedAt) return 0;
+	return Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
 export function AiChatPanel() {
@@ -95,6 +107,9 @@ function MessageList() {
 	const streamingText = useAiChatStore((s) => s.streamingText);
 	const toolStatus = useAiChatStore((s) => s.toolStatus);
 	const loading = useAiChatStore((s) => s.loading);
+	const sending = useAiChatStore((s) => s.sending);
+	const sendStartedAt = useAiChatStore((s) => s.sendStartedAt);
+	const elapsedSeconds = useElapsedSeconds(sendStartedAt);
 	const bottomRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -130,7 +145,10 @@ function MessageList() {
 				{toolStatus && (
 					<p className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
 						<Spinner className="size-3" />
-						{toolStatus}
+						<span>{toolStatus}</span>
+						{sending && elapsedSeconds >= 3 && (
+							<span className="tabular-nums">{elapsedSeconds}s</span>
+						)}
 					</p>
 				)}
 				<div ref={bottomRef} />
@@ -154,7 +172,11 @@ function InputArea() {
 					value={input}
 					onChange={(e) => setInput({ value: e.target.value })}
 					onKeyDown={(e) => {
-						if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+						if (
+							e.key === "Enter" &&
+							!e.shiftKey &&
+							!e.nativeEvent.isComposing
+						) {
 							e.preventDefault();
 							void sendMessage();
 						}

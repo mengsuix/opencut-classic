@@ -261,6 +261,17 @@ class AgentService:
                             logger.error(
                                 f"[Agent] [{session_id[:8]}] 返回错误: subtype={msg.subtype}, result={msg.result}"
                             )
+                            # 错误必须推给前端：否则本轮会静默结束（无回复也无提示）
+                            detail = str(msg.result or msg.subtype or "未知错误").strip()
+                            if len(detail) > 300:
+                                detail = detail[:300] + "..."
+                            yield StreamEvent(
+                                event="error",
+                                data={
+                                    "error": f"Agent 执行出错: {detail}",
+                                    "recoverable": True,
+                                },
+                            )
 
                 state.turn_count += 1
                 state.total_cost_usd += cost_usd

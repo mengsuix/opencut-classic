@@ -141,7 +141,6 @@ function PreviewCanvas({
 	const viewportRef = useRef<HTMLDivElement>(null);
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
-	const renderingRef = useRef(false);
 	const activeRenderControllerRef = useRef<AbortController | null>(null);
 	const seekRevisionRef = useRef(0);
 	const renderedSeekRevisionRef = useRef(0);
@@ -187,7 +186,14 @@ function PreviewCanvas({
 	}, [renderer]);
 
 	const render = useCallback(() => {
-		if (!renderTree || renderingRef.current) return;
+		if (!renderTree) return;
+
+		// Supersede semantics: an in-flight render only blocks while it is still
+		// live. Once a newer seek aborts it, the newest render starts right away
+		// instead of waiting for the stale one to unwind; the stale render is
+		// dropped at the present step via `shouldRender`.
+		const activeRender = activeRenderControllerRef.current;
+		if (activeRender && !activeRender.signal.aborted) return;
 
 		const renderTime = Math.min(
 			editor.playback.getCurrentTime(),
@@ -208,10 +214,10 @@ function PreviewCanvas({
 		}
 
 		const controller = new AbortController();
+		// Any render that is behind the latest seek drops prefetching and
+		// cancels pending decodes, so the seek target frame gets decoded first.
 		const cancelVideoDecode =
-			seekRevision !== renderedSeekRevisionRef.current &&
-			editor.playback.getIsScrubbing();
-		renderingRef.current = true;
+			seekRevision !== renderedSeekRevisionRef.current;
 		activeRenderControllerRef.current = controller;
 		void renderer
 			.render({
@@ -219,6 +225,7 @@ function PreviewCanvas({
 				time: renderTime,
 				signal: controller.signal,
 				cancelVideoDecode,
+				shouldRender: () => !controller.signal.aborted,
 			})
 			.then(() => {
 				const isStale =
@@ -245,7 +252,6 @@ function PreviewCanvas({
 				if (activeRenderControllerRef.current === controller) {
 					activeRenderControllerRef.current = null;
 				}
-				renderingRef.current = false;
 				if (seekRevision !== seekRevisionRef.current) {
 					queueMicrotask(() => renderRef.current?.());
 				} else if (cancelVideoDecode && !editor.playback.getIsScrubbing()) {
