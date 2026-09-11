@@ -33,6 +33,8 @@ import {
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import {
+	AddClipEffectCommand,
+	DeleteElementsCommand,
 	MoveElementCommand,
 	RippleShiftElementsCommand,
 	SplitElementsCommand,
@@ -541,6 +543,14 @@ export class ElementInteractionController {
 			rippleInsertEnabled: rippleSingle,
 		});
 
+		// Effect elements convert to clip effects instead of moving when
+		// dropped onto a visual element — keep that hit as the drop target.
+		if (anchorDropTarget?.targetElement) {
+			drag.groupMoveResult = null;
+			drag.dropTarget = anchorDropTarget;
+			return;
+		}
+
 		// Same-track ripple drag uses push semantics (followers keep their
 		// gaps), decided at commit time. Skip the group-move resolver — it
 		// would overflow overlaps to new tracks.
@@ -753,6 +763,14 @@ export class ElementInteractionController {
 			return;
 		}
 
+		// Dropped onto a visual element: the effect element is consumed and
+		// becomes a clip effect on that element (one undoable batch).
+		if (drag.dropTarget?.targetElement) {
+			this.commitEffectConversion({ mousedown, drag });
+			this.finishSession();
+			return;
+		}
+
 		// Single-element ripple gestures own their commit paths.
 		if (
 			this.deps.ripple.isEnabled() &&
@@ -796,6 +814,44 @@ export class ElementInteractionController {
 
 		this.finishSession();
 	};
+
+	// Converts a standalone effect element into a clip effect: the block is
+	// removed and an equivalent effect instance is attached to the target
+	// element, as a single undoable batch.
+	private commitEffectConversion({
+		mousedown,
+		drag,
+	}: {
+		mousedown: MousedownSnapshot;
+		drag: DragProgress;
+	}): void {
+		const target = drag.dropTarget?.targetElement;
+		if (!target) return;
+
+		const tracks = this.deps.scene.getTracks();
+		const sourceTrack = orderedTracks(tracks).find(
+			(track) => track.id === mousedown.trackId,
+		);
+		const effectElement = sourceTrack?.elements.find(
+			(element) => element.id === mousedown.elementId,
+		);
+		if (!effectElement || effectElement.type !== "effect") return;
+
+		this.deps.command.execute(
+			new BatchCommand([
+				new DeleteElementsCommand({
+					elements: [
+						{ trackId: mousedown.trackId, elementId: mousedown.elementId },
+					],
+				}),
+				new AddClipEffectCommand({
+					trackId: target.trackId,
+					elementId: target.elementId,
+					effectType: effectElement.effectType,
+				}),
+			]),
+		);
+	}
 
 	// Commits a ripple move: drop on an occupied span splits the element under
 	// the insert point (unless it's the moved element itself), pushes the right

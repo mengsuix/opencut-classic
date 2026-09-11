@@ -1,5 +1,6 @@
 import type { TimelineTrack, TimelineElement } from "@/timeline";
 import type { ComputeDropTargetParams, DropTarget } from "@/timeline";
+import { VISUAL_ELEMENT_TYPES } from "@/timeline";
 import {
 	canElementGoOnTrack,
 	resolveTrackPlacement,
@@ -198,12 +199,21 @@ export function computeDropTarget({
 	const { trackIndex, relativeY } = trackAtMouse;
 	const track = orderedTracks[trackIndex];
 
-	if (targetElementTypes && targetElementTypes.length > 0) {
+	// Dragging an effect element over a visual element means "attach this
+	// effect to that clip" — same hit rule as dropping an effect card from
+	// the assets panel, even though the drag started inside the timeline.
+	const effectiveTargetElementTypes =
+		targetElementTypes ??
+		(elementType === "effect" ? VISUAL_ELEMENT_TYPES : undefined);
+	if (
+		effectiveTargetElementTypes &&
+		effectiveTargetElementTypes.length > 0
+	) {
 		const targetElement = findElementAtPosition({
 			mouseX,
 			tracks: orderedTracks,
 			trackIndex,
-			targetElementTypes,
+			targetElementTypes: effectiveTargetElementTypes,
 			pixelsPerSecond,
 			zoomLevel,
 		});

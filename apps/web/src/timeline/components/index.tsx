@@ -330,6 +330,12 @@ export function Timeline() {
 		onSnapPointChange: handleSnapPointChange,
 	});
 	const isElementDragging = dragView.kind === "dragging";
+	// Effect elements dropped onto a visual element attach to it instead of
+	// moving — highlight that element the same way external drops do.
+	const elementDragTargetId =
+		dragView.kind === "dragging"
+			? (dragView.dropTarget?.targetElement?.elementId ?? null)
+			: null;
 
 	const {
 		dragState: bookmarkDragState,
@@ -496,7 +502,7 @@ export function Timeline() {
 					<DragLine
 						dropTarget={isElementDragging ? dragView.dropTarget : null}
 						tracks={tracks}
-						isVisible={isElementDragging}
+						isVisible={isElementDragging && elementDragTargetId === null}
 						headerHeight={timelineHeaderHeight}
 						zoomLevel={zoomLevel}
 					/>
@@ -585,7 +591,8 @@ export function Timeline() {
 										shouldIgnoreClick={shouldIgnoreClick}
 										isDragOver={isDragOver}
 										dropTarget={dropTarget}
-									/>
+										elementDragTargetId={elementDragTargetId}
+										/>
 								)}
 							</div>
 							<TimelineGutter
@@ -780,6 +787,7 @@ function TimelineTrackRows({
 	shouldIgnoreClick,
 	isDragOver,
 	dropTarget,
+	elementDragTargetId,
 }: {
 	mainTrackId: string | null;
 	zoomLevel: number;
@@ -798,6 +806,7 @@ function TimelineTrackRows({
 	shouldIgnoreClick: () => boolean;
 	isDragOver: boolean;
 	dropTarget: DropTarget | null;
+	elementDragTargetId: string | null;
 }) {
 	const t = useT();
 	const timeline = useEditor((e) => e.timeline);
@@ -887,7 +896,7 @@ function TimelineTrackRows({
 								targetElementId={
 									isDragOver
 										? (dropTarget?.targetElement?.elementId ?? null)
-										: null
+										: elementDragTargetId
 								}
 							/>
 						</div>
