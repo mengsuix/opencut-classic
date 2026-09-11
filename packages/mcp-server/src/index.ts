@@ -191,7 +191,7 @@ const TOOLS = [
 	{
 		name: "get_editor_state",
 		description:
-			"Get the current editor state: project settings, scenes, tracks and elements (times in seconds), selection, playback position, undo/redo availability, and media assets.",
+			'Get the current editor state: project settings, scenes, tracks and elements (times in seconds), selection, playback position, undo/redo availability, and media assets. trackOrder lists every track in on-screen order (row 0 = the topmost row in the timeline UI); upper tracks render on top of the ones below them, and effect tracks only affect the picture below them. When the user refers to "the first/top/bottom track" or a layer number (第一层/最上面/最下面), map it through trackOrder rather than the main/overlay/audio grouping order.',
 		inputSchema: { type: "object", properties: {} },
 	},
 	{

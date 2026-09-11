@@ -271,6 +271,14 @@ function buildEditorState(editor: EditorCore) {
 					),
 				}
 			: null,
+		trackOrder: tracks
+			? [...tracks.overlay, tracks.main, ...tracks.audio].map((track, row) => ({
+					row,
+					id: track.id,
+					type: track.type,
+					name: track.name,
+				}))
+			: null,
 		mediaAssets: editor.media.getAssets().map((asset) => ({
 			id: asset.id,
 			name: asset.name,
