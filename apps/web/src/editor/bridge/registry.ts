@@ -1512,7 +1512,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		args: {
 			effectType: "string",
 			startTime: "number (seconds)",
-			duration: "number? (seconds, default 5)",
+			duration: "number? (seconds, default 30)",
 		},
 		run: ({ editor, args }) => {
 			const effectType = requireString(args.effectType, "effectType");

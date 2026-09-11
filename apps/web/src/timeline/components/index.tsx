@@ -250,6 +250,77 @@ export function Timeline() {
 			trackLabelsScrollRef.current.scrollTop = tracks.scrollTop;
 		}
 	}, []);
+
+	// Inserting an element selects it. When that element lands outside the
+	// viewport — long timelines or small zoom levels make default-duration
+	// blocks only a few pixels wide, and overlapping inserts can open a new
+	// track below the fold — scroll it into view so the user sees what was
+	// just added instead of hunting for it. The first render is skipped so
+	// restoring a project does not yank the view to a persisted selection.
+	const selectedElementKey =
+		selectedElements.length === 1
+			? `${selectedElements[0].trackId}:${selectedElements[0].elementId}`
+			: null;
+	const revealedElementKeyRef = useRef<string | null>(null);
+	const isFirstRevealRef = useRef(true);
+	useEffect(() => {
+		if (isFirstRevealRef.current) {
+			isFirstRevealRef.current = false;
+			revealedElementKeyRef.current = selectedElementKey;
+			return;
+		}
+		if (
+			!selectedElementKey ||
+			selectedElementKey === revealedElementKeyRef.current
+		) {
+			return;
+		}
+		revealedElementKeyRef.current = selectedElementKey;
+
+		const selected = editor.selection.getSelectedElements()[0];
+		const scrollEl = tracksScrollRef.current;
+		if (!selected || !scrollEl) return;
+		const trackIndex = tracks.findIndex((track) => track.id === selected.trackId);
+		const track = tracks[trackIndex];
+		const element = track?.elements.find((item) => item.id === selected.elementId);
+		if (!track || !element) return;
+
+		const elementLeft = timelineTimeToPixels({
+			time: element.startTime,
+			zoomLevel,
+		});
+		const elementRight = timelineTimeToPixels({
+			time: element.startTime + element.duration,
+			zoomLevel,
+		});
+		const viewportLeft = scrollEl.scrollLeft;
+		const viewportRight = viewportLeft + scrollEl.clientWidth;
+		const isHorizontallyHidden =
+			elementLeft < viewportLeft || elementRight > viewportRight;
+
+		const trackTop =
+			TIMELINE_CONTENT_TOP_PADDING_PX + (trackLayout.offsets[trackIndex] ?? 0);
+		const trackBottom = trackTop + getTrackHeight({ type: track.type });
+		const viewportTop = scrollEl.scrollTop;
+		const viewportBottom = viewportTop + scrollEl.clientHeight;
+		const isVerticallyHidden =
+			trackTop < viewportTop || trackBottom > viewportBottom;
+
+		if (!isHorizontallyHidden && !isVerticallyHidden) return;
+
+		if (isHorizontallyHidden) {
+			const elementWidth = elementRight - elementLeft;
+			const centeredLeft =
+				elementLeft - Math.max(0, (scrollEl.clientWidth - elementWidth) / 2);
+			scrollEl.scrollLeft = Math.max(0, centeredLeft);
+		}
+		if (isVerticallyHidden) {
+			scrollEl.scrollTop = Math.max(0, trackTop - TIMELINE_CONTENT_TOP_PADDING_PX);
+		}
+		syncFollowers();
+		saveScrollPositionRef.current();
+	}, [selectedElementKey, editor, tracks, zoomLevel, trackLayout, syncFollowers]);
+
 	// Single non-passive capture listener owns all wheel input. Prevents any
 	// native scroll or browser zoom from firing inside the timeline.
 	useEffect(() => {

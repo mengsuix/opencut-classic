@@ -1,4 +1,7 @@
-import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
+import {
+	DEFAULT_EFFECT_DURATION,
+	DEFAULT_NEW_ELEMENT_DURATION,
+} from "@/timeline/creation";
 import {
 	MASKABLE_ELEMENT_TYPES,
 	RETIMABLE_ELEMENT_TYPES,
@@ -136,7 +139,7 @@ export function buildEffectElement({
 		name: capitalizeFirstLetter({ string: instance.type }),
 		effectType,
 		params: instance.params,
-		duration: duration ?? DEFAULT_NEW_ELEMENT_DURATION,
+		duration: duration ?? DEFAULT_EFFECT_DURATION,
 		startTime,
 		trimStart: ZERO_MEDIA_TIME,
 		trimEnd: ZERO_MEDIA_TIME,
