@@ -1,6 +1,7 @@
 import type { EditorCore } from "@/core";
 import { mediaTimeFromSeconds, mediaTimeToSeconds, type MediaTime } from "@/wasm";
 import { DEFAULTS } from "@/timeline/defaults";
+import { VOLUME_DB_MIN } from "@/timeline/audio-constants";
 import {
 	buildEffectElement,
 	type CreateTimelineElement,
@@ -14,7 +15,10 @@ import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
 import type { Mask, MaskType } from "@/masks/types";
 import type { FreeformPathPoint } from "@/masks/freeform/path";
 import { canvasRectToMaskParams } from "@/masks/canvas-rect";
-import { getVisibleElementsWithBounds } from "@/preview/element-bounds";
+import {
+	getVisibleElementsWithBounds,
+	type ElementBounds,
+} from "@/preview/element-bounds";
 import { generateUUID } from "@/utils/id";
 import type { AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
@@ -219,6 +223,166 @@ function getElementMasks(
 ): Mask[] {
 	const element = findElement(editor, trackId, elementId);
 	return (element.masks as Mask[] | undefined) ?? [];
+}
+
+function clampNumberArg({
+	value,
+	fallback,
+	min,
+	max,
+}: {
+	value: unknown;
+	fallback: number;
+	min: number;
+	max: number;
+}): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return fallback;
+	}
+	return Math.max(min, Math.min(max, value));
+}
+
+function readElementNumberParam({
+	element,
+	key,
+	fallback,
+}: {
+	element: Record<string, unknown>;
+	key: string;
+	fallback: number;
+}): number {
+	const params = element.params as Record<string, unknown> | undefined;
+	const value = params?.[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Bounds of an element visible at the playhead. Layout and attention commands
+ * need resolved geometry, which the renderer only produces for elements
+ * present at the current time.
+ */
+function getVisibleElementBounds({
+	editor,
+	trackId,
+	elementId,
+}: {
+	editor: EditorCore;
+	trackId: string;
+	elementId: string;
+}): { canvasSize: { width: number; height: number }; bounds: ElementBounds } {
+	const scene = editor.scenes.getActiveSceneOrNull();
+	const project = editor.project.getActiveOrNull();
+	if (!scene || !project) {
+		throw new Error("No active scene or project");
+	}
+	const canvasSize = project.settings.canvasSize;
+	const withBounds = getVisibleElementsWithBounds({
+		tracks: scene.tracks,
+		currentTime: editor.playback.getCurrentTime(),
+		canvasSize,
+		mediaAssets: editor.media.getAssets(),
+	});
+	const target = withBounds.find(
+		(item) => item.trackId === trackId && item.elementId === elementId,
+	);
+	if (!target) {
+		throw new Error(
+			`Element ${elementId} is not visible at the playhead. Seek onto it first (playback.seek), then retry.`,
+		);
+	}
+	return { canvasSize, bounds: target.bounds };
+}
+
+interface LayoutSlot {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
+
+/**
+ * Canvas-fraction rects for each layout preset, in assignment order.
+ * Picture-in-picture slots keep the canvas aspect ratio (same fraction of
+ * width and height); grid slots tile the canvas evenly.
+ */
+function buildLayoutSlots({
+	preset,
+	padding,
+	pipScale,
+	pipMargin,
+}: {
+	preset: string;
+	padding: number;
+	pipScale: number;
+	pipMargin: number;
+}): LayoutSlot[] | null {
+	const inset = (slot: LayoutSlot): LayoutSlot => ({
+		left: slot.left + padding,
+		top: slot.top + padding,
+		right: slot.right - padding,
+		bottom: slot.bottom - padding,
+	});
+
+	const corners: Record<string, LayoutSlot> = {
+		"pip-tl": {
+			left: pipMargin,
+			top: pipMargin,
+			right: pipMargin + pipScale,
+			bottom: pipMargin + pipScale,
+		},
+		"pip-tr": {
+			left: 1 - pipMargin - pipScale,
+			top: pipMargin,
+			right: 1 - pipMargin,
+			bottom: pipMargin + pipScale,
+		},
+		"pip-bl": {
+			left: pipMargin,
+			top: 1 - pipMargin - pipScale,
+			right: pipMargin + pipScale,
+			bottom: 1 - pipMargin,
+		},
+		"pip-br": {
+			left: 1 - pipMargin - pipScale,
+			top: 1 - pipMargin - pipScale,
+			right: 1 - pipMargin,
+			bottom: 1 - pipMargin,
+		},
+	};
+	if (preset in corners) {
+		return [inset(corners[preset])];
+	}
+
+	if (preset === "split-h") {
+		return [
+			inset({ left: 0, top: 0, right: 0.5, bottom: 1 }),
+			inset({ left: 0.5, top: 0, right: 1, bottom: 1 }),
+		];
+	}
+	if (preset === "split-v") {
+		return [
+			inset({ left: 0, top: 0, right: 1, bottom: 0.5 }),
+			inset({ left: 0, top: 0.5, right: 1, bottom: 1 }),
+		];
+	}
+	if (preset === "grid-2x2" || preset === "grid-3x3") {
+		const columns = preset === "grid-2x2" ? 2 : 3;
+		const slots: LayoutSlot[] = [];
+		for (let row = 0; row < columns; row++) {
+			for (let column = 0; column < columns; column++) {
+				slots.push(
+					inset({
+						left: column / columns,
+						top: row / columns,
+						right: (column + 1) / columns,
+						bottom: (row + 1) / columns,
+					}),
+				);
+			}
+		}
+		return slots;
+	}
+	return null;
 }
 
 function buildSelectionState(editor: EditorCore) {
@@ -1944,6 +2108,411 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				),
 			});
 			return { deleted: pointIds.length };
+		},
+	},
+
+	"attention.spotlight": {
+		description:
+			"Magnify a detail for attention: duplicates the element onto a new top track, scales it by `zoom`, and clips it with a mask around the focus point so only the enlarged detail shows through while the rest of the frame keeps its original size. The element must be visible at the playhead (seek onto it first). Returns the duplicated element ref — edit or delete that element to change or remove the spotlight.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			centerX: "number 0~1? (focus point as a canvas fraction, default 0.5)",
+			centerY: "number 0~1? (default 0.5)",
+			zoom: "number 1.1~5? (default 1.8)",
+			size: "number 0.05~1? (spotlight region size, fraction of the canvas short side, default 0.35)",
+			shape: "'ellipse' | 'rectangle'? (default ellipse)",
+			feather: "number 0~200? (mask feather in canvas px, default 0)",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const centerX = clampNumberArg({
+				value: args.centerX,
+				fallback: 0.5,
+				min: 0,
+				max: 1,
+			});
+			const centerY = clampNumberArg({
+				value: args.centerY,
+				fallback: 0.5,
+				min: 0,
+				max: 1,
+			});
+			const zoom = clampNumberArg({
+				value: args.zoom,
+				fallback: 1.8,
+				min: 1.1,
+				max: 5,
+			});
+			const size = clampNumberArg({
+				value: args.size,
+				fallback: 0.35,
+				min: 0.05,
+				max: 1,
+			});
+			const shape: MaskType =
+				args.shape === "rectangle" ? "rectangle" : "ellipse";
+			const feather = clampNumberArg({
+				value: args.feather,
+				fallback: 0,
+				min: 0,
+				max: 200,
+			});
+
+			const { canvasSize, bounds } = getVisibleElementBounds({
+				editor,
+				trackId,
+				elementId,
+			});
+			const source = findElement(editor, trackId, elementId);
+
+			const focusX = centerX * canvasSize.width;
+			const focusY = centerY * canvasSize.height;
+			// Pin the focus point in place: the enlarged copy's centre must
+			// shift by (focus - centre) * (1 - zoom).
+			const deltaX = (focusX - bounds.cx) * (1 - zoom);
+			const deltaY = (focusY - bounds.cy) * (1 - zoom);
+
+			const duplicated = editor.timeline.duplicateElements({
+				elements: [{ trackId, elementId }],
+			});
+			const copy = duplicated[0];
+			if (!copy) {
+				throw new Error("Failed to duplicate the element for the spotlight");
+			}
+
+			const baseScaleX = readElementNumberParam({
+				element: source,
+				key: "transform.scaleX",
+				fallback: 1,
+			});
+			const baseScaleY = readElementNumberParam({
+				element: source,
+				key: "transform.scaleY",
+				fallback: 1,
+			});
+			const basePositionX = readElementNumberParam({
+				element: source,
+				key: "transform.positionX",
+				fallback: 0,
+			});
+			const basePositionY = readElementNumberParam({
+				element: source,
+				key: "transform.positionY",
+				fallback: 0,
+			});
+
+			const halfExtent =
+				(size * Math.min(canvasSize.width, canvasSize.height)) / 2;
+			const maskParams = canvasRectToMaskParams({
+				rect: {
+					left: (focusX - halfExtent) / canvasSize.width,
+					top: (focusY - halfExtent) / canvasSize.height,
+					right: (focusX + halfExtent) / canvasSize.width,
+					bottom: (focusY + halfExtent) / canvasSize.height,
+				},
+				bounds: {
+					cx: bounds.cx + deltaX,
+					cy: bounds.cy + deltaY,
+					width: bounds.width * zoom,
+					height: bounds.height * zoom,
+					rotation: bounds.rotation,
+				},
+				canvasSize,
+			});
+
+			const newMask = buildDefaultMaskInstance({ maskType: shape });
+			const nextMask = {
+				...newMask,
+				params: {
+					...newMask.params,
+					...maskParams,
+					...(feather > 0 ? { feather } : {}),
+				},
+			} as Mask;
+			const copyElement = findElement(editor, copy.trackId, copy.elementId);
+			const existingMasks = (copyElement.masks as Mask[] | undefined) ?? [];
+
+			editor.timeline.updateElements({
+				updates: [
+					{
+						trackId: copy.trackId,
+						elementId: copy.elementId,
+						patch: {
+							params: {
+								"transform.scaleX": baseScaleX * zoom,
+								"transform.scaleY": baseScaleY * zoom,
+								"transform.positionX": basePositionX + deltaX,
+								"transform.positionY": basePositionY + deltaY,
+							},
+							masks: [...existingMasks, nextMask],
+						} as never,
+					},
+				],
+			});
+
+			return {
+				spotlight: copy,
+				zoom,
+				focus: { centerX, centerY },
+				region: { size, shape },
+			};
+		},
+	},
+
+	"layout.apply": {
+		description:
+			"Arrange visual elements into a layout preset: picture-in-picture corners (pip-tl/tr/bl/br), split screen (split-h/split-v) or grids (grid-2x2/grid-3x3). Each element is scaled to cover its slot and clipped with a rectangle mask so it cannot spill into neighbouring slots. Elements must be visible at the playhead (seek onto them first); the element count must match the preset. Returns the slot assigned to each element.",
+		args: {
+			preset:
+				"'pip-tl'|'pip-tr'|'pip-bl'|'pip-br'|'split-h'|'split-v'|'grid-2x2'|'grid-3x3'",
+			elements: '[{ trackId, elementId }] | "$selection"',
+			padding: "number 0~0.2? (gap fraction inside each slot, default 0.02)",
+			pipScale:
+				"number 0.15~0.6? (pip slot size as a fraction of the canvas, default 0.35)",
+			pipMargin: "number 0~0.3? (pip distance from the canvas edge, default 0.05)",
+		},
+		run: ({ editor, args }) => {
+			const preset = requireString(args.preset, "preset");
+			const padding = clampNumberArg({
+				value: args.padding,
+				fallback: 0.02,
+				min: 0,
+				max: 0.2,
+			});
+			const pipScale = clampNumberArg({
+				value: args.pipScale,
+				fallback: 0.35,
+				min: 0.15,
+				max: 0.6,
+			});
+			const pipMargin = clampNumberArg({
+				value: args.pipMargin,
+				fallback: 0.05,
+				min: 0,
+				max: 0.3,
+			});
+			const refs = resolveElementRefs(editor, args.elements);
+
+			const slots = buildLayoutSlots({
+				preset,
+				padding,
+				pipScale,
+				pipMargin,
+			});
+			if (!slots) {
+				throw new Error(`Unknown layout preset: ${preset}`);
+			}
+			if (refs.length !== slots.length) {
+				throw new Error(
+					`Preset "${preset}" needs exactly ${slots.length} element(s), got ${refs.length}`,
+				);
+			}
+
+			const updates = refs.map((ref, index) => {
+				const { canvasSize, bounds } = getVisibleElementBounds({
+					editor,
+					trackId: ref.trackId,
+					elementId: ref.elementId,
+				});
+				const slot = slots[index];
+				const slotWidth = (slot.right - slot.left) * canvasSize.width;
+				const slotHeight = (slot.bottom - slot.top) * canvasSize.height;
+				const slotCenterX =
+					((slot.left + slot.right) / 2) * canvasSize.width;
+				const slotCenterY =
+					((slot.top + slot.bottom) / 2) * canvasSize.height;
+
+				// Cover the slot (crop the overflow with the mask below).
+				const cover = Math.max(
+					slotWidth / bounds.width,
+					slotHeight / bounds.height,
+				);
+				const element = findElement(editor, ref.trackId, ref.elementId);
+				const baseScaleX = readElementNumberParam({
+					element,
+					key: "transform.scaleX",
+					fallback: 1,
+				});
+				const baseScaleY = readElementNumberParam({
+					element,
+					key: "transform.scaleY",
+					fallback: 1,
+				});
+				const basePositionX = readElementNumberParam({
+					element,
+					key: "transform.positionX",
+					fallback: 0,
+				});
+				const basePositionY = readElementNumberParam({
+					element,
+					key: "transform.positionY",
+					fallback: 0,
+				});
+
+				const maskParams = canvasRectToMaskParams({
+					rect: slot,
+					bounds: {
+						cx: slotCenterX,
+						cy: slotCenterY,
+						width: bounds.width * cover,
+						height: bounds.height * cover,
+						rotation: bounds.rotation,
+					},
+					canvasSize,
+				});
+
+				const existingMasks = (element.masks as Mask[] | undefined) ?? [];
+				const existingRect = existingMasks.find(
+					(mask) => mask.type === "rectangle",
+				);
+				// Reuse an existing rectangle mask so re-applying a layout does
+				// not stack clips on top of each other.
+				const nextMasks = existingRect
+					? existingMasks.map((mask) =>
+							mask.id === existingRect.id
+								? {
+										...mask,
+										params: { ...mask.params, ...maskParams },
+									}
+								: mask,
+						)
+					: [
+							...existingMasks,
+							(() => {
+								const newMask = buildDefaultMaskInstance({
+									maskType: "rectangle",
+								});
+								return {
+									...newMask,
+									params: { ...newMask.params, ...maskParams },
+								} as Mask;
+							})(),
+						];
+
+				return {
+					trackId: ref.trackId,
+					elementId: ref.elementId,
+					patch: {
+						params: {
+							"transform.scaleX": baseScaleX * cover,
+							"transform.scaleY": baseScaleY * cover,
+							"transform.positionX": basePositionX + (slotCenterX - bounds.cx),
+							"transform.positionY": basePositionY + (slotCenterY - bounds.cy),
+						},
+						masks: nextMasks,
+					} as never,
+				};
+			});
+
+			editor.timeline.updateElements({ updates });
+
+			return {
+				preset,
+				assigned: refs.map((ref, index) => ({
+					element: ref,
+					slot: slots[index],
+				})),
+			};
+		},
+	},
+
+	"audio.duck": {
+		description:
+			"Duck an audio element (typically background music) under spoken segments: writes volume keyframes that drop by `amountDb` inside each range and return to the original level outside, with `fade` seconds of attack/release. Ranges are timeline seconds — derive them from the narration element's span or from subtitles.transcribe output.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			ranges: "[{ start, end }] (seconds, timeline time)",
+			amountDb: "number 3~40? (how much to duck, default 12)",
+			fade: "number 0.05~2? (attack/release seconds, default 0.3)",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const rawRanges = args.ranges;
+			if (!Array.isArray(rawRanges) || rawRanges.length === 0) {
+				throw new Error("Missing or invalid argument: ranges");
+			}
+			const amountDb = clampNumberArg({
+				value: args.amountDb,
+				fallback: 12,
+				min: 3,
+				max: 40,
+			});
+			const fade = clampNumberArg({
+				value: args.fade,
+				fallback: 0.3,
+				min: 0.05,
+				max: 2,
+			});
+
+			const element = findElement(editor, trackId, elementId);
+			const baseVolume = readElementNumberParam({
+				element,
+				key: "volume",
+				fallback: 0,
+			});
+			const duckedVolume = Math.max(VOLUME_DB_MIN, baseVolume - amountDb);
+
+			const keyframes: Array<{
+				trackId: string;
+				elementId: string;
+				propertyPath: "volume";
+				time: MediaTime;
+				value: number;
+				interpolation: AnimationInterpolation;
+			}> = [];
+			for (const raw of rawRanges) {
+				const range = raw as { start?: unknown; end?: unknown };
+				const start = requireNumber(range?.start, "ranges[].start");
+				const end = requireNumber(range?.end, "ranges[].end");
+				if (end <= start) {
+					throw new Error("Each range must satisfy end > start");
+				}
+				keyframes.push(
+					{
+						trackId,
+						elementId,
+						propertyPath: "volume",
+						time: toTicks(Math.max(0, start - fade)),
+						value: baseVolume,
+						interpolation: "linear",
+					},
+					{
+						trackId,
+						elementId,
+						propertyPath: "volume",
+						time: toTicks(start),
+						value: duckedVolume,
+						interpolation: "linear",
+					},
+					{
+						trackId,
+						elementId,
+						propertyPath: "volume",
+						time: toTicks(end),
+						value: duckedVolume,
+						interpolation: "linear",
+					},
+					{
+						trackId,
+						elementId,
+						propertyPath: "volume",
+						time: toTicks(end + fade),
+						value: baseVolume,
+						interpolation: "linear",
+					},
+				);
+			}
+
+			editor.timeline.upsertKeyframes({ keyframes });
+			return {
+				keyframes: keyframes.length,
+				baseVolumeDb: baseVolume,
+				duckedVolumeDb: duckedVolume,
+			};
 		},
 	},
 };
