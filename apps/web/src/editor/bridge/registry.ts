@@ -385,6 +385,118 @@ function buildLayoutSlots({
 	return null;
 }
 
+const SEQUENCE_SIGNATURE_SIZE = 16;
+const SEQUENCE_DEDUPE_THRESHOLD = 2.0;
+const MAX_SEQUENCE_FRAMES = 24;
+
+/**
+ * 16×16 grayscale signature used to spot near-identical frames. Luma only
+ * (not a structural hash) so small content changes — a new line of code, a
+ * bullet appearing on a slide — stay visible, matching how the eye reads
+ * screen recordings.
+ */
+function buildGraySignature({
+	source,
+}: {
+	source: HTMLCanvasElement;
+}): Uint8Array {
+	const size = SEQUENCE_SIGNATURE_SIZE;
+	const temp = document.createElement("canvas");
+	temp.width = size;
+	temp.height = size;
+	const ctx = temp.getContext("2d");
+	if (!ctx) {
+		return new Uint8Array(size * size);
+	}
+	ctx.drawImage(source, 0, 0, source.width, source.height, 0, 0, size, size);
+	const data = ctx.getImageData(0, 0, size, size).data;
+	const gray = new Uint8Array(size * size);
+	for (let index = 0; index < gray.length; index++) {
+		const offset = index * 4;
+		gray[index] =
+			(data[offset] * 0.299 +
+				data[offset + 1] * 0.587 +
+				data[offset + 2] * 0.114) |
+			0;
+	}
+	return gray;
+}
+
+/** Mean absolute per-pixel difference between two grayscale signatures. */
+function frameDelta({ a, b }: { a: Uint8Array; b: Uint8Array }): number {
+	if (a.length === 0 || a.length !== b.length) {
+		return Number.POSITIVE_INFINITY;
+	}
+	let sum = 0;
+	for (let index = 0; index < a.length; index++) {
+		sum += Math.abs(a[index] - b[index]);
+	}
+	return sum / a.length;
+}
+
+function formatClock({ seconds }: { seconds: number }): string {
+	const total = Math.max(0, seconds);
+	// Split into whole seconds and tenths first: formatting the fractional part
+	// with toFixed would render 59.95s as "0:60.0" instead of "1:00.0".
+	const whole = Math.floor(total);
+	const hours = Math.floor(whole / 3600);
+	const minutes = Math.floor((whole - hours * 3600) / 60);
+	const secs = whole - hours * 3600 - minutes * 60;
+	const tenths = Math.floor((total - whole) * 10);
+	const time = `${minutes}:${String(secs).padStart(2, "0")}.${tenths}`;
+	return hours > 0 ? `${hours}:${time.padStart(7, "0")}` : time;
+}
+
+/**
+ * Compose sampled frames into one labelled grid image. A single sheet keeps
+ * the agent's image cost flat regardless of how many frames survived dedupe.
+ */
+function buildContactSheet({
+	frames,
+	cellWidth,
+	cellHeight,
+}: {
+	frames: Array<{ time: number; canvas: HTMLCanvasElement }>;
+	cellWidth: number;
+	cellHeight: number;
+}): HTMLCanvasElement {
+	const columns = Math.max(
+		1,
+		Math.min(frames.length, Math.ceil(Math.sqrt(frames.length))),
+	);
+	const rows = Math.ceil(frames.length / columns);
+	const gap = 4;
+	const labelHeight = 18;
+	const sheet = document.createElement("canvas");
+	sheet.width = columns * cellWidth + (columns - 1) * gap;
+	sheet.height = rows * (cellHeight + labelHeight) + (rows - 1) * gap;
+	const ctx = sheet.getContext("2d");
+	if (!ctx) {
+		throw new Error("Failed to create contact sheet context");
+	}
+	ctx.fillStyle = "#111111";
+	ctx.fillRect(0, 0, sheet.width, sheet.height);
+
+	frames.forEach((frame, index) => {
+		const column = index % columns;
+		const row = Math.floor(index / columns);
+		const x = column * (cellWidth + gap);
+		const y = row * (cellHeight + labelHeight + gap);
+		ctx.drawImage(frame.canvas, x, y, cellWidth, cellHeight);
+		ctx.fillStyle = "#000000";
+		ctx.fillRect(x, y + cellHeight, cellWidth, labelHeight);
+		ctx.fillStyle = "#ffffff";
+		ctx.font = "12px monospace";
+		ctx.textBaseline = "middle";
+		ctx.fillText(
+			formatClock({ seconds: frame.time }),
+			x + 6,
+			y + cellHeight + labelHeight / 2,
+		);
+	});
+	return sheet;
+}
+
 function buildSelectionState(editor: EditorCore) {
 	return {
 		kind: editor.selection.getActiveSelectionKind(),
@@ -1484,6 +1596,165 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				width: outWidth,
 				height: outHeight,
 				time: toSeconds(renderTime as MediaTime),
+			};
+		},
+	},
+
+	"preview.capture_sequence": {
+		description:
+			"Sample several frames across a time range in ONE call and return a single contact sheet: a grid of frames, each labelled with its timestamp. Near-identical consecutive frames are dropped by default (16×16 grayscale mean-absolute-difference), so static stretches collapse into one frame. Use this to understand a clip's structure cheaply; follow up with preview.capture when one moment needs full detail.",
+		args: {
+			start: "seconds? (default 0)",
+			end: "seconds? (default project duration)",
+			count: "number? (frames to sample before dedupe, default 9, max 24)",
+			timestamps:
+				"number[]? (explicit sample times in seconds; overrides start/end/count)",
+			dedupe: "boolean? (default true)",
+			cellWidth: "number? (px width of each cell, default 320)",
+		},
+		run: async ({ editor, args }) => {
+			const renderTree = editor.renderer.getRenderTree();
+			const project = editor.project.getActiveOrNull();
+			if (!renderTree || !project) {
+				throw new Error(
+					"Preview is not ready. Make sure the editor page with the preview panel is open.",
+				);
+			}
+			const durationTicks = editor.timeline.getTotalDuration();
+			if (durationTicks === 0) {
+				throw new Error("Project is empty");
+			}
+			const durationSeconds = toSeconds(durationTicks as MediaTime);
+			const lastFrameTime = editor.timeline.getLastFrameTime();
+
+			const rawTimestamps = args.timestamps;
+			let times: number[];
+			if (Array.isArray(rawTimestamps) && rawTimestamps.length > 0) {
+				times = rawTimestamps.map((value) =>
+					requireNumber(value, "timestamps[]"),
+				);
+			} else {
+				const start = clampNumberArg({
+					value: args.start,
+					fallback: 0,
+					min: 0,
+					max: durationSeconds,
+				});
+				const end = clampNumberArg({
+					value: args.end,
+					fallback: durationSeconds,
+					min: 0,
+					max: durationSeconds,
+				});
+				if (end <= start) {
+					throw new Error("end must be greater than start");
+				}
+				const count = Math.round(
+					clampNumberArg({
+						value: args.count,
+						fallback: 9,
+						min: 1,
+						max: MAX_SEQUENCE_FRAMES,
+					}),
+				);
+				// Midpoints of equal slices: stays inside each slice and avoids
+				// landing exactly on a cut.
+				times = Array.from(
+					{ length: count },
+					(_, index) => start + ((end - start) * (index + 0.5)) / count,
+				);
+			}
+			if (times.length > MAX_SEQUENCE_FRAMES) {
+				throw new Error(
+					`Too many timestamps: ${times.length} (max ${MAX_SEQUENCE_FRAMES})`,
+				);
+			}
+			times = [
+				...new Set(
+					times.map((time) => Math.max(0, Math.min(time, durationSeconds))),
+				),
+			].sort((a, b) => a - b);
+
+			const dedupe = args.dedupe !== false;
+			const cellWidth = Math.round(
+				clampNumberArg({
+					value: args.cellWidth,
+					fallback: 320,
+					min: 120,
+					max: 640,
+				}),
+			);
+
+			const { canvasSize, fps } = project.settings;
+			const renderer = new CanvasRenderer({
+				width: canvasSize.width,
+				height: canvasSize.height,
+				fps,
+			});
+			const canvas = document.createElement("canvas");
+			canvas.width = canvasSize.width;
+			canvas.height = canvasSize.height;
+			const cellHeight = Math.max(
+				1,
+				Math.round((cellWidth * canvasSize.height) / canvasSize.width),
+			);
+
+			const sampled: Array<{
+				time: number;
+				canvas: HTMLCanvasElement;
+				signature: Uint8Array;
+			}> = [];
+			for (const time of times) {
+				const renderTime = Math.min(toTicks(time), lastFrameTime);
+				await renderer.renderToCanvas({
+					node: renderTree,
+					time: renderTime,
+					targetCanvas: canvas,
+				});
+				const cell = document.createElement("canvas");
+				cell.width = cellWidth;
+				cell.height = cellHeight;
+				const cellContext = cell.getContext("2d");
+				if (!cellContext) {
+					throw new Error("Failed to create cell canvas context");
+				}
+				cellContext.drawImage(canvas, 0, 0, cellWidth, cellHeight);
+				sampled.push({
+					time,
+					canvas: cell,
+					signature: buildGraySignature({ source: cell }),
+				});
+			}
+
+			// Compare against the last KEPT frame (not the previous one) so slow
+			// fades collapse while gradual content changes survive.
+			const kept: typeof sampled = [];
+			if (dedupe && sampled.length > 0) {
+				kept.push(sampled[0]);
+				let lastSignature = sampled[0].signature;
+				for (const frame of sampled.slice(1)) {
+					if (
+						frameDelta({ a: frame.signature, b: lastSignature }) <=
+						SEQUENCE_DEDUPE_THRESHOLD
+					) {
+						continue;
+					}
+					kept.push(frame);
+					lastSignature = frame.signature;
+				}
+			} else {
+				kept.push(...sampled);
+			}
+
+			const sheet = buildContactSheet({ frames: kept, cellWidth, cellHeight });
+			return {
+				dataUrl: sheet.toDataURL("image/jpeg", 0.85),
+				width: sheet.width,
+				height: sheet.height,
+				sampled: sampled.length,
+				kept: kept.length,
+				dropped: sampled.length - kept.length,
+				frames: kept.map((frame) => Number(frame.time.toFixed(2))),
 			};
 		},
 	},

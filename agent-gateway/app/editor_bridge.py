@@ -25,6 +25,8 @@ COMMAND_TIMEOUTS: dict[str, float] = {
     "subtitles.transcribe": 900,
     "media.import": 600,
     "export.start": 1800,
+    # 批量抽帧逐帧离屏渲染，24 帧在复杂工程上可能超过默认 120s
+    "preview.capture_sequence": 300,
 }
 
 # session_id -> 浏览器编辑器 WS
@@ -191,6 +193,68 @@ def build_editor_mcp_server(session_id: str):
             ]
         }
 
+    @tool(
+        "get_preview_sequence",
+        "Sample several frames across a time range in ONE call and return a single contact sheet image: a grid of frames, each labelled with its timestamp. Near-identical consecutive frames are dropped automatically, so static stretches collapse into one frame. Use this to understand a clip's structure cheaply (what happens in this video, where are the scene changes), then call get_preview_frame when one moment needs full detail. Long clips need a wider spacing: pick count so that (end - start) / count is a sensible step, and tell the user how sparse the coverage is.",
+        {
+            "type": "object",
+            "properties": {
+                "start": {
+                    "type": "number",
+                    "description": "Range start in seconds (default 0)",
+                },
+                "end": {
+                    "type": "number",
+                    "description": "Range end in seconds (default project duration)",
+                },
+                "count": {
+                    "type": "number",
+                    "description": "Frames to sample before dedupe (default 9, max 24)",
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Explicit sample times in seconds; overrides start/end/count",
+                },
+            },
+        },
+    )
+    async def get_preview_sequence(args):
+        payload = {}
+        for key in ("start", "end", "count"):
+            value = args.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                payload[key] = value
+        stamps = args.get("timestamps")
+        if isinstance(stamps, list) and stamps:
+            payload["timestamps"] = [
+                t
+                for t in stamps
+                if isinstance(t, (int, float)) and not isinstance(t, bool)
+            ]
+        try:
+            result = await call_editor(
+                session_id, "preview.capture_sequence", payload
+            )
+        except Exception as e:
+            return _error(str(e))
+        data_url = (result or {}).get("dataUrl", "")
+        base64_data = data_url.split(",", 1)[-1] if "," in data_url else data_url
+        mime = "image/png"
+        if data_url.startswith("data:") and ";" in data_url:
+            mime = data_url[5 : data_url.index(";")]
+        meta = {
+            k: result[k]
+            for k in ("width", "height", "sampled", "kept", "dropped", "frames")
+            if k in (result or {})
+        }
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(meta, ensure_ascii=False)},
+                {"type": "image", "data": base64_data, "mimeType": mime},
+            ]
+        }
+
     return create_sdk_mcp_server(
         name="opencut",
         version="1.0.0",
@@ -201,6 +265,7 @@ def build_editor_mcp_server(session_id: str):
             get_selection,
             execute_command,
             get_preview_frame,
+            get_preview_sequence,
         ],
     )
 
