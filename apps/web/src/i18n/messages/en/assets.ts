@@ -9,7 +9,7 @@ export const assets = {
 	"assets.tabAdjustment": "Adjustment",
 	"assets.tabSettings": "Settings",
 	"assets.transitionSelectHint":
-		"Select a video or image clip on the timeline, then click to apply a transition",
+		"Select a video or image clip, then click to apply a transition. It renders between that clip and the next adjacent clip on the same track (no gap between them); play across the junction to see it",
 	"assets.adjustmentCustom": "Custom Adjustment",
 	"assets.adjustmentHint":
 		"Click to insert an adjustment layer at the playhead, affecting all visuals below; select it to adjust params on the right",

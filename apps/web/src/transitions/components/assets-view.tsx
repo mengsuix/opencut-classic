@@ -56,11 +56,9 @@ export function TransitionsView() {
 
 	return (
 		<PanelView title={t("assets.tabTransitions")}>
-			{!canApply && (
-				<p className="text-muted-foreground mb-3 text-sm">
-					{t("assets.transitionSelectHint")}
-				</p>
-			)}
+			<p className="text-muted-foreground mb-3 text-sm">
+				{t("assets.transitionSelectHint")}
+			</p>
 			<div
 				className="grid gap-2"
 				style={{ gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))" }}

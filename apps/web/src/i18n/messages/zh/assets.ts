@@ -8,7 +8,8 @@ export const assets = {
 	"assets.tabCaptions": "字幕",
 	"assets.tabAdjustment": "调节",
 	"assets.tabSettings": "设置",
-	"assets.transitionSelectHint": "选中时间线上的视频或图片片段后，点击应用转场",
+	"assets.transitionSelectHint":
+		"选中视频或图片片段后点击应用；转场作用于该片段与同轨道紧邻的下一个片段之间（中间不能有空隙），播放跨过两段交界处即可看到效果",
 	"assets.adjustmentCustom": "自定义调节",
 	"assets.adjustmentHint":
 		"点击在播放头创建调节层，作用于其下方所有画面；选中调节层后在右侧调整参数",
