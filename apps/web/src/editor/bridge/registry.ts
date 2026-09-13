@@ -1649,14 +1649,18 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				if (end <= start) {
 					throw new Error("end must be greater than start");
 				}
-				const count = Math.round(
-					clampNumberArg({
-						value: args.count,
-						fallback: 9,
-						min: 1,
-						max: MAX_SEQUENCE_FRAMES,
-					}),
-				);
+				const rawCount =
+					typeof args.count === "number" && Number.isFinite(args.count)
+						? args.count
+						: 9;
+				const count = Math.round(rawCount);
+				// Reject instead of silently clamping: a caller that asked for 100
+				// frames must not be told it got them when only 24 were sampled.
+				if (count < 1 || count > MAX_SEQUENCE_FRAMES) {
+					throw new Error(
+						`count must be between 1 and ${MAX_SEQUENCE_FRAMES}, got ${rawCount}`,
+					);
+				}
 				// Midpoints of equal slices: stays inside each slice and avoids
 				// landing exactly on a cut.
 				times = Array.from(

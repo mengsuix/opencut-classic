@@ -21,6 +21,9 @@ from . import auth, db
 logger = logging.getLogger("agent-gateway.bridge")
 
 DEFAULT_TIMEOUT_SECONDS = 120
+# 与前端 preview.capture_sequence 的 MAX_SEQUENCE_FRAMES 保持一致。
+# 拼图面积决定 image token 成本，超过 24 帧后成本增长快而"看结构"的收益很低。
+MAX_SEQUENCE_FRAMES = 24
 COMMAND_TIMEOUTS: dict[str, float] = {
     "subtitles.transcribe": 900,
     "media.import": 600,
@@ -209,29 +212,44 @@ def build_editor_mcp_server(session_id: str):
                 },
                 "count": {
                     "type": "number",
-                    "description": "Frames to sample before dedupe (default 9, max 24)",
+                    "description": "Frames to sample before dedupe (default 9). Must be between 1 and 24 — larger values are rejected, not clamped; narrow start/end for finer detail instead.",
                 },
                 "timestamps": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "Explicit sample times in seconds; overrides start/end/count",
+                    "description": "Explicit sample times in seconds (max 24 entries); overrides start/end/count",
                 },
             },
         },
     )
     async def get_preview_sequence(args):
         payload = {}
-        for key in ("start", "end", "count"):
+        for key in ("start", "end"):
             value = args.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 payload[key] = value
+        count = args.get("count")
+        if isinstance(count, (int, float)) and not isinstance(count, bool):
+            if count < 1 or count > MAX_SEQUENCE_FRAMES:
+                return _error(
+                    f"count must be between 1 and {MAX_SEQUENCE_FRAMES} "
+                    f"(got {count}). For finer detail, narrow start/end "
+                    "instead of raising count."
+                )
+            payload["count"] = count
         stamps = args.get("timestamps")
         if isinstance(stamps, list) and stamps:
-            payload["timestamps"] = [
+            cleaned = [
                 t
                 for t in stamps
                 if isinstance(t, (int, float)) and not isinstance(t, bool)
             ]
+            if len(cleaned) > MAX_SEQUENCE_FRAMES:
+                return _error(
+                    f"timestamps may contain at most {MAX_SEQUENCE_FRAMES} "
+                    f"entries (got {len(cleaned)})."
+                )
+            payload["timestamps"] = cleaned
         try:
             result = await call_editor(
                 session_id, "preview.capture_sequence", payload
