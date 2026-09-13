@@ -506,6 +506,40 @@ function buildSelectionState(editor: EditorCore) {
 	};
 }
 
+function describeSelection(editor: EditorCore) {
+	const elements = editor.selection.getSelectedElements().map((ref) => {
+		const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
+		if (!found) {
+			return { ...ref, error: "element not found" };
+		}
+		const { element } = found;
+		const params = (element.params ?? {}) as Record<string, unknown>;
+		return {
+			trackId: ref.trackId,
+			elementId: ref.elementId,
+			trackType: found.trackType,
+			type: (element.type as string | undefined) ?? null,
+			name: (element.name as string | undefined) ?? null,
+			startTime: toSeconds(element.startTime as MediaTime),
+			duration: toSeconds(element.duration as MediaTime),
+			...(typeof params.content === "string" ? { text: params.content } : {}),
+			...(typeof element.mediaId === "string"
+				? { mediaId: element.mediaId }
+				: {}),
+			...(typeof element.muted === "boolean" ? { muted: element.muted } : {}),
+			...(typeof element.hidden === "boolean"
+				? { hidden: element.hidden }
+				: {}),
+			effectCount: Array.isArray(element.effects) ? element.effects.length : 0,
+			maskCount: Array.isArray(element.masks) ? element.masks.length : 0,
+		};
+	});
+	return {
+		...buildSelectionState(editor),
+		elements,
+	};
+}
+
 function buildEditorState(editor: EditorCore) {
 	const project = editor.project.getActiveOrNull();
 	const scenes = editor.scenes.getScenes();
@@ -529,7 +563,7 @@ function buildEditorState(editor: EditorCore) {
 			volume: editor.playback.getVolume(),
 			muted: editor.playback.isMuted(),
 		},
-		selection: buildSelectionState(editor),
+		selection: describeSelection(editor),
 		history: {
 			canUndo: editor.command.canUndo(),
 			canRedo: editor.command.canRedo(),
@@ -1242,45 +1276,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	"selection.describe": {
 		description:
 			'Describe the current selection in detail: selected elements with track type, element type, name, timing (seconds) and text content, plus selected keyframes and mask points. Use this to understand what "the selected part" refers to.',
-		run: ({ editor }) => {
-			const elements = editor.selection.getSelectedElements().map((ref) => {
-				const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
-				if (!found) {
-					return { ...ref, error: "element not found" };
-				}
-				const { element } = found;
-				const params = (element.params ?? {}) as Record<string, unknown>;
-				return {
-					trackId: ref.trackId,
-					elementId: ref.elementId,
-					trackType: found.trackType,
-					type: (element.type as string | undefined) ?? null,
-					name: (element.name as string | undefined) ?? null,
-					startTime: toSeconds(element.startTime as MediaTime),
-					duration: toSeconds(element.duration as MediaTime),
-					...(typeof params.content === "string"
-						? { text: params.content }
-						: {}),
-					...(typeof element.mediaId === "string"
-						? { mediaId: element.mediaId }
-						: {}),
-					...(typeof element.muted === "boolean"
-						? { muted: element.muted }
-						: {}),
-					...(typeof element.hidden === "boolean"
-						? { hidden: element.hidden }
-						: {}),
-					effectCount: Array.isArray(element.effects)
-						? element.effects.length
-						: 0,
-					maskCount: Array.isArray(element.masks) ? element.masks.length : 0,
-				};
-			});
-			return {
-				...buildSelectionState(editor),
-				elements,
-			};
-		},
+		run: ({ editor }) => describeSelection(editor),
 	},
 
 	"selection.set": {
