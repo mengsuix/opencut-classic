@@ -1,6 +1,9 @@
 export const timeline = {
 	"timeline.timeline": "Timeline",
 	"timeline.timelineRuler": "Timeline ruler",
+	"timeline.timeRangeMark": "Selected time range",
+	"timeline.clearTimeRangeMark": "Clear the selected time range",
+	"timeline.rangeMark": "Mark a time range (for AI)",
 	"timeline.timelinePlayhead": "Timeline playhead",
 	"timeline.dragPlayhead": "Drag playhead",
 	"timeline.selectTrack": "Select {name} track",

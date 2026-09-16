@@ -98,6 +98,8 @@ export const shell = {
 	"shell.saveSnapshotFailed": "Failed to save snapshot",
 	"shell.guides": "Guides",
 	"shell.previewCanvas": "Preview canvas",
+	"shell.regionMark": "Mark a canvas region (for AI)",
+	"shell.clearRegionMark": "Clear the marked region",
 	"shell.editText": "Edit text",
 	"shell.guideGrid": "Grid",
 	"shell.guideCustom": "Custom",

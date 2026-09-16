@@ -134,6 +134,14 @@ def build_editor_mcp_server(session_id: str):
         return await run("selection.describe")
 
     @tool(
+        "get_user_marks",
+        "Get the user's visual marks for pointing at regions: canvasRect = a rect the user drew on the preview (canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRange = a time range the user selected on the timeline ruler (seconds). Returns nulls when the user has not marked anything. Clear them with execute_command marks.clear after use.",
+        {},
+    )
+    async def get_user_marks(args):
+        return await run("marks.get")
+
+    @tool(
         "execute_command",
         'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected.',
         {
@@ -281,6 +289,7 @@ def build_editor_mcp_server(session_id: str):
             list_commands,
             get_editor_state,
             get_selection,
+            get_user_marks,
             execute_command,
             get_preview_frame,
             get_preview_sequence,

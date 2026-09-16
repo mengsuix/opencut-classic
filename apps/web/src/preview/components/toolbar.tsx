@@ -7,6 +7,7 @@ import { invokeAction } from "@/actions";
 import { EditableTimecode } from "@/components/editable-timecode";
 import { Button } from "@/components/ui/button";
 import {
+	CursorAddSelection01Icon,
 	FullScreenIcon,
 	PauseIcon,
 	PlayIcon,
@@ -24,6 +25,7 @@ import { PREVIEW_ZOOM_PRESETS } from "@/preview/zoom";
 import { usePreviewViewport } from "./preview-viewport";
 import { GridPopover } from "./guide-popover";
 import { usePreviewStore } from "@/preview/preview-store";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 import { useT } from "@/i18n";
 import type { MediaTime } from "@/wasm";
 
@@ -52,11 +54,31 @@ export function PreviewToolbar({
 						)}
 					</Button>
 				</GridPopover> */}
+				<RegionMarkButton />
 				<Button variant="text" onClick={onToggleFullscreen}>
 					<HugeiconsIcon icon={FullScreenIcon} />
 				</Button>
 			</div>
 		</div>
+	);
+}
+
+function RegionMarkButton() {
+	const t = useT();
+	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
+	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
+
+	return (
+		<Button
+			variant={isRegionMarking ? "secondary" : "text"}
+			size="icon"
+			aria-label={t("shell.regionMark")}
+			title={t("shell.regionMark")}
+			aria-pressed={isRegionMarking}
+			onClick={() => setRegionMarking(!isRegionMarking)}
+		>
+			<HugeiconsIcon icon={CursorAddSelection01Icon} />
+		</Button>
 	);
 }
 

@@ -6,9 +6,16 @@ import { TransformHandles } from "./transform-handles";
 import { MaskHandles } from "./mask-handles";
 import { SnapGuides } from "./snap-guides";
 import { TextEditOverlay } from "./text-edit-overlay";
+import { RegionMarkOverlay, type RegionMarkDraft } from "./region-mark-overlay";
 import { usePropertiesStore } from "@/components/editor/panels/properties/stores/properties-store";
 import { useEditor } from "@/editor/use-editor";
+import { useUserMarksStore } from "@/editor/user-marks-store";
+import { mediaTimeToSeconds } from "@/wasm";
+import { clamp } from "@/utils/math";
 import { useT } from "@/i18n";
+
+/** Ignore drags smaller than this fraction of the canvas — accidental clicks. */
+const MIN_MARK_FRACTION = 0.01;
 
 export function PreviewInteractionOverlay() {
 	const t = useT();
@@ -31,6 +38,14 @@ export function PreviewInteractionOverlay() {
 		? activeTabPerType[activeElement.type] === "masks"
 		: false;
 
+	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
+	const setCanvasRect = useUserMarksStore((s) => s.setCanvasRect);
+	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
+	const canvasSize = useEditor(
+		(e) => e.project.getActiveOrNull()?.settings.canvasSize,
+	);
+	const [regionDraft, setRegionDraft] = useState<RegionMarkDraft | null>(null);
+
 	const {
 		onPointerDown,
 		onPointerMove,
@@ -48,6 +63,17 @@ export function PreviewInteractionOverlay() {
 			return;
 		}
 
+		if (isRegionMarking) {
+			const point = viewport.screenToCanvas({
+				clientX: event.clientX,
+				clientY: event.clientY,
+			});
+			if (!point) return;
+			event.currentTarget.setPointerCapture(event.pointerId);
+			setRegionDraft({ x0: point.x, y0: point.y, x1: point.x, y1: point.y });
+			return;
+		}
+
 		onPointerDown(event);
 	};
 
@@ -56,11 +82,69 @@ export function PreviewInteractionOverlay() {
 			return;
 		}
 
+		if (regionDraft) {
+			const point = viewport.screenToCanvas({
+				clientX: event.clientX,
+				clientY: event.clientY,
+			});
+			if (point) {
+				setRegionDraft((draft) =>
+					draft ? { ...draft, x1: point.x, y1: point.y } : draft,
+				);
+			}
+			return;
+		}
+
 		onPointerMove(event);
 	};
 
 	const handlePointerUp = (event: React.PointerEvent) => {
 		if (viewport.handlePanPointerUp({ event })) {
+			return;
+		}
+
+		if (regionDraft) {
+			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+				event.currentTarget.releasePointerCapture(event.pointerId);
+			}
+			if (canvasSize) {
+				const left = clamp({
+					value: Math.min(regionDraft.x0, regionDraft.x1) / canvasSize.width,
+					min: 0,
+					max: 1,
+				});
+				const top = clamp({
+					value: Math.min(regionDraft.y0, regionDraft.y1) / canvasSize.height,
+					min: 0,
+					max: 1,
+				});
+				const right = clamp({
+					value: Math.max(regionDraft.x0, regionDraft.x1) / canvasSize.width,
+					min: 0,
+					max: 1,
+				});
+				const bottom = clamp({
+					value: Math.max(regionDraft.y0, regionDraft.y1) / canvasSize.height,
+					min: 0,
+					max: 1,
+				});
+				if (
+					right - left >= MIN_MARK_FRACTION &&
+					bottom - top >= MIN_MARK_FRACTION
+				) {
+					setCanvasRect({
+						left,
+						top,
+						right,
+						bottom,
+						time: mediaTimeToSeconds({
+							time: editor.playback.getCurrentTime(),
+						}),
+					});
+				}
+			}
+			setRegionDraft(null);
+			setRegionMarking(false);
 			return;
 		}
 
@@ -74,11 +158,13 @@ export function PreviewInteractionOverlay() {
 				role="application"
 				aria-label={t("shell.previewCanvas")}
 				style={{
-					cursor: viewport.isPanning
-						? "grabbing"
-						: viewport.canPan
-							? "default"
-							: undefined,
+					cursor: isRegionMarking
+						? "crosshair"
+						: viewport.isPanning
+							? "grabbing"
+							: viewport.canPan
+								? "default"
+								: undefined,
 				}}
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
@@ -100,6 +186,7 @@ export function PreviewInteractionOverlay() {
 				<TransformHandles onSnapLinesChange={setSnapLines} />
 			)}
 			<SnapGuides lines={snapLines} />
+			<RegionMarkOverlay draft={regionDraft} />
 		</div>
 	);
 }

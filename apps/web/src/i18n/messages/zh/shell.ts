@@ -94,6 +94,8 @@ export const shell = {
 	"shell.saveSnapshotFailed": "保存快照失败",
 	"shell.guides": "参考线",
 	"shell.previewCanvas": "预览画布",
+	"shell.regionMark": "框选区域（供 AI 引用）",
+	"shell.clearRegionMark": "清除框选的区域",
 	"shell.editText": "编辑文本",
 	"shell.guideGrid": "网格",
 	"shell.guideCustom": "自定义",

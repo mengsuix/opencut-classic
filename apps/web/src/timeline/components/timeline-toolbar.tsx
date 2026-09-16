@@ -27,9 +27,11 @@ import {
 import { hasMediaId } from "@/timeline";
 import { cn } from "@/utils/ui";
 import { useTimelineStore } from "@/timeline/timeline-store";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Bookmark02Icon,
+	CursorAddSelection01Icon,
 	Delete02Icon,
 	SnowIcon,
 	ScissorIcon,
@@ -103,6 +105,8 @@ function ToolbarLeftSection() {
 	const isCurrentlyBookmarked = useEditor((e) =>
 		e.scenes.isBookmarked({ time: e.playback.getCurrentTime() }),
 	);
+	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
+	const setRangeMarking = useUserMarksStore((s) => s.setRangeMarking);
 	const selectedElement =
 		selectedElements.length === 1
 			? (editor.timeline.getElementsWithTracks({
@@ -248,6 +252,13 @@ function ToolbarLeftSection() {
 						}
 					/>
 				</Tooltip>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={CursorAddSelection01Icon} />}
+					isActive={isRangeMarking}
+					tooltip={t("timeline.rangeMark")}
+					onClick={() => setRangeMarking(!isRangeMarking)}
+				/>
 
 				<GraphEditorPopover
 					open={graphEditor.open}

@@ -75,6 +75,7 @@ import { useElementSelection } from "@/timeline/hooks/element/use-element-select
 import { useTimelineSeek } from "@/timeline/hooks/use-timeline-seek";
 import { useTimelineDragDrop } from "@/timeline/hooks/use-timeline-drag-drop";
 import { TimelineRuler } from "./timeline-ruler";
+import { TimeRangeOverlay } from "./time-range-overlay";
 import {
 	TimelineBookmarksRow,
 	useBookmarkDrag,
@@ -90,6 +91,8 @@ import {
 } from "@/timeline/hooks/use-timeline-viewport";
 import { timelineViewport } from "@/timeline/viewport-store";
 import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
+import { useTimelineRangeSelect } from "@/timeline/hooks/use-timeline-range-select";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 import { DragLine } from "./drag-line";
 import { invokeAction } from "@/actions";
 import { resolveTimelineElementIntersections } from "./selection-hit-testing";
@@ -428,6 +431,12 @@ export function Timeline() {
 			playheadRef,
 		});
 
+	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
+	const { onRangeSelectMouseDown } = useTimelineRangeSelect({
+		getRulerEl: () => rulerRef.current,
+		zoomLevel,
+	});
+
 	const { isDragOver, dropTarget, dragProps } = useTimelineDragDrop({
 		containerRef: tracksContainerRef,
 		tracksScrollRef,
@@ -557,12 +566,20 @@ export function Timeline() {
 				/>
 
 				<div
-					className="relative isolate flex flex-1 flex-col overflow-hidden"
+					className={cn(
+						"relative isolate flex flex-1 flex-col overflow-hidden",
+						isRangeMarking ? "cursor-crosshair" : "",
+					)}
 					ref={tracksContainerRef}
+					onMouseDownCapture={(event) => {
+						if (!isRangeMarking) return;
+						onRangeSelectMouseDown(event);
+					}}
 				>
 					<SelectionBox
 						bounds={selectionBox?.bounds ?? null}
 					/>
+					<TimeRangeOverlay zoomLevel={zoomLevel} timelineRef={timelineRef} />
 					<DragLine
 						dropTarget={dropTarget}
 						tracks={tracks}

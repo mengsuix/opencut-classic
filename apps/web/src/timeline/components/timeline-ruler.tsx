@@ -1,13 +1,17 @@
 import { type JSX } from "react";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import { mediaTimeToSeconds } from "opencut-wasm";
 import { TICKS_PER_SECOND } from "@/wasm";
 import { TIMELINE_RULER_HEIGHT_PX } from "./layout";
 import { DEFAULT_FPS } from "@/fps/defaults";
 import { useEditor } from "@/editor/use-editor";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 import { getRulerConfig, shouldShowLabel } from "@/timeline/ruler-utils";
 import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { TimelineTick } from "./timeline-tick";
+import { cn } from "@/utils/ui";
 import { useT } from "@/i18n";
 
 /**
@@ -41,6 +45,11 @@ export function TimelineRuler({
 	const durationTicks = useEditor((e) => e.timeline.getTotalDuration());
 	const durationSeconds = mediaTimeToSeconds({ time: durationTicks });
 	const pixelsPerSecond = BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
+	const timeRange = useUserMarksStore((s) => s.timeRange);
+	const draftTimeRange = useUserMarksStore((s) => s.draftTimeRange);
+	const clearTimeRange = useUserMarksStore((s) => s.clearTimeRange);
+	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
+	const displayedRange = draftTimeRange ?? timeRange;
 	const visibleDurationSeconds = dynamicTimelineWidth / pixelsPerSecond;
 	const effectiveDurationSeconds = Math.max(
 		durationSeconds,
@@ -123,13 +132,41 @@ export function TimelineRuler({
 			<div
 				role="none"
 				ref={rulerRef}
-				className="relative cursor-default select-none"
+				className={cn(
+					"relative select-none",
+					isRangeMarking ? "cursor-crosshair" : "cursor-default",
+				)}
 				style={{
 					height: TIMELINE_RULER_HEIGHT_PX,
 					width: `${dynamicTimelineWidth}px`,
 				}}
 				onMouseDown={handleRulerMouseDown}
 			>
+				{displayedRange && (
+					<div
+						className="bg-primary/25 pointer-events-none absolute inset-y-0 border-x border-primary/60"
+						title={`${displayedRange.startTime.toFixed(2)}s – ${displayedRange.endTime.toFixed(2)}s`}
+						style={{
+							left: `${displayedRange.startTime * pixelsPerSecond}px`,
+							width: `${(displayedRange.endTime - displayedRange.startTime) * pixelsPerSecond}px`,
+						}}
+					>
+						{timeRange &&
+							!draftTimeRange &&
+							(timeRange.endTime - timeRange.startTime) * pixelsPerSecond >=
+								24 && (
+								<button
+									type="button"
+									aria-label={t("timeline.clearTimeRangeMark")}
+									title={t("timeline.clearTimeRangeMark")}
+									className="bg-background text-foreground pointer-events-auto absolute top-1/2 right-0 flex size-3.5 -translate-y-1/2 translate-x-1/2 cursor-pointer items-center justify-center rounded-sm border"
+									onClick={clearTimeRange}
+								>
+									<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
+								</button>
+							)}
+					</div>
+				)}
 				{timelineTicks}
 			</div>
 		</div>

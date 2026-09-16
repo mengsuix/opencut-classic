@@ -1,6 +1,9 @@
 export const timeline = {
 	"timeline.timeline": "时间轴",
 	"timeline.timelineRuler": "时间轴标尺",
+	"timeline.timeRangeMark": "选中的时间范围",
+	"timeline.clearTimeRangeMark": "清除选中的时间范围",
+	"timeline.rangeMark": "框选时间范围（供 AI 引用）",
 	"timeline.timelinePlayhead": "时间轴播放头",
 	"timeline.dragPlayhead": "拖动播放头",
 	"timeline.selectTrack": "选择 {name} 轨道",

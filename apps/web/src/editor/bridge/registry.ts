@@ -40,6 +40,7 @@ import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
 import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
 import { normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 
 export interface BridgeElementRef {
 	trackId: string;
@@ -1295,6 +1296,39 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		run: ({ editor }) => {
 			editor.selection.clearSelection();
 			return { selected: [] };
+		},
+	},
+
+	"marks.get": {
+		description:
+			"Get the user's visual marks for pointing at regions: canvasRect = a rect the user drew on the preview (canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRange = a time range the user selected on the timeline ruler (seconds). Returns nulls when the user has not marked anything.",
+		run: () => {
+			const { canvasRect, timeRange } = useUserMarksStore.getState();
+			return { canvasRect, timeRange };
+		},
+	},
+
+	"marks.clear": {
+		description:
+			"Clear user marks (after consuming them) — canvasRect (preview region) and/or timeRange (timeline range).",
+		args: { target: "'canvasRect' | 'timeRange' | 'all' (default 'all')" },
+		run: ({ args }) => {
+			const target =
+				typeof args.target === "string" && args.target ? args.target : "all";
+			const store = useUserMarksStore.getState();
+			if (target === "all") {
+				store.clearCanvasRect();
+				store.clearTimeRange();
+			} else if (target === "canvasRect") {
+				store.clearCanvasRect();
+			} else if (target === "timeRange") {
+				store.clearTimeRange();
+			} else {
+				throw new Error(
+					`Invalid target: ${target}. Use 'canvasRect', 'timeRange' or 'all'.`,
+				);
+			}
+			return { cleared: target };
 		},
 	},
 
