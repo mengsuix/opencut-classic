@@ -27,7 +27,7 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
     let delta_fixed = vec2f(delta.x * aspect, delta.y);
     let dist = length(delta_fixed);
     if (dist >= radius_uv) {
-        return textureSample(input_texture, input_sampler, input.tex_coord);
+        return textureSampleLevel(input_texture, input_sampler, input.tex_coord, 0.0);
     }
 
     let strength = 1.0 - dist / radius_uv;
@@ -39,5 +39,5 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
         delta_fixed.x * s + delta_fixed.y * c
     );
     let sample_uv = center + vec2f(rotated.x / aspect, rotated.y);
-    return textureSample(input_texture, input_sampler, sample_uv);
+    return textureSampleLevel(input_texture, input_sampler, sample_uv, 0.0);
 }
