@@ -203,7 +203,7 @@ const TOOLS = [
 	{
 		name: "get_user_marks",
 		description:
-			"Get the user's visual marks for pointing at regions: canvasRect = a rect the user drew on the preview (canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRange = a time range the user selected on the timeline ruler (seconds). Returns nulls when the user has not marked anything. Clear them with execute_command marks.clear after use.",
+			"Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a numeric id shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a numeric id shown on the band; seconds; numbered separately from canvasRects). The user can mark several of each and may point at one by its number; both are empty arrays when nothing is marked. Clear them with execute_command marks.clear after use.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{

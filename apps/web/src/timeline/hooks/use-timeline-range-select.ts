@@ -10,8 +10,9 @@ const MIN_RANGE_PX = 2;
  * Drag anywhere on the timeline (ruler, bookmarks row or tracks) in
  * range-marking mode selects a time-range mark for the agent to reference.
  * Started from the timeline toolbar button (same interaction as the preview's
- * canvas region marking). The drag listens on window after mousedown; the
- * mode exits after the drag. The draft band lives in the store so it renders
+ * canvas region marking). The drag listens on window after mousedown; the mode
+ * exits once the drag is released, so marking another range requires pressing
+ * the toolbar button again. The draft band lives in the store so it renders
  * consistently on the ruler regardless of where the drag started.
  */
 export function useTimelineRangeSelect({
@@ -23,7 +24,7 @@ export function useTimelineRangeSelect({
 }) {
 	const editor = useEditor();
 	const setDraftTimeRange = useUserMarksStore((s) => s.setDraftTimeRange);
-	const setTimeRange = useUserMarksStore((s) => s.setTimeRange);
+	const addTimeRange = useUserMarksStore((s) => s.addTimeRange);
 	const setRangeMarking = useUserMarksStore((s) => s.setRangeMarking);
 
 	const durationSeconds = mediaTimeToSeconds({
@@ -67,7 +68,7 @@ export function useTimelineRangeSelect({
 			};
 			setDraftTimeRange(null);
 			if ((range.endTime - range.startTime) * pixelsPerSecond >= MIN_RANGE_PX) {
-				setTimeRange(range);
+				addTimeRange(range);
 			}
 			setRangeMarking(false);
 		};

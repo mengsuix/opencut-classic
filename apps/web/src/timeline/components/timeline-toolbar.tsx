@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useEditor } from "@/editor/use-editor";
+import { registerCanceller } from "@/editor/cancel-interaction";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import {
 	TooltipProvider,
@@ -107,6 +109,14 @@ function ToolbarLeftSection() {
 	);
 	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
 	const setRangeMarking = useUserMarksStore((s) => s.setRangeMarking);
+
+	// The marking mode stays on after each drag so several ranges can be drawn
+	// in a row; Escape exits it (without also clearing the element selection).
+	useEffect(() => {
+		if (!isRangeMarking) return;
+		return registerCanceller({ fn: () => setRangeMarking(false) });
+	}, [isRangeMarking, setRangeMarking]);
+
 	const selectedElement =
 		selectedElements.length === 1
 			? (editor.timeline.getElementsWithTracks({

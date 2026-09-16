@@ -1301,31 +1301,31 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"marks.get": {
 		description:
-			"Get the user's visual marks for pointing at regions: canvasRect = a rect the user drew on the preview (canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRange = a time range the user selected on the timeline ruler (seconds). Returns nulls when the user has not marked anything.",
+			"Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a numeric id shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a numeric id shown on the band; seconds; numbered separately from canvasRects). The user can mark several of each and may point at one by its number; both are empty arrays when nothing is marked.",
 		run: () => {
-			const { canvasRect, timeRange } = useUserMarksStore.getState();
-			return { canvasRect, timeRange };
+			const { canvasRects, timeRanges } = useUserMarksStore.getState();
+			return { canvasRects, timeRanges };
 		},
 	},
 
 	"marks.clear": {
 		description:
-			"Clear user marks (after consuming them) — canvasRect (preview region) and/or timeRange (timeline range).",
-		args: { target: "'canvasRect' | 'timeRange' | 'all' (default 'all')" },
+			"Clear user marks (after consuming them) — canvasRects (preview regions) and/or timeRanges (timeline ranges).",
+		args: { target: "'canvasRects' | 'timeRanges' | 'all' (default 'all')" },
 		run: ({ args }) => {
 			const target =
 				typeof args.target === "string" && args.target ? args.target : "all";
 			const store = useUserMarksStore.getState();
 			if (target === "all") {
-				store.clearCanvasRect();
-				store.clearTimeRange();
-			} else if (target === "canvasRect") {
-				store.clearCanvasRect();
-			} else if (target === "timeRange") {
-				store.clearTimeRange();
+				store.clearCanvasRects();
+				store.clearTimeRanges();
+			} else if (target === "canvasRects") {
+				store.clearCanvasRects();
+			} else if (target === "timeRanges") {
+				store.clearTimeRanges();
 			} else {
 				throw new Error(
-					`Invalid target: ${target}. Use 'canvasRect', 'timeRange' or 'all'.`,
+					`Invalid target: ${target}. Use 'canvasRects', 'timeRanges' or 'all'.`,
 				);
 			}
 			return { cleared: target };

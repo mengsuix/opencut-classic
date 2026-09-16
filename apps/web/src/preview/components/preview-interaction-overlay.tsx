@@ -39,7 +39,7 @@ export function PreviewInteractionOverlay() {
 		: false;
 
 	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
-	const setCanvasRect = useUserMarksStore((s) => s.setCanvasRect);
+	const addCanvasRect = useUserMarksStore((s) => s.addCanvasRect);
 	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
 	const canvasSize = useEditor(
 		(e) => e.project.getActiveOrNull()?.settings.canvasSize,
@@ -132,7 +132,7 @@ export function PreviewInteractionOverlay() {
 					right - left >= MIN_MARK_FRACTION &&
 					bottom - top >= MIN_MARK_FRACTION
 				) {
-					setCanvasRect({
+					addCanvasRect({
 						left,
 						top,
 						right,
@@ -144,6 +144,8 @@ export function PreviewInteractionOverlay() {
 				}
 			}
 			setRegionDraft(null);
+			// Exit marking mode after the drag; drawing another region requires
+			// pressing the toolbar button again.
 			setRegionMarking(false);
 			return;
 		}

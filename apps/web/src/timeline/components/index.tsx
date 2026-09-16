@@ -579,7 +579,6 @@ export function Timeline() {
 					<SelectionBox
 						bounds={selectionBox?.bounds ?? null}
 					/>
-					<TimeRangeOverlay zoomLevel={zoomLevel} timelineRef={timelineRef} />
 					<DragLine
 						dropTarget={dropTarget}
 						tracks={tracks}
@@ -632,9 +631,10 @@ export function Timeline() {
 						}}
 					>
 						<div
-							className="flex min-h-full flex-col"
+							className="relative flex min-h-full flex-col"
 							style={{ width: `${dynamicTimelineWidth}px` }}
 						>
+							<TimeRangeOverlay zoomLevel={zoomLevel} />
 							{/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- spatial gesture surface (tracks container background); direct-target clicks here originate box-select or clear selection. Keyboard control is global timeline shortcuts. */}
 							<div
 								className="relative shrink-0"

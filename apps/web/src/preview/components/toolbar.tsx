@@ -26,6 +26,7 @@ import { usePreviewViewport } from "./preview-viewport";
 import { GridPopover } from "./guide-popover";
 import { usePreviewStore } from "@/preview/preview-store";
 import { useUserMarksStore } from "@/editor/user-marks-store";
+import { registerCanceller } from "@/editor/cancel-interaction";
 import { useT } from "@/i18n";
 import type { MediaTime } from "@/wasm";
 
@@ -67,6 +68,13 @@ function RegionMarkButton() {
 	const t = useT();
 	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
 	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
+
+	// The marking mode stays on after each region so several can be drawn in a
+	// row; Escape exits it (without also clearing the element selection).
+	useEffect(() => {
+		if (!isRegionMarking) return;
+		return registerCanceller({ fn: () => setRegionMarking(false) });
+	}, [isRegionMarking, setRegionMarking]);
 
 	return (
 		<Button

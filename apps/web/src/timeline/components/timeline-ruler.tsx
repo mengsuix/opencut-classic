@@ -11,6 +11,7 @@ import { useUserMarksStore } from "@/editor/user-marks-store";
 import { getRulerConfig, shouldShowLabel } from "@/timeline/ruler-utils";
 import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { TimelineTick } from "./timeline-tick";
+import { TIMELINE_LAYERS } from "./layers";
 import { cn } from "@/utils/ui";
 import { useT } from "@/i18n";
 
@@ -45,11 +46,10 @@ export function TimelineRuler({
 	const durationTicks = useEditor((e) => e.timeline.getTotalDuration());
 	const durationSeconds = mediaTimeToSeconds({ time: durationTicks });
 	const pixelsPerSecond = BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
-	const timeRange = useUserMarksStore((s) => s.timeRange);
+	const timeRanges = useUserMarksStore((s) => s.timeRanges);
 	const draftTimeRange = useUserMarksStore((s) => s.draftTimeRange);
-	const clearTimeRange = useUserMarksStore((s) => s.clearTimeRange);
+	const removeTimeRange = useUserMarksStore((s) => s.removeTimeRange);
 	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
-	const displayedRange = draftTimeRange ?? timeRange;
 	const visibleDurationSeconds = dynamicTimelineWidth / pixelsPerSecond;
 	const effectiveDurationSeconds = Math.max(
 		durationSeconds,
@@ -142,30 +142,52 @@ export function TimelineRuler({
 				}}
 				onMouseDown={handleRulerMouseDown}
 			>
-				{displayedRange && (
-					<div
-						className="bg-primary/25 pointer-events-none absolute inset-y-0 border-x border-primary/60"
-						title={`${displayedRange.startTime.toFixed(2)}s – ${displayedRange.endTime.toFixed(2)}s`}
-						style={{
-							left: `${displayedRange.startTime * pixelsPerSecond}px`,
-							width: `${(displayedRange.endTime - displayedRange.startTime) * pixelsPerSecond}px`,
-						}}
-					>
-						{timeRange &&
-							!draftTimeRange &&
-							(timeRange.endTime - timeRange.startTime) * pixelsPerSecond >=
-								24 && (
+				{timeRanges.map((range) => {
+					const width = (range.endTime - range.startTime) * pixelsPerSecond;
+					return (
+						<div
+							key={range.id}
+							className="bg-primary/25 pointer-events-none absolute inset-y-0 border-x border-primary/60"
+							title={`${range.startTime.toFixed(2)}s – ${range.endTime.toFixed(2)}s`}
+							style={{
+								left: `${range.startTime * pixelsPerSecond}px`,
+								width: `${width}px`,
+							}}
+						>
+							{width >= 18 && (
 								<button
 									type="button"
 									aria-label={t("timeline.clearTimeRangeMark")}
 									title={t("timeline.clearTimeRangeMark")}
-									className="bg-background text-foreground pointer-events-auto absolute top-1/2 right-0 flex size-3.5 -translate-y-1/2 translate-x-1/2 cursor-pointer items-center justify-center rounded-sm border"
-									onClick={clearTimeRange}
+									className="bg-background text-foreground pointer-events-auto absolute top-1/2 right-0.5 flex size-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border"
+									style={{
+										// The playhead's drag handle (z = playhead) sits at the
+										// same spot when the band ends at the playhead — lift the
+										// button above it so clicks reach it, not the handle.
+										zIndex: TIMELINE_LAYERS.playhead + 1,
+									}}
+									onMouseDown={(event) => event.stopPropagation()}
+									onClick={() => removeTimeRange(range.id)}
 								>
 									<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
 								</button>
 							)}
-					</div>
+							{width >= 36 && (
+								<span className="bg-background text-foreground pointer-events-none absolute top-1/2 left-0.5 flex size-3.5 -translate-y-1/2 items-center justify-center rounded-sm border text-[9px] leading-none font-medium">
+									{range.id}
+								</span>
+							)}
+						</div>
+					);
+				})}
+				{draftTimeRange && (
+					<div
+						className="bg-primary/25 pointer-events-none absolute inset-y-0 border-x border-primary/60"
+						style={{
+							left: `${draftTimeRange.startTime * pixelsPerSecond}px`,
+							width: `${(draftTimeRange.endTime - draftTimeRange.startTime) * pixelsPerSecond}px`,
+						}}
+					/>
 				)}
 				{timelineTicks}
 			</div>
