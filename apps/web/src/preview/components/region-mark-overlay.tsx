@@ -84,7 +84,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 			{markBoxes.map(({ id, box }) => (
 				<div
 					key={id}
-					className="border-primary bg-primary/10 absolute border-2 border-dashed"
+					className="border-primary/60 bg-primary/10 absolute border-2"
 					style={{
 						left: box.left,
 						top: box.top,
@@ -108,7 +108,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 			))}
 			{draftBox && (
 				<div
-					className="border-primary/60 bg-primary/5 absolute border-2 border-dashed"
+					className="border-primary/40 bg-primary/5 absolute border-2"
 					style={{
 						left: draftBox.left,
 						top: draftBox.top,
