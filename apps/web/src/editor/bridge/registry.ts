@@ -38,7 +38,7 @@ import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
 import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
-import { normalizeGraphicElementInput } from "./insert-validation";
+import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
 import { useUserMarksStore } from "@/editor/user-marks-store";
 
@@ -789,8 +789,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const element = normalizeGraphicElementInput(
 				converted,
 			) as unknown as CreateTimelineElement;
-			const placement = (args.placement ??
+			const rawPlacement = (args.placement ??
 				({ mode: "auto" } as const)) as InsertElementParams["placement"];
+			const placement = coerceAutoPlacement({
+				elementType: element.type,
+				placement: rawPlacement,
+			});
 			return insertAndSelect(editor, element, placement);
 		},
 	},

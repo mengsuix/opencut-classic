@@ -33,7 +33,8 @@ mock.module("@/core", () => ({
 	EditorCore: { getInstance: () => fakeEditor },
 }));
 
-const { normalizeGraphicElementInput } = await import("../insert-validation");
+const { normalizeGraphicElementInput, coerceAutoPlacement } =
+	await import("../insert-validation");
 const { InsertElementCommand } =
 	await import("@/commands/timeline/element/insert-element");
 
@@ -87,5 +88,37 @@ describe("InsertElementCommand", () => {
 
 		expect(() => command.execute()).toThrow("Track not found: stale-track");
 		expect(fakeEditor.timeline.updateTracks).not.toHaveBeenCalled();
+	});
+});
+
+describe("coerceAutoPlacement", () => {
+	test("drops an incompatible auto trackType (graphic on video)", () => {
+		const result = coerceAutoPlacement({
+			elementType: "graphic",
+			placement: { mode: "auto", trackType: "video" },
+		});
+
+		expect(result).toEqual({ mode: "auto" });
+	});
+
+	test("keeps a compatible auto trackType (graphic on graphic)", () => {
+		const placement = { mode: "auto", trackType: "graphic" as const };
+		expect(
+			coerceAutoPlacement({ elementType: "graphic", placement }),
+		).toEqual(placement);
+	});
+
+	test("keeps auto placement without trackType", () => {
+		const placement = { mode: "auto" as const };
+		expect(coerceAutoPlacement({ elementType: "text", placement })).toEqual(
+			placement,
+		);
+	});
+
+	test("never touches explicit placement", () => {
+		const placement = { mode: "explicit" as const, trackId: "video-track" };
+		expect(
+			coerceAutoPlacement({ elementType: "graphic", placement }),
+		).toEqual(placement);
 	});
 });
