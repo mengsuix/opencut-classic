@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import config, db
 from .agent_service import agent_service
 from .api.agent import router as agent_router
+from .api.fx import router as fx_router
 from .editor_bridge import editor_websocket_endpoint
 
 logging.basicConfig(
@@ -66,6 +67,7 @@ app.add_middleware(
 )
 
 app.include_router(agent_router, prefix="/api/agent")
+app.include_router(fx_router, prefix="/api/agent")
 app.websocket("/ws/editor")(editor_websocket_endpoint)
 
 

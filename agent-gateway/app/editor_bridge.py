@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import auth, db
+from . import auth, config, db, fx_render
 
 logger = logging.getLogger("agent-gateway.bridge")
 
@@ -36,6 +36,8 @@ COMMAND_TIMEOUTS: dict[str, float] = {
 _editor_sockets: dict[str, WebSocket] = {}
 # session_id -> hello 信息（projectId / projectName）
 _editor_info: dict[str, dict] = {}
+# session_id -> 产物下载用对外 base url（从编辑器连接的 Host 头推导）
+_editor_base_urls: dict[str, str] = {}
 # request_id -> (future, timer, session_id)
 _pending: dict[str, tuple[asyncio.Future, asyncio.TimerHandle, str]] = {}
 _request_seq = 0
@@ -43,6 +45,19 @@ _request_seq = 0
 
 class EditorNotConnectedError(RuntimeError):
     pass
+
+
+def _derive_base_url(websocket: WebSocket) -> str:
+    """产物下载用对外地址：配置优先，否则从编辑器连接的 Host 头推导"""
+    if config.FX_PUBLIC_BASE_URL:
+        return config.FX_PUBLIC_BASE_URL
+    host = websocket.headers.get("host", "")
+    if not host:
+        return ""
+    scheme = (
+        "https" if websocket.headers.get("x-forwarded-proto") == "https" else "http"
+    )
+    return f"{scheme}://{host}"
 
 
 async def call_editor(
@@ -281,6 +296,82 @@ def build_editor_mcp_server(session_id: str):
             ]
         }
 
+    @tool(
+        "fx_render",
+        'Render a self-contained HTML/CSS composition with HyperFrames (headless Chrome, frame-accurate CSS/WAAPI/GSAP '
+        'animation). Use it for custom visuals beyond the editor\'s built-in text/effect params: tech-style badges, '
+        'glowing titles, particles, animated stickers, or replicating a reference image\'s look. Two output formats: '
+        '"video" (default) renders an animated black-background MP4 — insert on an overlay track with blendMode "screen" '
+        'so black turns transparent; "image" screenshots t=0 as a transparent-background PNG in seconds — for STATIC '
+        'visuals (badges, labels, decorations with no animation), the HTML must use a transparent page background. The '
+        'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta name="viewport" '
+        'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
+        'data-duration="<seconds>" data-width="<px>" data-height="<px>"; children carry class "clip" with '
+        'data-start/data-duration/data-track-index. Video rendering takes 1-3 minutes; image takes seconds. Returns a '
+        'URL plus the exact next steps (media.import with url, then timeline.insert_element).',
+        {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Complete HTML document following the HyperFrames composition convention",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["video", "image"],
+                    "description": '"video": animated effect (black-background MP4, use blendMode "screen"); "image": static visual (transparent-background PNG, plain image element, no blend mode). Default "video".',
+                },
+            },
+            "required": ["html"],
+        },
+    )
+    async def fx_render_tool(args):
+        html = args.get("html")
+        if not isinstance(html, str) or not html.strip():
+            return _error("Missing required argument: html")
+        format = args.get("format", "video")
+        try:
+            result = await fx_render.render_fx(session_id, html, format=format)
+        except fx_render.FxRenderError as e:
+            return _error(str(e))
+        except Exception as e:
+            return _error(f"渲染异常: {type(e).__name__}: {e}")
+        base = _editor_base_urls.get(session_id, "")
+        if not base:
+            return _error(
+                "无法确定 Gateway 对外地址（编辑器未通过 WebSocket 连接）。"
+                "请在 Gateway 配置 FX_PUBLIC_BASE_URL 后重试。"
+            )
+        url = (
+            f"{base}/api/agent/sessions/{session_id}"
+            f"/fx/{result['jobId']}/{result['fileName']}"
+        )
+        if result["kind"] == "image":
+            next_steps = (
+                '用 execute_command 执行 media.import（参数 name + url）导入素材库，'
+                "拿到返回的 asset id 后用 timeline.insert_element 插入 type:'image' 元素"
+                "（mediaId 用该 id，placement 选 overlay 轨道），无需设置混合模式"
+            )
+        else:
+            next_steps = (
+                '用 execute_command 执行 media.import（参数 name + url）导入素材库，'
+                "拿到返回的 asset id 后用 timeline.insert_element 插入 type:'video' 元素"
+                "（mediaId 用该 id，placement 选 overlay 轨道），"
+                '再用 timeline.update_elements 把该元素的 blendMode 设为 "screen"'
+            )
+        return _text(
+            {
+                "jobId": result["jobId"],
+                "kind": result["kind"],
+                "url": url,
+                "fileName": result["fileName"],
+                "width": result["width"],
+                "height": result["height"],
+                "durationSeconds": result["durationSeconds"],
+                "next": next_steps,
+            }
+        )
+
     return create_sdk_mcp_server(
         name="opencut",
         version="1.0.0",
@@ -293,6 +384,7 @@ def build_editor_mcp_server(session_id: str):
             execute_command,
             get_preview_frame,
             get_preview_sequence,
+            fx_render_tool,
         ],
     )
 
@@ -325,6 +417,7 @@ async def editor_websocket_endpoint(websocket: WebSocket) -> None:
 
     await websocket.accept()
     _editor_sockets[session_id] = websocket
+    _editor_base_urls[session_id] = _derive_base_url(websocket)
     logger.info(f"[bridge] 编辑器已连接: session={session_id[:8]}")
 
     try:
@@ -362,6 +455,7 @@ async def editor_websocket_endpoint(websocket: WebSocket) -> None:
         if _editor_sockets.get(session_id) is websocket:
             _editor_sockets.pop(session_id, None)
             _editor_info.pop(session_id, None)
+            _editor_base_urls.pop(session_id, None)
             logger.info(f"[bridge] 编辑器已断开: session={session_id[:8]}")
         for req_id, (fut, timer, sid) in list(_pending.items()):
             if sid == session_id:

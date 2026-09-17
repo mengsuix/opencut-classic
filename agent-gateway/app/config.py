@@ -69,6 +69,14 @@ AGENT_ENV = {
     "API_TIMEOUT_MS": "3000000",
 }
 
+# ---------------------------------------------------------------------------
+# HyperFrames 特效渲染（fx.render 工具）：HTML → MP4，产物经静态路由回传浏览器
+# ---------------------------------------------------------------------------
+FX_HYPERFRAMES_VERSION = os.environ.get("FX_HYPERFRAMES_VERSION", "0.8.46")
+FX_RENDER_TIMEOUT_SECONDS = float(os.environ.get("FX_RENDER_TIMEOUT_SECONDS", "900"))
+# 产物下载用的对外地址；留空则从编辑器 WebSocket 连接的 Host 头推导（反代需透传 Host）
+FX_PUBLIC_BASE_URL = os.environ.get("FX_PUBLIC_BASE_URL", "").rstrip("/")
+
 MAX_TURNS_PER_SESSION = 1000
 IDLE_SESSION_SECONDS = float(os.environ.get("IDLE_SESSION_SECONDS", str(2 * 3600)))
 IDLE_CLEANUP_INTERVAL_SECONDS = 600

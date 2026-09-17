@@ -47,6 +47,7 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__execute_command",
     "mcp__opencut__get_preview_frame",
     "mcp__opencut__get_preview_sequence",
+    "mcp__opencut__fx_render",
 ]
 
 

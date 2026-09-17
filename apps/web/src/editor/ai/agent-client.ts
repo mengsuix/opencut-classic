@@ -27,7 +27,7 @@ export interface AgentSession {
 	history: AgentHistoryMessage[];
 }
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_AGENT_GATEWAY_URL;
+export const GATEWAY_URL = process.env.NEXT_PUBLIC_AGENT_GATEWAY_URL;
 
 export function isAgentEnabled(): boolean {
 	return Boolean(GATEWAY_URL);
@@ -47,7 +47,7 @@ const TOKEN_CACHE_MS = 5 * 60 * 1000;
  * 获取 Gateway 访问凭证。鉴权体系未接入前（Gateway AUTH_MODE=dev），
  * token 获取失败降级为空串，请求不携带 Authorization 头，Gateway dev 模式直通。
  */
-async function getGatewayToken(): Promise<string> {
+export async function getGatewayToken(): Promise<string> {
 	if (tokenCache && Date.now() - tokenCache.fetchedAt < TOKEN_CACHE_MS) {
 		return tokenCache.token;
 	}

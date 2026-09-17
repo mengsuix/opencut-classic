@@ -38,6 +38,7 @@ import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
 import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
+import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
 import { useUserMarksStore } from "@/editor/user-marks-store";
@@ -87,6 +88,45 @@ function requireString(value: unknown, name: string): string {
 		throw new Error(`Missing or invalid argument: ${name}`);
 	}
 	return value;
+}
+
+/**
+ * 从 agent gateway 下载媒体产物（如 fx_render 渲染的特效视频）。
+ * 仅允许 gateway 同源地址，避免 agent 诱导浏览器请求任意地址。
+ */
+async function fetchGatewayMedia({
+	url,
+	name,
+	mimeType,
+}: {
+	url: string;
+	name: string;
+	mimeType?: unknown;
+}): Promise<File> {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error("Invalid argument: url");
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		throw new Error("url must be http(s)");
+	}
+	const gatewayOrigin = GATEWAY_URL ? new URL(GATEWAY_URL).origin : null;
+	if (!gatewayOrigin || parsed.origin !== gatewayOrigin) {
+		throw new Error("url must point to the agent gateway");
+	}
+	const token = await getGatewayToken();
+	const res = await fetch(url, {
+		headers: token ? { Authorization: `Bearer ${token}` } : {},
+	});
+	if (!res.ok) {
+		throw new Error(`Failed to download media (${res.status})`);
+	}
+	const blob = await res.blob();
+	const type =
+		blob.type || (typeof mimeType === "string" ? mimeType : undefined);
+	return new File([blob], name, type ? { type } : {});
 }
 
 function requireNumber(value: unknown, name: string): number {
@@ -1176,25 +1216,35 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"media.import": {
 		description:
-			"Import a media file into the project (sent by the MCP bridge as base64). Returns the imported asset ids.",
+			"Import a media file into the project: either inline base64 or downloaded from the agent gateway (url, e.g. as returned by fx_render). Returns the imported asset ids.",
 		args: {
 			name: "string (file name)",
-			dataBase64: "string",
+			dataBase64: "string?",
+			url: "string? (gateway artifact URL, e.g. from fx_render)",
 			mimeType: "string?",
 		},
 		run: async ({ editor, args }) => {
 			const name = requireString(args.name, "name");
-			const dataBase64 = requireString(args.dataBase64, "dataBase64");
-			const binary = atob(dataBase64);
-			const bytes = new Uint8Array(binary.length);
-			for (let index = 0; index < binary.length; index++) {
-				bytes[index] = binary.charCodeAt(index);
+			let file: File;
+			if (typeof args.url === "string" && args.url) {
+				file = await fetchGatewayMedia({
+					url: args.url,
+					name,
+					mimeType: args.mimeType,
+				});
+			} else {
+				const dataBase64 = requireString(args.dataBase64, "dataBase64");
+				const binary = atob(dataBase64);
+				const bytes = new Uint8Array(binary.length);
+				for (let index = 0; index < binary.length; index++) {
+					bytes[index] = binary.charCodeAt(index);
+				}
+				file = new File(
+					[bytes],
+					name,
+					typeof args.mimeType === "string" ? { type: args.mimeType } : {},
+				);
 			}
-			const file = new File(
-				[bytes],
-				name,
-				typeof args.mimeType === "string" ? { type: args.mimeType } : {},
-			);
 			const processed = await processMediaAssets({ files: [file] });
 			const projectId = editor.project.getActive().metadata.id;
 			const imported: Array<{ id: string; name: string; type: string }> = [];
