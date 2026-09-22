@@ -121,6 +121,7 @@ export const timeline = {
 	"timeline.typeVideo": "video",
 	"timeline.typeText": "text",
 	"timeline.typeGraphic": "graphic",
+	"timeline.typeHtml": "HTML effect",
 	"timeline.typeEffect": "effect",
 	"timeline.typeImage": "image",
 	"timeline.typeSticker": "sticker",

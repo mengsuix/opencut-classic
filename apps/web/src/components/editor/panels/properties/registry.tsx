@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type {
 	EffectElement,
 	GraphicElement,
+	HtmlElement,
 	ImageElement,
 	MaskableElement,
 	RetimableElement,
@@ -28,6 +29,7 @@ import { ClipEffectsTab, StandaloneEffectTab } from "@/effects/components/effect
 import { MasksTab } from "@/masks/components/masks-tab";
 import { SpeedTab } from "@/speed/components/speed-tab";
 import { GraphicTab } from "@/graphics/components/graphic-tab";
+import { HtmlParamsTab } from "./components/html-params-tab";
 import { OcShapesIcon } from "@/components/icons";
 
 const TRANSFORM_PARAM_KEYS = [
@@ -306,6 +308,37 @@ function getGraphicConfig({
 	};
 }
 
+function getHtmlConfig({
+	element,
+}: {
+	element: HtmlElement;
+}): ElementPropertiesConfig {
+	return {
+		defaultTab: "html",
+		tabs: [
+			buildHtmlTab({ element }),
+			buildTransformTab({ element }),
+			buildBlendingTab({ element }),
+			buildClipEffectsTab({ element }),
+		],
+	};
+}
+
+function buildHtmlTab({
+	element,
+}: {
+	element: HtmlElement;
+}): PropertiesTabDef {
+	return {
+		id: "html",
+		label: t("properties.tabHtml"),
+		icon: <HugeiconsIcon icon={TextFontIcon} size={16} />,
+		content: ({ trackId }) => (
+			<HtmlParamsTab element={element} trackId={trackId} />
+		),
+	};
+}
+
 function getAudioConfig({
 	element,
 }: {
@@ -348,6 +381,8 @@ export function getPropertiesConfig({
 			return getStickerConfig({ element });
 		case "graphic":
 			return getGraphicConfig({ element });
+		case "html":
+			return getHtmlConfig({ element });
 		case "audio":
 			return getAudioConfig({ element });
 		case "effect":

@@ -2,6 +2,7 @@ import type { SceneTracks, TimelineElement } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
 import { STICKER_INTRINSIC_SIZE_FALLBACK } from "@/stickers/intrinsic-size";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
+import { resolveHtmlSize } from "@/services/renderer/nodes/html-node";
 import { measureTextElement } from "@/text/measure-element";
 import {
 	getElementLocalTime,
@@ -165,6 +166,22 @@ function getElementBounds({
 			canvasHeight,
 			sourceWidth: DEFAULT_GRAPHIC_SOURCE_SIZE,
 			sourceHeight: DEFAULT_GRAPHIC_SOURCE_SIZE,
+			transform,
+		});
+	}
+
+	if (element.type === "html") {
+		const transform = resolveTransformAtTime({
+			baseTransform: buildTransformFromParams({ params: element.params }),
+			animations: element.animations,
+			localTime,
+		});
+		const htmlSize = resolveHtmlSize({ html: element.html });
+		return getVisualElementBounds({
+			canvasWidth,
+			canvasHeight,
+			sourceWidth: element.intrinsicWidth ?? htmlSize.width,
+			sourceHeight: element.intrinsicHeight ?? htmlSize.height,
 			transform,
 		});
 	}

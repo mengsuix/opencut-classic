@@ -6,6 +6,7 @@ import { ImageNode } from "./nodes/image-node";
 import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { GraphicNode } from "./nodes/graphic-node";
+import { HtmlNode, resolveHtmlSize } from "./nodes/html-node";
 import { ColorNode } from "./nodes/color-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import { EffectLayerNode } from "./nodes/effect-layer-node";
@@ -188,6 +189,36 @@ function buildTrackNodes({
 					new GraphicNode({
 						definitionId: element.definitionId,
 						params: element.params,
+						duration: element.duration,
+						timeOffset: element.startTime,
+						trimStart: element.trimStart,
+						trimEnd: element.trimEnd,
+						transform: buildTransformFromParams({ params: element.params }),
+						animations: element.animations,
+						animIn: buildVisualAnimConfig({
+							params: element.params,
+							phase: "in",
+						}),
+						animOut: buildVisualAnimConfig({
+							params: element.params,
+							phase: "out",
+						}),
+						opacity: readOpacityFromParams({ params: element.params }),
+						blendMode: readBlendModeFromParams({ params: element.params }),
+						effects: element.effects ?? [],
+						masks: element.masks ?? [],
+					}),
+				);
+			}
+
+			if (element.type === "html") {
+				const htmlSize = resolveHtmlSize({ html: element.html });
+				nodes.push(
+					new HtmlNode({
+						html: element.html,
+						params: element.params,
+						intrinsicWidth: element.intrinsicWidth ?? htmlSize.width,
+						intrinsicHeight: element.intrinsicHeight ?? htmlSize.height,
 						duration: element.duration,
 						timeOffset: element.startTime,
 						trimStart: element.trimStart,

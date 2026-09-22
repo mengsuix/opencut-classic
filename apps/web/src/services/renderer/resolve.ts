@@ -58,6 +58,7 @@ import {
 	type ResolvedGraphicNodeState,
 } from "./nodes/graphic-node";
 import { ImageNode, loadImageSource } from "./nodes/image-node";
+import { HtmlNode, loadHtmlSource } from "./nodes/html-node";
 import { StickerNode, loadStickerSource } from "./nodes/sticker-node";
 import { TextNode, type ResolvedTextNodeState } from "./nodes/text-node";
 import { VideoNode } from "./nodes/video-node";
@@ -119,6 +120,8 @@ async function resolveNode({
 		node.resolved = await resolveVideoNode({ node, context });
 	} else if (node instanceof ImageNode) {
 		node.resolved = await resolveImageNode({ node, context });
+	} else if (node instanceof HtmlNode) {
+		node.resolved = await resolveHtmlNode({ node, context });
 	} else if (node instanceof StickerNode) {
 		node.resolved = await resolveStickerNode({ node, context });
 	} else if (node instanceof GraphicNode) {
@@ -338,6 +341,38 @@ async function resolveImageNode({
 	const source = await loadImageSource({
 		url: node.params.url,
 		maxSourceSize: node.params.maxSourceSize,
+	});
+	throwIfAborted(context.signal);
+	const visualState = resolveVisualState({
+		params: node.params,
+		context,
+		sourceWidth: source.width,
+		sourceHeight: source.height,
+	});
+	if (!visualState) {
+		return null;
+	}
+
+	return {
+		...visualState,
+		source: source.source,
+		sourceWidth: source.width,
+		sourceHeight: source.height,
+	};
+}
+
+async function resolveHtmlNode({
+	node,
+	context,
+}: {
+	node: HtmlNode;
+	context: ResolveContext;
+}): Promise<ResolvedVisualSourceNodeState | null> {
+	const source = await loadHtmlSource({
+		html: node.params.html,
+		params: node.params.params,
+		width: node.params.intrinsicWidth,
+		height: node.params.intrinsicHeight,
 	});
 	throwIfAborted(context.signal);
 	const visualState = resolveVisualState({

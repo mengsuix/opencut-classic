@@ -7,6 +7,9 @@ export const properties = {
 	"properties.tabEffects": "Effects",
 	"properties.tabText": "Text",
 	"properties.tabGraphic": "Graphic",
+	"properties.tabHtml": "Content",
+	"properties.htmlNoParams": "This effect has no editable variables",
+	"properties.htmlSource": "HTML source",
 	"properties.elementsSelected": "{count} elements selected",
 	"properties.emptyTitle": "It's empty here",
 	"properties.emptyHint":

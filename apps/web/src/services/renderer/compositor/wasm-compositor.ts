@@ -113,14 +113,24 @@ class WasmCompositor {
 			name: "textureUploadPixels",
 			by: texture.width * texture.height,
 		});
+		const source = ensureOffscreenCanvas({
+			source: texture.source,
+			width: texture.width,
+			height: texture.height,
+			label: `texture upload ${texture.id}`,
+		});
+		// A tainted canvas makes wgpu's upload panic, which leaves the wasm
+		// compositor permanently unusable, so drop the upload instead. The
+		// texture is left out of the cache so a later frame can retry.
+		if (!isCanvasUploadable(source)) {
+			console.warn(
+				`[compositor] Texture ${texture.id} is backed by a tainted canvas (cross-origin content); skipping upload.`,
+			);
+			return;
+		}
 		uploadTexture({
 			id: texture.id,
-			source: ensureOffscreenCanvas({
-				source: texture.source,
-				width: texture.width,
-				height: texture.height,
-				label: `texture upload ${texture.id}`,
-			}),
+			source,
 			width: texture.width,
 			height: texture.height,
 		});
@@ -195,6 +205,27 @@ function createBackingCanvas({
 		throw new Error("OffscreenCanvas is not supported in this environment");
 	}
 	return new OffscreenCanvas(width, height);
+}
+
+/**
+ * WebGPU rejects canvases that cross-origin content has tainted, and wgpu's
+ * unwrap turns that error into a panic that wedges the whole compositor. Read
+ * one pixel up front to detect it; the result is memoized per canvas, so
+ * pooled canvases (video frames) only pay for this once.
+ */
+const uploadableCanvases = new WeakSet<OffscreenCanvas>();
+
+function isCanvasUploadable(canvas: OffscreenCanvas): boolean {
+	if (uploadableCanvases.has(canvas)) return true;
+	const context = canvas.getContext("2d");
+	if (!context) return true;
+	try {
+		context.getImageData(0, 0, 1, 1);
+		uploadableCanvases.add(canvas);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function ensureOffscreenCanvas({

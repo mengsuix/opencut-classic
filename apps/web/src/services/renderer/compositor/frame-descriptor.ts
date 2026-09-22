@@ -12,6 +12,7 @@ import {
 	GraphicNode,
 	type ResolvedGraphicNodeState,
 } from "../nodes/graphic-node";
+import { HtmlNode } from "../nodes/html-node";
 import { ImageNode } from "../nodes/image-node";
 import { RootNode } from "../nodes/root-node";
 import { StickerNode } from "../nodes/sticker-node";
@@ -183,7 +184,8 @@ async function collectNode({
 		node instanceof VideoNode ||
 		node instanceof ImageNode ||
 		node instanceof StickerNode ||
-		node instanceof GraphicNode
+		node instanceof GraphicNode ||
+		node instanceof HtmlNode
 	) {
 		await collectVisualSourceNode({
 			node,
@@ -213,7 +215,7 @@ async function collectVisualSourceNode({
 	items,
 	textures,
 }: {
-	node: VideoNode | ImageNode | StickerNode | GraphicNode;
+	node: VideoNode | ImageNode | StickerNode | GraphicNode | HtmlNode;
 	renderer: CanvasRenderer;
 	path: string;
 	items: FrameItemDescriptor[];
@@ -377,7 +379,7 @@ function buildMaskArtifacts({
 	transform,
 	textures,
 }: {
-	node: VideoNode | ImageNode | StickerNode | GraphicNode;
+	node: VideoNode | ImageNode | StickerNode | GraphicNode | HtmlNode;
 	renderer: CanvasRenderer;
 	path: string;
 	transform: QuadTransformDescriptor;

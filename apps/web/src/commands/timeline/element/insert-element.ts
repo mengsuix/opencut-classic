@@ -200,6 +200,11 @@ export class InsertElementCommand extends Command {
 			return false;
 		}
 
+		if (element.type === "html" && !element.html) {
+			console.error("HTML effect element must have html");
+			return false;
+		}
+
 		if (element.type === "effect" && !element.effectType) {
 			console.error("Effect element must have effectType");
 			return false;

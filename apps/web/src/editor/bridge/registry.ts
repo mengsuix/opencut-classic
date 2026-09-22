@@ -10,6 +10,8 @@ import {
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { buildScene } from "@/services/renderer/scene-builder";
+import { resolveHtmlSize } from "@/services/renderer/nodes/html-node";
+import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
 import { effectsRegistry } from "@/effects";
 import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
@@ -696,6 +698,77 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				trackId: requireString(args.trackId, "trackId"),
 			});
 			return { removed: true };
+		},
+	},
+
+	"timeline.add_html": {
+		description:
+			"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Prefer this over fx_render \"image\" whenever the effect may need text changes later.",
+		args: {
+			html: "string (complete self-contained HTML document)",
+			startTime: "seconds? (default 0)",
+			duration: "seconds? (default editor default)",
+			trackId: "string? (omit for auto placement)",
+			params: "object? (initial values for data-param slots)",
+		},
+		run: ({ editor, args }) => {
+			const html = requireString(args.html, "html");
+			const size = resolveHtmlSize({ html });
+			const requestedTrackId =
+				typeof args.trackId === "string" && args.trackId.length > 0
+					? args.trackId
+					: null;
+			const element = {
+				type: "html",
+				name: "HTML 特效",
+				html,
+				intrinsicWidth: size.width,
+				intrinsicHeight: size.height,
+				startTime: toTicks(Number(args.startTime ?? 0)),
+				duration:
+					args.duration != null
+						? toTicks(Number(args.duration))
+						: DEFAULT_NEW_ELEMENT_DURATION,
+				params: {
+					...((args.params as Record<string, unknown> | undefined) ?? {}),
+				},
+			} as unknown as CreateTimelineElement;
+			const placement: InsertElementParams["placement"] = requestedTrackId
+				? { mode: "explicit", trackId: requestedTrackId }
+				: { mode: "auto", trackType: "graphic" };
+			return insertAndSelect(editor, element, placement);
+		},
+	},
+
+	"html.update": {
+		description:
+			"Update a live HTML effect element: replace its HTML source (html) and/or set values for its data-param slots (params). Omit html to only change variable values.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			html: "string? (replacement complete HTML document)",
+			params: "object? (values for data-param slots)",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const patch: Record<string, unknown> = {};
+			if (typeof args.html === "string") {
+				const size = resolveHtmlSize({ html: args.html });
+				patch.html = args.html;
+				patch.intrinsicWidth = size.width;
+				patch.intrinsicHeight = size.height;
+			}
+			if (args.params && typeof args.params === "object") {
+				patch.params = args.params;
+			}
+			if (Object.keys(patch).length === 0) {
+				throw new Error("Nothing to update: provide html and/or params");
+			}
+			editor.timeline.updateElements({
+				updates: [{ trackId, elementId, patch }],
+			});
+			return { updated: true };
 		},
 	},
 

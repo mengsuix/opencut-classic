@@ -56,7 +56,7 @@ export interface AudioTrack extends BaseTrack {
 
 export interface GraphicTrack extends BaseTrack {
 	type: "graphic";
-	elements: (StickerElement | GraphicElement)[];
+	elements: (StickerElement | GraphicElement | HtmlElement)[];
 	hidden: boolean;
 }
 
@@ -160,6 +160,17 @@ export interface GraphicElement extends BaseTimelineElement {
 	masks?: Mask[];
 }
 
+export interface HtmlElement extends BaseTimelineElement {
+	type: "html";
+	html: string;
+	/** Rasterized source size, stored at insert time. */
+	intrinsicWidth?: number;
+	intrinsicHeight?: number;
+	hidden?: boolean;
+	effects?: Effect[];
+	masks?: Mask[];
+}
+
 export interface EffectElement extends BaseTimelineElement {
 	type: "effect";
 	effectType: string;
@@ -174,6 +185,7 @@ export type TimelineElement =
 	| TextElement
 	| StickerElement
 	| GraphicElement
+	| HtmlElement
 	| EffectElement;
 
 export type ElementType = TimelineElement["type"];
@@ -182,7 +194,12 @@ function elementTypes<T extends ElementType[]>(...types: T): T {
 	return types;
 }
 
-export const MASKABLE_ELEMENT_TYPES = elementTypes("video", "image", "graphic");
+export const MASKABLE_ELEMENT_TYPES = elementTypes(
+	"video",
+	"image",
+	"graphic",
+	"html",
+);
 
 export type MaskableElement = Extract<
 	TimelineElement,
@@ -202,6 +219,7 @@ export const VISUAL_ELEMENT_TYPES = elementTypes(
 	"text",
 	"sticker",
 	"graphic",
+	"html",
 );
 
 export type VisualElement = Extract<
@@ -219,6 +237,7 @@ export type CreateImageElement = Omit<ImageElement, "id">;
 export type CreateTextElement = Omit<TextElement, "id">;
 export type CreateStickerElement = Omit<StickerElement, "id">;
 export type CreateGraphicElement = Omit<GraphicElement, "id">;
+export type CreateHtmlElement = Omit<HtmlElement, "id">;
 export type CreateEffectElement = Omit<EffectElement, "id">;
 export type CreateTimelineElement =
 	| CreateAudioElement
@@ -227,6 +246,7 @@ export type CreateTimelineElement =
 	| CreateTextElement
 	| CreateStickerElement
 	| CreateGraphicElement
+	| CreateHtmlElement
 	| CreateEffectElement;
 
 export interface ElementDragState {
