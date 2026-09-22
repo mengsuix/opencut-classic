@@ -11,7 +11,11 @@ import {
 	SectionTitle,
 } from "@/components/section";
 import { Input } from "@/components/ui/input";
-import { extractHtmlParams } from "@/services/renderer/nodes/html-node";
+import {
+	extractHtmlParams,
+	resolveHtmlSize,
+} from "@/services/renderer/nodes/html-node";
+import { generateUUID } from "@/utils/id";
 import type { HtmlElement } from "@/timeline";
 
 function HtmlParamField({
@@ -62,7 +66,27 @@ export function HtmlParamsTab({
 	trackId: string;
 }) {
 	const t = useT();
+	const editor = useEditor();
 	const keys = extractHtmlParams({ html: element.html });
+
+	const handleSavePreset = () => {
+		const declared = resolveHtmlSize({ html: element.html });
+		const name = window.prompt(t("properties.htmlSavePreset"), element.name);
+		if (!name) return;
+		editor.project.setHtmlPresets({
+			presets: [
+				...editor.project.getHtmlPresets(),
+				{
+					id: generateUUID(),
+					name,
+					html: element.html,
+					params: { ...element.params },
+					intrinsicWidth: element.intrinsicWidth ?? declared.width,
+					intrinsicHeight: element.intrinsicHeight ?? declared.height,
+				},
+			],
+		});
+	};
 
 	return (
 		<div className="flex flex-col">
@@ -91,6 +115,13 @@ export function HtmlParamsTab({
 							))}
 						</SectionFields>
 					)}
+					<button
+						type="button"
+						onClick={handleSavePreset}
+						className="bg-secondary text-secondary-foreground hover:bg-secondary/80 mt-2 w-full rounded-sm px-2 py-1.5 text-xs"
+					>
+						{t("properties.htmlSavePreset")}
+					</button>
 				</SectionContent>
 			</Section>
 		</div>

@@ -2,7 +2,10 @@ import type { SceneTracks, TimelineElement } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
 import { STICKER_INTRINSIC_SIZE_FALLBACK } from "@/stickers/intrinsic-size";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
-import { resolveHtmlSize } from "@/services/renderer/nodes/html-node";
+import {
+	getCachedHtmlContentSize,
+	resolveHtmlSize,
+} from "@/services/renderer/nodes/html-node";
 import { measureTextElement } from "@/text/measure-element";
 import {
 	getElementLocalTime,
@@ -176,14 +179,24 @@ function getElementBounds({
 			animations: element.animations,
 			localTime,
 		});
-		const htmlSize = resolveHtmlSize({ html: element.html });
-		return getVisualElementBounds({
-			canvasWidth,
-			canvasHeight,
-			sourceWidth: element.intrinsicWidth ?? htmlSize.width,
-			sourceHeight: element.intrinsicHeight ?? htmlSize.height,
-			transform,
-		});
+		const declared = resolveHtmlSize({ html: element.html });
+		const declaredWidth = element.intrinsicWidth ?? declared.width;
+		const declaredHeight = element.intrinsicHeight ?? declared.height;
+		// The rasterized element is cropped to its painted content and drawn 1:1;
+		// fall back to the declared box until the first rasterization lands.
+		const contentSize = getCachedHtmlContentSize({
+			html: element.html,
+			params: element.params,
+			width: declaredWidth,
+			height: declaredHeight,
+		}) ?? { width: declaredWidth, height: declaredHeight };
+		return {
+			cx: canvasWidth / 2 + transform.position.x,
+			cy: canvasHeight / 2 + transform.position.y,
+			width: Math.abs(contentSize.width * transform.scaleX),
+			height: Math.abs(contentSize.height * transform.scaleY),
+			rotation: transform.rotate,
+		};
 	}
 
 	if (element.type === "text") {

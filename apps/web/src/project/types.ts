@@ -1,4 +1,5 @@
 import type { FrameRate } from "opencut-wasm";
+import type { ParamValues } from "@/params";
 import type { TScene } from "@/timeline/types";
 import type { MediaTime } from "@/wasm";
 
@@ -41,6 +42,16 @@ export interface TTimelineViewState {
 	playheadTime: MediaTime;
 }
 
+/** A reusable live-HTML effect saved into the project's effects shelf. */
+export interface HtmlPreset {
+	id: string;
+	name: string;
+	html: string;
+	params: ParamValues;
+	intrinsicWidth: number;
+	intrinsicHeight: number;
+}
+
 export interface TProject {
 	metadata: TProjectMetadata;
 	scenes: TScene[];
@@ -48,6 +59,7 @@ export interface TProject {
 	settings: TProjectSettings;
 	version: number;
 	timelineViewState?: TTimelineViewState;
+	htmlPresets?: HtmlPreset[];
 }
 
 export type TProjectSortKey = "createdAt" | "updatedAt" | "name" | "duration";

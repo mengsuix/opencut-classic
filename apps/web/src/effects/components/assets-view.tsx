@@ -8,6 +8,9 @@ import { effectPreviewService } from "@/services/renderer/effect-preview";
 import { useEditor } from "@/editor/use-editor";
 import { useT } from "@/i18n";
 import { buildEffectElement } from "@/timeline/element-utils";
+import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
+import type { CreateTimelineElement } from "@/timeline";
+import type { HtmlPreset } from "@/project/types";
 import type { EffectDefinition } from "@/effects/types";
 
 export function EffectsView() {
@@ -17,7 +20,71 @@ export function EffectsView() {
 	return (
 		<PanelView title={t("properties.tabEffects")}>
 			<EffectsGrid effects={effects} />
+			<HtmlPresetsSection />
 		</PanelView>
+	);
+}
+
+/** Saved live-HTML effects of this project: click to drop a copy at the playhead. */
+function HtmlPresetsSection() {
+	const t = useT();
+	const editor = useEditor();
+	const presets = useEditor((e) => e.project.getHtmlPresets());
+
+	const insertPreset = (preset: HtmlPreset) => {
+		editor.timeline.insertElement({
+			placement: { mode: "auto", trackType: "graphic" },
+			element: {
+				type: "html",
+				name: preset.name,
+				html: preset.html,
+				params: { ...preset.params },
+				intrinsicWidth: preset.intrinsicWidth,
+				intrinsicHeight: preset.intrinsicHeight,
+				startTime: editor.playback.getCurrentTime(),
+				duration: DEFAULT_NEW_ELEMENT_DURATION,
+			} as CreateTimelineElement,
+		});
+	};
+
+	const removePreset = (presetId: string) => {
+		editor.project.setHtmlPresets({
+			presets: presets.filter((preset) => preset.id !== presetId),
+		});
+	};
+
+	return (
+		<div className="mt-4 flex flex-col gap-2">
+			<span className="text-muted-foreground text-xs">
+				{t("assets.htmlPresets")}
+			</span>
+			{presets.length === 0 ? (
+				<p className="text-muted-foreground text-xs">
+					{t("assets.htmlPresetsEmpty")}
+				</p>
+			) : (
+				<div className="flex flex-col gap-1">
+					{presets.map((preset) => (
+						<div key={preset.id} className="flex items-center gap-1">
+							<button
+								type="button"
+								onClick={() => insertPreset(preset)}
+								className="bg-secondary text-secondary-foreground hover:bg-secondary/80 flex-1 truncate rounded-sm px-2 py-1.5 text-left text-xs"
+							>
+								{preset.name}
+							</button>
+							<button
+								type="button"
+								onClick={() => removePreset(preset.id)}
+								className="text-muted-foreground hover:text-foreground px-1 text-xs"
+							>
+								✕
+							</button>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
 	);
 }
 

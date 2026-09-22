@@ -9,6 +9,7 @@ import {
 	TransformHandleController,
 	type TransformHandleDeps,
 } from "@/preview/controllers/transform-handle-controller";
+import { onHtmlContentSizeResolved } from "@/services/renderer/nodes/html-node";
 
 export function useTransformHandles({
 	onSnapLinesChange,
@@ -56,6 +57,12 @@ export function useTransformHandles({
 
 	const [, rerender] = useReducer((n: number) => n + 1, 0);
 	useEffect(() => controller.subscribe(rerender), [controller]);
+
+	// HTML elements get cropped to their painted content during rasterization,
+	// which runs off React's render path. Re-read the bounds once the real
+	// content size lands, so the selection box hugs the content rather than the
+	// declared layout box it falls back to before the first rasterization.
+	useEffect(() => onHtmlContentSizeResolved(rerender), []);
 
 	useEffect(() => {
 		if (!controller.isActive) return;

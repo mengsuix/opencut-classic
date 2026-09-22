@@ -219,6 +219,7 @@ function buildTrackNodes({
 						params: element.params,
 						intrinsicWidth: element.intrinsicWidth ?? htmlSize.width,
 						intrinsicHeight: element.intrinsicHeight ?? htmlSize.height,
+						pixelExact: true,
 						duration: element.duration,
 						timeOffset: element.startTime,
 						trimStart: element.trimStart,

@@ -10,6 +10,7 @@ export const properties = {
 	"properties.tabHtml": "内容",
 	"properties.htmlNoParams": "该特效没有可编辑变量",
 	"properties.htmlSource": "HTML 源码",
+	"properties.htmlSavePreset": "存为特效",
 	"properties.elementsSelected": "{count} 个元素已选中",
 	"properties.emptyTitle": "这里空空如也",
 	"properties.emptyHint": "点击时间线上的元素以编辑其属性",

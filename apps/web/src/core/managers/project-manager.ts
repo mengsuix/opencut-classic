@@ -1,5 +1,6 @@
 import type { EditorCore } from "@/core";
 import type {
+	HtmlPreset,
 	TProject,
 	TProjectMetadata,
 	TProjectSortKey,
@@ -30,6 +31,9 @@ import { DEFAULTS } from "@/timeline/defaults";
 import { getElementFontFamilies } from "@/timeline/element-utils";
 import { getRaisedProjectFpsForImportedMedia } from "@/fps/utils";
 import type { MediaAsset } from "@/media/types";
+
+/** Stable empty reference so subscription snapshots don't churn. */
+const EMPTY_HTML_PRESETS: HtmlPreset[] = [];
 
 export interface MigrationState {
 	isMigrating: boolean;
@@ -618,6 +622,17 @@ export class ProjectManager {
 			...this.active,
 			timelineViewState: viewState ?? undefined,
 		};
+		this.editor.save.markDirty();
+		this.notify();
+	}
+
+	getHtmlPresets(): HtmlPreset[] {
+		return this.active?.htmlPresets ?? EMPTY_HTML_PRESETS;
+	}
+
+	setHtmlPresets({ presets }: { presets: HtmlPreset[] }): void {
+		if (!this.active) return;
+		this.active = { ...this.active, htmlPresets: presets };
 		this.editor.save.markDirty();
 		this.notify();
 	}

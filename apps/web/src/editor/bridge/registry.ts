@@ -703,40 +703,144 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.add_html": {
 		description:
-			"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Prefer this over fx_render \"image\" whenever the effect may need text changes later.",
+			"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. The element is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. Prefer this over fx_render \"image\" whenever the effect may need text changes later.",
 		args: {
-			html: "string (complete self-contained HTML document)",
+			html: "string? (complete self-contained HTML document; required unless presetId is given)",
+			presetId:
+				"string? (saved preset from html.list_presets; replaces html)",
 			startTime: "seconds? (default 0)",
 			duration: "seconds? (default editor default)",
 			trackId: "string? (omit for auto placement)",
 			params: "object? (initial values for data-param slots)",
 		},
 		run: ({ editor, args }) => {
-			const html = requireString(args.html, "html");
-			const size = resolveHtmlSize({ html });
 			const requestedTrackId =
 				typeof args.trackId === "string" && args.trackId.length > 0
 					? args.trackId
 					: null;
+			const presetId =
+				typeof args.presetId === "string" && args.presetId.length > 0
+					? args.presetId
+					: null;
+			let html: string;
+			let name = "HTML 特效";
+			let intrinsicWidth: number;
+			let intrinsicHeight: number;
+			let params: Record<string, unknown>;
+			if (presetId) {
+				const preset = editor.project
+					.getHtmlPresets()
+					.find((item) => item.id === presetId);
+				if (!preset) {
+					throw new Error(
+						`Unknown presetId: ${presetId}. Use html.list_presets to see saved presets.`,
+					);
+				}
+				html = preset.html;
+				name = preset.name;
+				intrinsicWidth = preset.intrinsicWidth;
+				intrinsicHeight = preset.intrinsicHeight;
+				params = {
+					...preset.params,
+					...((args.params as Record<string, unknown> | undefined) ?? {}),
+				};
+			} else {
+				html = requireString(args.html, "html");
+				const size = resolveHtmlSize({ html });
+				intrinsicWidth = size.width;
+				intrinsicHeight = size.height;
+				params = {
+					...((args.params as Record<string, unknown> | undefined) ?? {}),
+				};
+			}
 			const element = {
 				type: "html",
-				name: "HTML 特效",
+				name,
 				html,
-				intrinsicWidth: size.width,
-				intrinsicHeight: size.height,
+				intrinsicWidth,
+				intrinsicHeight,
 				startTime: toTicks(Number(args.startTime ?? 0)),
 				duration:
 					args.duration != null
 						? toTicks(Number(args.duration))
 						: DEFAULT_NEW_ELEMENT_DURATION,
-				params: {
-					...((args.params as Record<string, unknown> | undefined) ?? {}),
-				},
+				params,
 			} as unknown as CreateTimelineElement;
 			const placement: InsertElementParams["placement"] = requestedTrackId
 				? { mode: "explicit", trackId: requestedTrackId }
 				: { mode: "auto", trackType: "graphic" };
 			return insertAndSelect(editor, element, placement);
+		},
+	},
+
+	"html.list_presets": {
+		description:
+			"List this project's saved HTML effects (the reusable shelf shown in the effects panel). Reuse one by passing its id as presetId to timeline.add_html.",
+		run: ({ editor }) => ({
+			presets: editor.project.getHtmlPresets().map((preset) => ({
+				id: preset.id,
+				name: preset.name,
+				params: preset.params,
+				intrinsicWidth: preset.intrinsicWidth,
+				intrinsicHeight: preset.intrinsicHeight,
+			})),
+		}),
+	},
+
+	"html.save_preset": {
+		description:
+			"Save an existing HTML element into this project's effects shelf so it can be reused later (timeline.add_html presetId). Takes a snapshot of the current HTML and param values.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			name: "string? (defaults to the element name)",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const element = findElement(editor, trackId, elementId);
+			if (element.type !== "html") {
+				throw new Error(`Element ${elementId} is not an html element`);
+			}
+			const html = requireString(element.html, "element.html");
+			const size = resolveHtmlSize({ html });
+			const preset = {
+				id: generateUUID(),
+				name:
+					typeof args.name === "string" && args.name.length > 0
+						? args.name
+						: ((element.name as string | undefined) ?? "HTML 特效"),
+				html,
+				params: (element.params ?? {}) as never,
+				intrinsicWidth:
+					typeof element.intrinsicWidth === "number"
+						? element.intrinsicWidth
+						: size.width,
+				intrinsicHeight:
+					typeof element.intrinsicHeight === "number"
+						? element.intrinsicHeight
+						: size.height,
+			};
+			editor.project.setHtmlPresets({
+				presets: [...editor.project.getHtmlPresets(), preset],
+			});
+			return { presetId: preset.id, name: preset.name };
+		},
+	},
+
+	"html.remove_preset": {
+		description: "Remove a saved HTML effect from this project's effects shelf.",
+		args: { presetId: "string" },
+		run: ({ editor, args }) => {
+			const presetId = requireString(args.presetId, "presetId");
+			const presets = editor.project.getHtmlPresets();
+			if (!presets.some((preset) => preset.id === presetId)) {
+				throw new Error(`Unknown presetId: ${presetId}`);
+			}
+			editor.project.setHtmlPresets({
+				presets: presets.filter((preset) => preset.id !== presetId),
+			});
+			return { removed: true };
 		},
 	},
 

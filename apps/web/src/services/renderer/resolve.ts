@@ -240,10 +240,12 @@ function resolveVisualState({
 					},
 				};
 	const opacity = baseOpacity * motion.opacityFactor;
-	const containScale = Math.min(
-		context.renderer.width / sourceWidth,
-		context.renderer.height / sourceHeight,
-	);
+	const containScale = params.pixelExact
+		? 1
+		: Math.min(
+				context.renderer.width / sourceWidth,
+				context.renderer.height / sourceHeight,
+			);
 	const effectWidth = Math.round(
 		Math.abs(sourceWidth * containScale * transform.scaleX),
 	);

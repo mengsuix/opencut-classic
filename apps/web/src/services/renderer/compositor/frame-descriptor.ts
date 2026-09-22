@@ -256,6 +256,7 @@ async function collectVisualSourceNode({
 		resolved: node.resolved,
 		sourceWidth,
 		sourceHeight,
+		pixelExact: node.params.pixelExact,
 	});
 	const { mask, strokeLayer } = buildMaskArtifacts({
 		node,
@@ -332,16 +333,17 @@ function computeVisualTransform({
 	resolved,
 	sourceWidth,
 	sourceHeight,
+	pixelExact,
 }: {
 	renderer: CanvasRenderer;
 	resolved: ResolvedVisualSourceNodeState | ResolvedGraphicNodeState;
 	sourceWidth: number;
 	sourceHeight: number;
+	pixelExact?: boolean;
 }): QuadTransformDescriptor {
-	const containScale = Math.min(
-		renderer.width / sourceWidth,
-		renderer.height / sourceHeight,
-	);
+	const containScale = pixelExact
+		? 1
+		: Math.min(renderer.width / sourceWidth, renderer.height / sourceHeight);
 	const scaledWidth = sourceWidth * containScale * resolved.transform.scaleX;
 	const scaledHeight = sourceHeight * containScale * resolved.transform.scaleY;
 	const absWidth = Math.abs(scaledWidth);

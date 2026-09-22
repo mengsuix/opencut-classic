@@ -159,6 +159,7 @@ class StorageService {
 			settings: project.settings,
 			version: project.version,
 			timelineViewState: project.timelineViewState,
+			htmlPresets: project.htmlPresets,
 		};
 
 		await this.projectsAdapter.set({
@@ -219,6 +220,7 @@ class StorageService {
 			settings: serializedProject.settings,
 			version: serializedProject.version,
 			timelineViewState: serializedProject.timelineViewState,
+			htmlPresets: serializedProject.htmlPresets,
 		};
 
 		return { project };

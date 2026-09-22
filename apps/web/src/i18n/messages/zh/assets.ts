@@ -8,6 +8,9 @@ export const assets = {
 	"assets.tabCaptions": "字幕",
 	"assets.tabAdjustment": "调节",
 	"assets.tabSettings": "设置",
+	"assets.htmlPresets": "HTML 特效",
+	"assets.htmlPresetsEmpty":
+		"还没有保存的特效。选中时间线上的 HTML 特效后点“存为特效”，即可在这里复用。",
 	"assets.transitionSelectHint":
 		"选中视频或图片片段后点击应用；转场作用于该片段与同轨道紧邻的下一个片段之间（中间不能有空隙），播放跨过两段交界处即可看到效果",
 	"assets.adjustmentCustom": "自定义调节",

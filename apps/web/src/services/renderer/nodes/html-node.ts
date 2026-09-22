@@ -21,10 +21,80 @@ export interface CachedHtmlSource {
 const DEFAULT_HTML_SIZE = { width: 1280, height: 720 };
 
 /**
- * Cache keyed by resolved content (params injected), so editing a variable
- * re-rasterizes while repeated renders of unchanged HTML reuse the canvas.
+ * Cache keyed by the rasterized content (markup + injected slot values), so
+ * editing a variable re-rasterizes while repeated renders of unchanged HTML
+ * reuse the canvas.
  */
 const htmlSourceCache = new Map<string, Promise<CachedHtmlSource>>();
+
+/**
+ * Cropped content size per cache key. Readable synchronously so UI geometry
+ * (selection bounds, drag) can match the element without re-rasterizing.
+ */
+const htmlContentSizeCache = new Map<
+	string,
+	{ width: number; height: number }
+>();
+
+type HtmlContentSizeListener = () => void;
+const contentSizeListeners = new Set<HtmlContentSizeListener>();
+
+/**
+ * Notified whenever a rasterization reveals the real (cropped) content size.
+ * The renderer fills that cache asynchronously, off React's render path, so
+ * without this nudge the selection overlay would keep drawing the declared box
+ * until something else happened to re-render it.
+ */
+export function onHtmlContentSizeResolved(
+	listener: HtmlContentSizeListener,
+): () => void {
+	contentSizeListeners.add(listener);
+	return () => {
+		contentSizeListeners.delete(listener);
+	};
+}
+
+/**
+ * Keyed on what actually changes the raster: the markup, the data-param slot
+ * values injected into it, and the layout box. Transform params change on
+ * every drag tick, so keying the whole params object dropped the cropped
+ * content size mid-drag — the selection box fell back to the declared layout
+ * box and the HTML was re-rasterized on every pointer move.
+ */
+function htmlCacheKey({
+	html,
+	params,
+	width,
+	height,
+}: {
+	html: string;
+	params: ParamValues;
+	width: number;
+	height: number;
+}): string {
+	const slots: Record<string, string | number> = {};
+	for (const key of extractHtmlParams({ html })) {
+		const value = params[key];
+		if (typeof value === "string" || typeof value === "number") {
+			slots[key] = value;
+		}
+	}
+	return JSON.stringify({ html, slots, width, height });
+}
+
+export function getCachedHtmlContentSize({
+	html,
+	params,
+	width,
+	height,
+}: {
+	html: string;
+	params: ParamValues;
+	width: number;
+	height: number;
+}): { width: number; height: number } | null {
+	return htmlContentSizeCache.get(htmlCacheKey({ html, params, width, height })) ?? null;
+}
 
 export function resolveHtmlSize({
 	html,
@@ -97,11 +167,20 @@ export function loadHtmlSource({
 	width: number;
 	height: number;
 }): Promise<CachedHtmlSource> {
-	const cacheKey = JSON.stringify({ html, params, width, height });
+	const cacheKey = htmlCacheKey({ html, params, width, height });
 	const cached = htmlSourceCache.get(cacheKey);
 	if (cached) return cached;
 
-	const promise = rasterizeHtml({ html, params, width, height });
+	const promise = rasterizeHtml({ html, params, width, height }).then(
+		(result) => {
+			htmlContentSizeCache.set(cacheKey, {
+				width: result.width,
+				height: result.height,
+			});
+			contentSizeListeners.forEach((listener) => listener());
+			return result;
+		},
+	);
 	htmlSourceCache.set(cacheKey, promise);
 	return promise;
 }
@@ -147,7 +226,69 @@ async function rasterizeHtml({
 		throw new Error("OffscreenCanvas 2d context unavailable");
 	}
 	ctx.drawImage(image, 0, 0, width, height);
-	return { source: canvas, width, height };
+
+	// The declared canvas is only a layout box: the element should be exactly
+	// the painted content, so crop to the painted pixels. The renderer then
+	// places it 1:1 (pixelExact) instead of contain-fitting the declared box.
+	const bounds = findPaintedBounds({ ctx, width, height });
+	if (!bounds) {
+		return { source: canvas, width: 1, height: 1 };
+	}
+	if (bounds.width === width && bounds.height === height) {
+		return { source: canvas, width, height };
+	}
+
+	const cropped = new OffscreenCanvas(bounds.width, bounds.height);
+	const croppedContext = cropped.getContext("2d");
+	if (!croppedContext) {
+		return { source: canvas, width, height };
+	}
+	croppedContext.drawImage(
+		canvas,
+		bounds.left,
+		bounds.top,
+		bounds.width,
+		bounds.height,
+		0,
+		0,
+		bounds.width,
+		bounds.height,
+	);
+	return { source: cropped, width: bounds.width, height: bounds.height };
+}
+
+/** Tight bounding box of the non-transparent pixels. */
+function findPaintedBounds({
+	ctx,
+	width,
+	height,
+}: {
+	ctx: OffscreenCanvasRenderingContext2D;
+	width: number;
+	height: number;
+}): { left: number; top: number; width: number; height: number } | null {
+	const { data } = ctx.getImageData(0, 0, width, height);
+	let minX = width;
+	let minY = height;
+	let maxX = -1;
+	let maxY = -1;
+	for (let y = 0; y < height; y++) {
+		const rowOffset = y * width * 4;
+		for (let x = 0; x < width; x++) {
+			if (data[rowOffset + x * 4 + 3] === 0) continue;
+			if (x < minX) minX = x;
+			if (x > maxX) maxX = x;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+	}
+	if (maxX < 0) return null;
+	return {
+		left: minX,
+		top: minY,
+		width: maxX - minX + 1,
+		height: maxY - minY + 1,
+	};
 }
 
 export class HtmlNode extends VisualNode<

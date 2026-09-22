@@ -23,6 +23,8 @@ export interface VisualNodeParams {
 	animOut?: VisualAnimConfig;
 	transitionIn?: TransitionConfig;
 	transitionOut?: TransitionConfig;
+	/** Draw the source at its own pixel size instead of contain-fitting it to the canvas (html effects). */
+	pixelExact?: boolean;
 }
 
 export interface ResolvedVisualNodeState {
