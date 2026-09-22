@@ -156,6 +156,7 @@ export class InsertElementCommand extends Command {
 			trimStart: element.trimStart ?? 0,
 			trimEnd: element.trimEnd ?? 0,
 			duration: element.duration ?? DEFAULT_NEW_ELEMENT_DURATION,
+			params: element.params ?? {},
 		} as TimelineElement;
 	}
 
@@ -194,7 +195,7 @@ export class InsertElementCommand extends Command {
 			}
 		}
 
-		if (element.type === "text" && !element.params.content) {
+		if (element.type === "text" && !element.params?.content) {
 			console.error("Text element must have content");
 			return false;
 		}

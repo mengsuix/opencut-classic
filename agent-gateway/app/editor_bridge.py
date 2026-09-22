@@ -348,16 +348,22 @@ def build_editor_mcp_server(session_id: str):
         )
         if result["kind"] == "image":
             next_steps = (
-                '用 execute_command 执行 media.import（参数 name + url）导入素材库，'
-                "拿到返回的 asset id 后用 timeline.insert_element 插入 type:'image' 元素"
-                "（mediaId 用该 id，placement 选 overlay 轨道），无需设置混合模式"
+                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
+                "第三步：execute_command 执行 timeline.insert_element，element 为 "
+                "{type:'image', mediaId: assetId, startTime, duration}，"
+                "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道），无需混合模式"
             )
         else:
             next_steps = (
-                '用 execute_command 执行 media.import（参数 name + url）导入素材库，'
-                "拿到返回的 asset id 后用 timeline.insert_element 插入 type:'video' 元素"
-                "（mediaId 用该 id，placement 选 overlay 轨道），"
-                '再用 timeline.update_elements 把该元素的 blendMode 设为 "screen"'
+                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
+                "第三步：execute_command 执行 timeline.insert_element，element 为 "
+                "{type:'video', mediaId: assetId, startTime, duration}，"
+                "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）；"
+                '第四步：用 timeline.update_elements 把该元素的 blendMode 设为 "screen"'
             )
         return _text(
             {

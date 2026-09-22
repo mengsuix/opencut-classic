@@ -37,5 +37,9 @@ async def get_fx_artifact(
     path = (renders_dir / file_name).resolve()
     if path.parent != renders_dir or not path.is_file():
         raise HTTPException(status_code=404, detail="产物不存在")
-    media_type = "video/webm" if path.suffix == ".webm" else "video/mp4"
+    media_type = {
+        ".webm": "video/webm",
+        ".mp4": "video/mp4",
+        ".png": "image/png",
+    }.get(path.suffix, "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=file_name)

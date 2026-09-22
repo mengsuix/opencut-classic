@@ -14,7 +14,7 @@ export function readStringParam({
 	key: string;
 	fallback: string;
 }): string {
-	const value = params[key];
+	const value = params?.[key];
 	return typeof value === "string" ? value : fallback;
 }
 
@@ -27,7 +27,7 @@ export function readNumberParam({
 	key: string;
 	fallback: number;
 }): number {
-	const value = params[key];
+	const value = params?.[key];
 	return typeof value === "number" ? value : fallback;
 }
 
@@ -40,6 +40,6 @@ export function readBooleanParam({
 	key: string;
 	fallback: boolean;
 }): boolean {
-	const value = params[key];
+	const value = params?.[key];
 	return typeof value === "boolean" ? value : fallback;
 }

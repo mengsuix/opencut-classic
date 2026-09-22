@@ -9,6 +9,7 @@ import {
 } from "@/timeline";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
+import { buildScene } from "@/services/renderer/scene-builder";
 import { effectsRegistry } from "@/effects";
 import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
@@ -648,9 +649,16 @@ function insertAndSelect(
 	placement: InsertElementParams["placement"],
 ): { selected: BridgeElementRef[] } {
 	editor.timeline.insertElement({ element, placement });
-	return {
-		selected: editor.selection.getSelectedElements() as BridgeElementRef[],
-	};
+	const selected = editor.selection.getSelectedElements() as BridgeElementRef[];
+	if (selected.length === 0) {
+		// 核心命令层对多种非法插入（类型与轨道不兼容、缺少 mediaId 等）
+		// 只 console.error 并静默返回，bridge 层必须转成可见错误，
+		// 否则 agent 会误以为插入成功。
+		throw new Error(
+			`元素插入失败：type=${String(element.type)} 未能落到时间线（通常是元素类型与目标轨道不兼容、缺少必要字段如 mediaId、或显式 trackId 不存在/类型不符）。请用 get_editor_state 查看轨道结构后修正 placement 或元素字段再重试。`,
+		);
+	}
+	return { selected };
 }
 
 export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
@@ -703,6 +711,39 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			params: "object? (override any text params, e.g. fontSize, color; applied after preset)",
 		},
 		run: ({ editor, args }) => {
+			const requestedTrackId =
+				typeof args.trackId === "string" && args.trackId.length > 0
+					? args.trackId
+					: null;
+			if (requestedTrackId) {
+				const scene = editor.scenes.getActiveSceneOrNull();
+				const allTracks = scene
+					? [
+							...scene.tracks.overlay,
+							scene.tracks.main,
+							...scene.tracks.audio,
+						]
+					: [];
+				const target = allTracks.find(
+					(track) => track.id === requestedTrackId,
+				);
+				if (!target) {
+					throw new Error(`Track not found: ${requestedTrackId}`);
+				}
+				if (target.type !== "text") {
+					const textTrackIds = scene
+						? scene.tracks.overlay
+								.filter((track) => track.type === "text")
+								.map((track) => track.id)
+						: [];
+					throw new Error(
+						`文本元素不能放置在 ${target.type} 轨道上（trackId 指向了 ${target.type} 轨道）。` +
+							(textTrackIds.length > 0
+								? `可用的 text 轨道: ${textTrackIds.join(", ")}`
+								: "当前没有 text 轨道——省略 trackId 参数即可自动创建 text 轨道放置"),
+					);
+				}
+			}
 			const base = structuredClone(DEFAULTS.text.element);
 			const preset =
 				typeof args.preset === "string"
@@ -725,10 +766,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					content: String(args.content ?? base.params.content),
 				},
 			} as unknown as CreateTimelineElement;
-			const placement: InsertElementParams["placement"] =
-				typeof args.trackId === "string"
-					? { mode: "explicit", trackId: args.trackId }
-					: { mode: "auto", trackType: "text" };
+			const placement: InsertElementParams["placement"] = requestedTrackId
+				? { mode: "explicit", trackId: requestedTrackId }
+				: { mode: "auto", trackType: "text" };
 			return insertAndSelect(editor, element, placement);
 		},
 	},
@@ -1619,9 +1659,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead.",
 		args: { time: "seconds?" },
 		run: async ({ editor, args }) => {
-			const renderTree = editor.renderer.getRenderTree();
 			const project = editor.project.getActiveOrNull();
-			if (!renderTree || !project) {
+			const tracks = editor.timeline.getPreviewTracks();
+			if (!project || !tracks) {
 				throw new Error(
 					"Preview is not ready. Make sure the editor page with the preview panel is open.",
 				);
@@ -1639,6 +1679,14 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			);
 
 			const { canvasSize, fps } = project.settings;
+			const renderTree = buildScene({
+				tracks,
+				mediaAssets: editor.media.getAssets(),
+				duration,
+				canvasSize,
+				background: project.settings.background,
+				isPreview: true,
+			});
 			const renderer = new CanvasRenderer({
 				width: canvasSize.width,
 				height: canvasSize.height,
@@ -1697,9 +1745,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			cellWidth: "number? (px width of each cell, default 320)",
 		},
 		run: async ({ editor, args }) => {
-			const renderTree = editor.renderer.getRenderTree();
 			const project = editor.project.getActiveOrNull();
-			if (!renderTree || !project) {
+			const tracks = editor.timeline.getPreviewTracks();
+			if (!project || !tracks) {
 				throw new Error(
 					"Preview is not ready. Make sure the editor page with the preview panel is open.",
 				);
@@ -1774,6 +1822,14 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			);
 
 			const { canvasSize, fps } = project.settings;
+			const renderTree = buildScene({
+				tracks,
+				mediaAssets: editor.media.getAssets(),
+				duration: durationTicks,
+				canvasSize,
+				background: project.settings.background,
+				isPreview: true,
+			});
 			const renderer = new CanvasRenderer({
 				width: canvasSize.width,
 				height: canvasSize.height,

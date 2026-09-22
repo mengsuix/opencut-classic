@@ -58,7 +58,7 @@ export function readBlendModeFromParams({
 }: {
 	params: ParamValues;
 }): BlendMode {
-	const value = params.blendMode;
+	const value = params?.blendMode;
 	return typeof value === "string" && isBlendMode(value) ? value : "normal";
 }
 
@@ -71,7 +71,7 @@ function readNumberParam({
 	key: string;
 	fallback: number;
 }): number {
-	const value = params[key];
+	const value = params?.[key];
 	return typeof value === "number" ? value : fallback;
 }
 
