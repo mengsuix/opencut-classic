@@ -9,9 +9,11 @@ WS 协议与 packages/mcp-server 保持一致（hello / request / response），
 """
 
 import asyncio
+import base64
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
@@ -308,7 +310,9 @@ def build_editor_mcp_server(session_id: str):
         'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
         'data-duration="<seconds>" data-width="<px>" data-height="<px>"; children carry class "clip" with '
         'data-start/data-duration/data-track-index. Video rendering takes 1-3 minutes; image takes seconds. Returns a '
-        'URL plus the exact next steps (media.import with url, then timeline.insert_element).',
+        'URL plus the exact next steps (media.import with url, then timeline.insert_element). With format "image" the '
+        'rendered preview is attached as an image, transparent areas shown as a light checkerboard — look at it and '
+        'fix the HTML and re-render until it matches the target, instead of importing on the first try.',
         {
             "type": "object",
             "properties": {
@@ -348,6 +352,7 @@ def build_editor_mcp_server(session_id: str):
         )
         if result["kind"] == "image":
             next_steps = (
+                "确认附带预览图与目标一致后再插入："
                 '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
@@ -365,18 +370,43 @@ def build_editor_mcp_server(session_id: str):
                 "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）；"
                 '第四步：用 timeline.update_elements 把该元素的 blendMode 设为 "screen"'
             )
-        return _text(
-            {
-                "jobId": result["jobId"],
-                "kind": result["kind"],
-                "url": url,
-                "fileName": result["fileName"],
-                "width": result["width"],
-                "height": result["height"],
-                "durationSeconds": result["durationSeconds"],
-                "next": next_steps,
+        payload = {
+            "jobId": result["jobId"],
+            "kind": result["kind"],
+            "url": url,
+            "fileName": result["fileName"],
+            "width": result["width"],
+            "height": result["height"],
+            "durationSeconds": result["durationSeconds"],
+            "next": next_steps,
+        }
+        preview_path = result.get("previewPath") or ""
+        png = b""
+        if preview_path:
+            try:
+                png = Path(preview_path).read_bytes()
+            except OSError as e:
+                logger.warning(f"读取特效预览图失败: {e}")
+        if png:
+            payload["preview"] = (
+                "附带图片就是本次渲染结果（透明区域显示为浅色棋盘格），不是参考图。"
+                "先按 system prompt 的核对项逐条看图，与目标不一致就改 HTML 重新 fx_render；"
+                "一致后再执行上面的 next 步骤。"
+            )
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(payload, ensure_ascii=False, indent=2),
+                    },
+                    {
+                        "type": "image",
+                        "data": base64.b64encode(png).decode("ascii"),
+                        "mimeType": "image/png",
+                    },
+                ]
             }
-        )
+        return _text(payload)
 
     return create_sdk_mcp_server(
         name="opencut",

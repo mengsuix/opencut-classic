@@ -12,12 +12,15 @@
 """
 
 import asyncio
+import logging
 import re
 import time
 import uuid
 from pathlib import Path
 
 from . import config
+
+logger = logging.getLogger("agent-gateway.fx_render")
 
 # 渲染吃满 CPU/内存，全局串行避免多会话并发渲染互相拖垮
 _RENDER_SEMAPHORE = asyncio.Semaphore(1)
@@ -37,6 +40,14 @@ _ATTR_LIMITS = {
     "duration": (0.5, 60, 5.0),
 }
 MAX_HTML_BYTES = 512 * 1024
+
+# 回给模型的预览图：长边限幅（与前端 preview.capture 的降采样口径一致），
+# 透明区铺浅色棋盘格——RGBA 直接交给模型时 alpha 会被丢弃，透明区看起来像黑底/白底，
+# 容易让模型去改本来正确的 HTML；低对比棋盘格既能表达"这里是透明的"，又不干扰看发光/描边细节。
+PREVIEW_MAX_EDGE = 1280
+PREVIEW_CHECKER_CELL = 8
+PREVIEW_LIGHT = "#FFFFFF"
+PREVIEW_DARK = "#EDEDED"
 
 
 class FxRenderError(RuntimeError):
@@ -89,6 +100,9 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
         if not frames:
             tail = "\n".join(stdout.splitlines()[-15:])
             raise FxRenderError(f"渲染未产出 PNG。渲染日志尾部：\n{tail}")
+        # 预览图放在 work_dir 而不是 renders/：它只给模型看，不必经静态路由暴露给浏览器
+        preview = work_dir / "preview.png"
+        preview_ok = _make_preview(frames[-1], preview)
         return {
             "jobId": job_id,
             "fileName": frames[-1].name,
@@ -97,6 +111,7 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
             "durationSeconds": 0.0,
             "kind": "image",
             "path": str(frames[-1]),
+            "previewPath": str(preview) if preview_ok else "",
         }
 
     outputs = sorted(
@@ -114,6 +129,40 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
         "kind": "video",
         "path": str(outputs[-1]),
     }
+
+
+def _make_preview(src: Path, dest: Path) -> bool:
+    """把渲染出的透明 PNG 做成给模型看的预览图：长边限幅 + 透明区铺浅色棋盘格。
+
+    失败（缺 Pillow / 解码异常）返回 False，渲染产物本身照常返回，不因此报错。
+    """
+    try:
+        from PIL import Image, ImageDraw
+
+        with Image.open(src) as opened:
+            img = opened.convert("RGBA")
+        longest = max(img.size)
+        if longest > PREVIEW_MAX_EDGE:
+            scale = PREVIEW_MAX_EDGE / longest
+            img = img.resize(
+                (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        background = Image.new("RGB", img.size, PREVIEW_LIGHT)
+        draw = ImageDraw.Draw(background)
+        cell = PREVIEW_CHECKER_CELL
+        for y in range(0, img.height, cell):
+            for x in range(0, img.width, cell):
+                if (x // cell + y // cell) % 2:
+                    draw.rectangle(
+                        [x, y, x + cell - 1, y + cell - 1], fill=PREVIEW_DARK
+                    )
+        background.paste(img, (0, 0), img)
+        background.save(dest, format="PNG", optimize=True)
+        return True
+    except Exception as e:
+        logger.warning(f"预览图生成失败（渲染产物不受影响）: {type(e).__name__}: {e}")
+        return False
 
 
 async def _run_snapshot(work_dir: Path) -> str:

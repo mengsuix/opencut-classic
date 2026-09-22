@@ -4,3 +4,4 @@ claude-agent-sdk>=0.1.0
 asyncpg>=0.29
 aiomysql>=0.2
 pydantic>=2
+Pillow>=10
