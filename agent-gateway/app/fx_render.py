@@ -35,8 +35,9 @@ _ATTR_RES = {
     "duration": re.compile(r'data-duration="([\d.]+)"'),
 }
 _ATTR_LIMITS = {
-    "width": (256, 3840, 1920),
-    "height": (256, 3840, 1080),
+    # 下限 32px：徽章/胶囊等小尺寸静态特效（如 520×152）不需要放大渲染凑尺寸
+    "width": (32, 3840, 1920),
+    "height": (32, 3840, 1080),
     "duration": (0.5, 60, 5.0),
 }
 MAX_HTML_BYTES = 512 * 1024

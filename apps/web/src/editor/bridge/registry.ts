@@ -301,6 +301,98 @@ function readElementNumberParam({
 }
 
 /**
+ * Canvas 分数矩形（0~1，左上原点），与 get_user_marks 的 canvasRects 同坐标系。
+ */
+function parseCanvasRectArg(
+	value: unknown,
+): { left: number; top: number; right: number; bottom: number } | null {
+	if (value === undefined || value === null) {
+		return null;
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(
+			"rect must be an object {left, top, right, bottom} with canvas fractions 0~1",
+		);
+	}
+	const record: Record<string, unknown> = {};
+	for (const [key, fieldValue] of Object.entries(value)) {
+		record[key] = fieldValue;
+	}
+	const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+	const rect = {
+		left: clamp01(requireNumber(record.left, "rect.left")),
+		top: clamp01(requireNumber(record.top, "rect.top")),
+		right: clamp01(requireNumber(record.right, "rect.right")),
+		bottom: clamp01(requireNumber(record.bottom, "rect.bottom")),
+	};
+	if (rect.right <= rect.left || rect.bottom <= rect.top) {
+		throw new Error("rect is empty: need right > left and bottom > top");
+	}
+	return rect;
+}
+
+/**
+ * 引用了媒体库中不存在的 mediaId 的元素会被场景构建静默跳过、完全不渲染。
+ * 把这些引用显式列出来，让 agent 能区分"编辑没生效"和"元素本身是坏的"。
+ */
+function collectMissingMediaRefs(editor: EditorCore) {
+	const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+	if (!tracks) {
+		return [];
+	}
+	const mediaIds = new Set(editor.media.getAssets().map((asset) => asset.id));
+	const missing: Array<{
+		trackId: string;
+		elementId: string;
+		name: string;
+		mediaId: string;
+	}> = [];
+	for (const track of [tracks.main, ...tracks.overlay, ...tracks.audio]) {
+		for (const element of track.elements) {
+			const mediaId = "mediaId" in element ? element.mediaId : undefined;
+			if (
+				typeof mediaId === "string" &&
+				mediaId.length > 0 &&
+				!mediaIds.has(mediaId)
+			) {
+				missing.push({
+					trackId: track.id,
+					elementId: element.id,
+					name: element.name,
+					mediaId,
+				});
+			}
+		}
+	}
+	return missing;
+}
+
+const MISSING_MEDIA_WARNING =
+	"以下元素引用的 mediaId 不在媒体库中，不会渲染（画面上看不到它们）；如需它们显示，先用 media.import 重新导入素材并更新元素的 mediaId：";
+
+function requireExistingMediaId({
+	editor,
+	mediaId,
+}: {
+	editor: EditorCore;
+	mediaId: unknown;
+}): void {
+	if (typeof mediaId !== "string" || mediaId.length === 0) {
+		return;
+	}
+	const assets = editor.media.getAssets();
+	if (assets.some((asset) => asset.id === mediaId)) {
+		return;
+	}
+	const available = assets
+		.map((asset) => `${asset.id} (${asset.name})`)
+		.join(", ");
+	throw new Error(
+		`mediaId "${mediaId}" 不在当前项目媒体库中（引用它的元素不会渲染）。可用素材: ${available || "（空）"}。请改用可用素材的 id，或先用 media.import 导入新素材。`,
+	);
+}
+
+/**
  * Bounds of an element visible at the playhead. Layout and attention commands
  * need resolved geometry, which the renderer only produces for elements
  * present at the current time.
@@ -642,6 +734,7 @@ function buildEditorState(editor: EditorCore) {
 			height: asset.height,
 			fps: asset.fps,
 		})),
+		missingMedia: collectMissingMediaRefs(editor),
 	};
 }
 
@@ -1046,6 +1139,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const element = normalizeGraphicElementInput(
 				converted,
 			) as unknown as CreateTimelineElement;
+			requireExistingMediaId({
+				editor,
+				mediaId: (element as { mediaId?: unknown }).mediaId,
+			});
 			const rawPlacement = (args.placement ??
 				({ mode: "auto" } as const)) as InsertElementParams["placement"];
 			const placement = coerceAutoPlacement({
@@ -1078,13 +1175,28 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			if (!updates || updates.length === 0) {
 				throw new Error("Missing or invalid argument: updates");
 			}
+			for (const update of updates) {
+				findElement(editor, update.trackId, update.elementId);
+				requireExistingMediaId({
+					editor,
+					mediaId: (update.patch as Record<string, unknown>).mediaId,
+				});
+			}
 			editor.timeline.updateElements({
 				updates: updates as never,
 				...(typeof args.pushHistory === "boolean"
 					? { pushHistory: args.pushHistory }
 					: {}),
 			});
-			return { updated: updates.length };
+			const touchedMissing = collectMissingMediaRefs(editor).filter((ref) =>
+				updates.some((update) => update.elementId === ref.elementId),
+			);
+			return {
+				updated: updates.length,
+				...(touchedMissing.length > 0
+					? { warning: MISSING_MEDIA_WARNING, missingMedia: touchedMissing }
+					: {}),
+			};
 		},
 	},
 
@@ -1833,8 +1945,11 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"preview.capture": {
 		description:
-			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead.",
-		args: { time: "seconds?" },
+			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead. Pass rect ({left, top, right, bottom} as canvas fractions 0~1 — e.g. a canvasRect from get_user_marks) to crop the output to that region at native resolution for inspecting fine details (small icons, text) that a full-frame downscale would blur.",
+		args: {
+			time: "seconds?",
+			rect: "{left, top, right, bottom}? (canvas fractions 0~1; crop to that region at native resolution)",
+		},
 		run: async ({ editor, args }) => {
 			const project = editor.project.getActiveOrNull();
 			const tracks = editor.timeline.getPreviewTracks();
@@ -1878,16 +1993,44 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				targetCanvas: canvas,
 			});
 
+			// 框选区域裁切：保留原生像素，让模型看清整帧降采样后会糊掉的细节
+			const rect = parseCanvasRectArg(args.rect);
+			let source: HTMLCanvasElement = canvas;
+			if (rect) {
+				const left = Math.floor(rect.left * canvas.width);
+				const top = Math.floor(rect.top * canvas.height);
+				const cropWidth = Math.ceil(rect.right * canvas.width) - left;
+				const cropHeight = Math.ceil(rect.bottom * canvas.height) - top;
+				const cropped = document.createElement("canvas");
+				cropped.width = Math.max(1, cropWidth);
+				cropped.height = Math.max(1, cropHeight);
+				const cropCtx = cropped.getContext("2d");
+				if (!cropCtx) {
+					throw new Error("Failed to create crop canvas context");
+				}
+				cropCtx.drawImage(
+					canvas,
+					left,
+					top,
+					cropped.width,
+					cropped.height,
+					0,
+					0,
+					cropped.width,
+					cropped.height,
+				);
+				source = cropped;
+			}
+
 			// 降采样到长边 1280 并输出 JPEG：全尺寸 PNG base64 后会超过
 			// agent SDK 1MB 消息缓冲上限，且视觉模型本身会再缩放
 			const MAX_EDGE = 1280;
 			const scale = Math.min(
 				1,
-				MAX_EDGE / Math.max(canvas.width, canvas.height),
+				MAX_EDGE / Math.max(source.width, source.height),
 			);
-			const outWidth = Math.round(canvas.width * scale);
-			const outHeight = Math.round(canvas.height * scale);
-			let source = canvas;
+			const outWidth = Math.round(source.width * scale);
+			const outHeight = Math.round(source.height * scale);
 			if (scale < 1) {
 				const small = document.createElement("canvas");
 				small.width = outWidth;
@@ -1896,15 +2039,20 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				if (!ctx) {
 					throw new Error("Failed to create downscale canvas context");
 				}
-				ctx.drawImage(canvas, 0, 0, outWidth, outHeight);
+				ctx.drawImage(source, 0, 0, outWidth, outHeight);
 				source = small;
 			}
 
+			const missingMedia = collectMissingMediaRefs(editor);
 			return {
 				dataUrl: source.toDataURL("image/jpeg", 0.85),
 				width: outWidth,
 				height: outHeight,
 				time: toSeconds(renderTime as MediaTime),
+				...(rect ? { rect } : {}),
+				...(missingMedia.length > 0
+					? { warning: MISSING_MEDIA_WARNING, missingMedia }
+					: {}),
 			};
 		},
 	},
@@ -1919,7 +2067,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			timestamps:
 				"number[]? (explicit sample times in seconds; overrides start/end/count)",
 			dedupe: "boolean? (default true)",
-			cellWidth: "number? (px width of each cell, default 320)",
+			cellWidth:
+				"number? (px width of each cell, default 320, min 120, max 640 — clamped; for pixel-level detail use preview.capture with rect instead)",
 		},
 		run: async ({ editor, args }) => {
 			const project = editor.project.getActiveOrNull();
@@ -2068,6 +2217,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			}
 
 			const sheet = buildContactSheet({ frames: kept, cellWidth, cellHeight });
+			const missingMedia = collectMissingMediaRefs(editor);
 			return {
 				dataUrl: sheet.toDataURL("image/jpeg", 0.85),
 				width: sheet.width,
@@ -2076,6 +2226,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				kept: kept.length,
 				dropped: sampled.length - kept.length,
 				frames: kept.map((frame) => Number(frame.time.toFixed(2))),
+				...(missingMedia.length > 0
+					? { warning: MISSING_MEDIA_WARNING, missingMedia }
+					: {}),
 			};
 		},
 	},

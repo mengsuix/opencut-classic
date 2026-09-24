@@ -152,7 +152,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_user_marks",
-        "Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a numeric id shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a numeric id shown on the band; seconds; numbered separately from canvasRects). The user can mark several of each and may point at one by its number; both are empty arrays when nothing is marked. Clear them with execute_command marks.clear after use.",
+        "Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a numeric id shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at; pass one as get_preview_frame's rect to get a native-resolution close-up of that region — the right way to see small details like icons or text clearly), timeRanges = time ranges the user marked on the timeline (each with a numeric id shown on the band; seconds; numbered separately from canvasRects). The user can mark several of each and may point at one by its number; both are empty arrays when nothing is marked. Clear them with execute_command marks.clear after use.",
         {},
     )
     async def get_user_marks(args):
@@ -187,14 +187,18 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_preview_frame",
-        "Capture a frame of the current preview as a downscaled image. Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits.",
+        "Capture a frame of the current preview as a downscaled image (long edge 1280). Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits. To inspect fine details (small icons, text, a user-framed region), pass rect — a canvas-fraction rect 0~1, e.g. a canvasRects entry from get_user_marks — and the output is cropped to that region at native resolution instead of downscaled.",
         {
             "type": "object",
             "properties": {
                 "time": {
                     "type": "number",
                     "description": "Time in seconds; defaults to current playhead",
-                }
+                },
+                "rect": {
+                    "type": "object",
+                    "description": "Optional {left, top, right, bottom} in canvas fractions 0~1 (same coordinates as get_user_marks canvasRects); crops the capture to that region at native resolution",
+                },
             },
         },
     )
@@ -202,6 +206,18 @@ def build_editor_mcp_server(session_id: str):
         payload = {}
         if isinstance(args.get("time"), (int, float)):
             payload["time"] = args["time"]
+        rect = args.get("rect")
+        if isinstance(rect, dict):
+            cleaned = {
+                k: rect[k]
+                for k in ("left", "top", "right", "bottom")
+                if isinstance(rect.get(k), (int, float)) and not isinstance(rect.get(k), bool)
+            }
+            if len(cleaned) != 4:
+                return _error(
+                    "rect 需要 left/top/right/bottom 四个数值（0~1 画布比例）"
+                )
+            payload["rect"] = cleaned
         try:
             result = await call_editor(session_id, "preview.capture", payload)
         except Exception as e:
@@ -244,6 +260,10 @@ def build_editor_mcp_server(session_id: str):
                     "items": {"type": "number"},
                     "description": "Explicit sample times in seconds (max 24 entries); overrides start/end/count",
                 },
+                "cellWidth": {
+                    "type": "number",
+                    "description": "Pixel width of each contact-sheet cell, default 320, allowed 120~640 (rejected outside that range, not clamped). For pixel-level detail, use get_preview_frame with rect instead.",
+                },
             },
         },
     )
@@ -253,6 +273,14 @@ def build_editor_mcp_server(session_id: str):
             value = args.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 payload[key] = value
+        cell_width = args.get("cellWidth")
+        if isinstance(cell_width, (int, float)) and not isinstance(cell_width, bool):
+            if cell_width < 120 or cell_width > 640:
+                return _error(
+                    f"cellWidth must be between 120 and 640 (got {cell_width}). "
+                    "For pixel-level detail, call get_preview_frame with rect instead."
+                )
+            payload["cellWidth"] = cell_width
         count = args.get("count")
         if isinstance(count, (int, float)) and not isinstance(count, bool):
             if count < 1 or count > MAX_SEQUENCE_FRAMES:
