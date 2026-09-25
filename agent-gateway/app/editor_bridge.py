@@ -187,7 +187,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_preview_frame",
-        "Capture a frame of the current preview as a downscaled image (long edge 1280). Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits. To inspect fine details (small icons, text, a user-framed region), pass rect — a canvas-fraction rect 0~1, e.g. a canvasRects entry from get_user_marks — and the output is cropped to that region at native resolution instead of downscaled.",
+        "Capture a frame of the current preview as a downscaled image (long edge 1280). Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits. To inspect fine details (small icons, text, a user-framed region), pass rect — a canvas-fraction rect 0~1, e.g. a canvasRects entry from get_user_marks — and the output is cropped to that region at native resolution instead of downscaled. When the target is a small sub-element inside the region (icon, star, badge, small text), first capture the whole region, then tighten rect onto that element itself so it fills the frame — a sub-element only a few dozen native pixels wide is not shape-recognizable inside a larger crop; never guess its shape from a blurred bright spot.",
         {
             "type": "object",
             "properties": {
