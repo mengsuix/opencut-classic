@@ -73,9 +73,11 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
     format:
       "video" — HyperFrames render，黑底 MP4（配合 blendMode screen 使用）
       "image" — HyperFrames snapshot，透明背景 PNG（静态特效，直接作 image 元素）
+      "frames" — HyperFrames snapshot 多时间点关键帧（动态特效的秒级预览，
+                 多轮迭代确认效果后再用 "video" 正式渲染）
     """
-    if format not in ("video", "image"):
-        raise FxRenderError(f"format 只支持 video/image（got {format!r}）")
+    if format not in ("video", "image", "frames"):
+        raise FxRenderError(f"format 只支持 video/image/frames（got {format!r}）")
     if not isinstance(html, str) or not html.strip():
         raise FxRenderError("html 不能为空")
     if len(html.encode("utf-8")) > MAX_HTML_BYTES:
@@ -89,7 +91,9 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
 
     async with _RENDER_SEMAPHORE:
         if format == "image":
-            stdout = await _run_snapshot(work_dir)
+            stdout = await _run_snapshot(work_dir, at="0")
+        elif format == "frames":
+            stdout = await _run_snapshot(work_dir, at=_frames_timestamps(duration))
         else:
             stdout = await _run_render(work_dir)
 
@@ -113,6 +117,30 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
             "kind": "image",
             "path": str(frames[-1]),
             "previewPath": str(preview) if preview_ok else "",
+        }
+
+    if format == "frames":
+        frames = sorted(
+            (work_dir / "renders").glob("frame-*.png"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if not frames:
+            tail = "\n".join(stdout.splitlines()[-15:])
+            raise FxRenderError(f"渲染未产出 PNG。渲染日志尾部：\n{tail}")
+        preview_paths: list[str] = []
+        for i, frame in enumerate(frames):
+            preview = work_dir / f"preview-{i}.png"
+            if _make_preview(frame, preview):
+                preview_paths.append(str(preview))
+        return {
+            "jobId": job_id,
+            "fileName": frames[-1].name,
+            "width": width,
+            "height": height,
+            "durationSeconds": duration,
+            "kind": "frames",
+            "path": str(frames[-1]),
+            "previewPaths": preview_paths,
         }
 
     outputs = sorted(
@@ -166,18 +194,22 @@ def _make_preview(src: Path, dest: Path) -> bool:
         return False
 
 
-async def _run_snapshot(work_dir: Path) -> str:
-    """snapshot 截取 t=0 帧为 RGBA PNG（透明背景保留），秒级完成"""
+def _frames_timestamps(duration: float) -> str:
+    """动态特效预览的抽帧时间点（逗号分隔）：0.2/0.5/0.8 倍时长，
+    覆盖入场中段、动画中间态与接近稳态，避开 t=0（常为入场前空白）与末尾。"""
+    return ",".join(f"{duration * f:.2f}" for f in (0.2, 0.5, 0.8))
+
+
+async def _run_snapshot(work_dir: Path, at: str = "0") -> str:
+    """snapshot 截取指定时间点的帧为 PNG（透明背景保留），秒级完成"""
     cmd = [
         "npx",
         "--yes",
         f"hyperframes@{config.FX_HYPERFRAMES_VERSION}",
         "snapshot",
-        "--frames",
-        "1",
         "--no-end",
         "--at",
-        "0",
+        at,
         "-o",
         str(work_dir / "renders"),
     ]

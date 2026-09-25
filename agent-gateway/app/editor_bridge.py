@@ -333,11 +333,14 @@ def build_editor_mcp_server(session_id: str):
         'glowing titles, particles, animated stickers, or replicating a reference image\'s look. Two output formats: '
         '"video" (default) renders an animated black-background MP4 — insert on an overlay track with blendMode "screen" '
         'so black turns transparent; "image" screenshots t=0 as a transparent-background PNG in seconds — for STATIC '
-        'visuals (badges, labels, decorations with no animation), the HTML must use a transparent page background. The '
+        'visuals (badges, labels, decorations with no animation), the HTML must use a transparent page background; '
+        '"frames" captures key frames at evenly-spaced timestamps (0.2/0.5/0.8 of the duration) in seconds and attaches '
+        'them as preview images — ALWAYS use it first for ANIMATED effects to iterate on the look cheaply (seconds per '
+        'round, no browser round-trip), and only render the final "video" (1-3 minutes) once the frames match the target. The '
         'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta name="viewport" '
         'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
         'data-duration="<seconds>" data-width="<px>" data-height="<px>"; children carry class "clip" with '
-        'data-start/data-duration/data-track-index. Video rendering takes 1-3 minutes; image takes seconds. Returns a '
+        'data-start/data-duration/data-track-index. Video rendering takes 1-3 minutes; image/frames take seconds. Returns a '
         'URL plus the exact next steps (media.import with url, then timeline.insert_element). With format "image" the '
         'rendered preview is attached as an image, transparent areas shown as a light checkerboard — look at it and '
         'fix the HTML and re-render until it matches the target, instead of importing on the first try.',
@@ -350,8 +353,8 @@ def build_editor_mcp_server(session_id: str):
                 },
                 "format": {
                     "type": "string",
-                    "enum": ["video", "image"],
-                    "description": '"video": animated effect (black-background MP4, use blendMode "screen"); "image": static visual (transparent-background PNG, plain image element, no blend mode). Default "video".',
+                    "enum": ["video", "image", "frames"],
+                    "description": '"video": animated effect (black-background MP4, use blendMode "screen"); "image": static visual (transparent-background PNG, plain image element, no blend mode); "frames": key-frame previews of an animated effect (use first to iterate, then "video" for the final render). Default "video".',
                 },
             },
             "required": ["html"],
@@ -368,6 +371,41 @@ def build_editor_mcp_server(session_id: str):
             return _error(str(e))
         except Exception as e:
             return _error(f"渲染异常: {type(e).__name__}: {e}")
+        if result["kind"] == "frames":
+            payload = {
+                "jobId": result["jobId"],
+                "kind": "frames",
+                "width": result["width"],
+                "height": result["height"],
+                "durationSeconds": result["durationSeconds"],
+                "next": (
+                    "附带图片是本次渲染在多个时间点的关键帧（按时间顺序排列），不是参考图。"
+                    "逐张核对画面是否符合预期；与目标不一致就改 HTML 后仍以 format:'frames' "
+                    "重新渲染（秒级）继续迭代，不要直接 render video。确认一致后再改用 "
+                    "format:'video' 正式渲染（约 1~3 分钟），并按返回的 next 步骤插入时间轴。"
+                ),
+            }
+            images = []
+            for preview_path in result.get("previewPaths") or []:
+                try:
+                    images.append(Path(preview_path).read_bytes())
+                except OSError as e:
+                    logger.warning(f"读取特效关键帧预览失败: {e}")
+            content: list = [
+                {
+                    "type": "text",
+                    "text": json.dumps(payload, ensure_ascii=False, indent=2),
+                }
+            ]
+            for png in images:
+                content.append(
+                    {
+                        "type": "image",
+                        "data": base64.b64encode(png).decode("ascii"),
+                        "mimeType": "image/png",
+                    }
+                )
+            return {"content": content}
         base = _editor_base_urls.get(session_id, "")
         if not base:
             return _error(
