@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 
 const TICKS = 1000;
 mock.module("@/wasm", () => ({
@@ -88,6 +88,51 @@ describe("InsertElementCommand", () => {
 
 		expect(() => command.execute()).toThrow("Track not found: stale-track");
 		expect(fakeEditor.timeline.updateTracks).not.toHaveBeenCalled();
+	});
+
+	test("fails silently with a null track id when an html element targets a video track", () => {
+		// 复现：agent 把 HTML 特效显式放到视频轨道上，命令层 console.error
+		// 后静默返回。bridge 层依赖 getTrackId()===null 识别失败，不能依赖
+		// 选区（失败时选区可能残留旧元素）。
+		const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+		const command = new InsertElementCommand({
+			element: {
+				type: "html",
+				name: "HTML 特效",
+				html: "<div data-width=\"100\" data-height=\"50\"></div>",
+				intrinsicWidth: 100,
+				intrinsicHeight: 50,
+				startTime: 0,
+				duration: 1000,
+				trimStart: 0,
+				trimEnd: 0,
+				params: {},
+			} as never,
+			placement: { mode: "explicit", trackId: "main" },
+		});
+
+		expect(command.execute()).toBeUndefined();
+		expect(command.getTrackId()).toBeNull();
+		expect(fakeEditor.timeline.updateTracks).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
+	});
+
+	test("auto placement succeeds and reports a track id", () => {
+		const command = new InsertElementCommand({
+			element: {
+				type: "text",
+				name: "Text",
+				startTime: 0,
+				duration: 1000,
+				trimStart: 0,
+				trimEnd: 0,
+				params: { content: "hello" },
+			} as never,
+			placement: { mode: "auto" },
+		});
+
+		expect(command.execute()).toBeDefined();
+		expect(command.getTrackId()).not.toBeNull();
 	});
 });
 

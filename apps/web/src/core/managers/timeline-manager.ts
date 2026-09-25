@@ -92,9 +92,10 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
-	insertElement({ element, placement }: InsertElementParams): void {
+	insertElement({ element, placement }: InsertElementParams): string | null {
 		const command = new InsertElementCommand({ element, placement });
 		this.editor.command.execute({ command });
+		return command.getTrackId();
 	}
 
 	updateElementTrim({

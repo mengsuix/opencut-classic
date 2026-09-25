@@ -743,16 +743,18 @@ function insertAndSelect(
 	element: CreateTimelineElement,
 	placement: InsertElementParams["placement"],
 ): { selected: BridgeElementRef[] } {
-	editor.timeline.insertElement({ element, placement });
-	const selected = editor.selection.getSelectedElements() as BridgeElementRef[];
-	if (selected.length === 0) {
+	const targetTrackId = editor.timeline.insertElement({ element, placement });
+	if (targetTrackId == null) {
 		// 核心命令层对多种非法插入（类型与轨道不兼容、缺少 mediaId 等）
 		// 只 console.error 并静默返回，bridge 层必须转成可见错误，
 		// 否则 agent 会误以为插入成功。
+		// 注意：不能用"当前选区是否非空"判断成败——插入失败时选区里
+		// 可能残留着上一个元素，会误报成功并把旧元素引用返回给 agent。
 		throw new Error(
 			`元素插入失败：type=${String(element.type)} 未能落到时间线（通常是元素类型与目标轨道不兼容、缺少必要字段如 mediaId、或显式 trackId 不存在/类型不符）。请用 get_editor_state 查看轨道结构后修正 placement 或元素字段再重试。`,
 		);
 	}
+	const selected = editor.selection.getSelectedElements() as BridgeElementRef[];
 	return { selected };
 }
 
