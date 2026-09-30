@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+	<defs>
+		<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#2b3a8f"/>
+			<stop offset="0.45" stop-color="#e0558a"/>
+			<stop offset="1" stop-color="#ffb347"/>
+		</linearGradient>
+		<linearGradient id="lake" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#f59a5c"/>
+			<stop offset="1" stop-color="#1d3f7a"/>
+		</linearGradient>
+		<radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+			<stop offset="0" stop-color="#fff6c2"/>
+			<stop offset="0.6" stop-color="#ffd75e"/>
+			<stop offset="1" stop-color="#ffd75e" stop-opacity="0"/>
+		</radialGradient>
+	</defs>
+	<rect width="512" height="300" fill="url(#sky)"/>
+	<circle cx="340" cy="230" r="70" fill="url(#sun)"/>
+	<polygon points="0,300 90,170 160,240 250,120 350,250 420,180 512,260 512,300" fill="#4a2c6b"/>
+	<polygon points="250,120 225,155 262,148 278,165" fill="#f4e9ff"/>
+	<polygon points="90,170 72,196 98,190 110,200" fill="#f4e9ff"/>
+	<polygon points="0,300 60,250 130,285 200,230 300,290 380,240 460,280 512,250 512,300" fill="#2e6b4f"/>
+	<rect y="300" width="512" height="212" fill="url(#lake)"/>
+	<g fill="#fff3c4" opacity="0.7">
+		<rect x="300" y="318" width="80" height="4" rx="2"/>
+		<rect x="315" y="336" width="50" height="3" rx="1.5"/>
+		<rect x="325" y="352" width="30" height="3" rx="1.5"/>
+	</g>
+	<path d="M0,430 Q128,400 256,425 T512,420 L512,512 L0,512 Z" fill="#2f8a3e"/>
+	<g>
+		<circle cx="40" cy="455" r="10" fill="#e53935"/>
+		<circle cx="85" cy="475" r="8" fill="#fdd835"/>
+		<circle cx="130" cy="450" r="9" fill="#8e24aa"/>
+		<circle cx="175" cy="480" r="11" fill="#e53935"/>
+		<circle cx="225" cy="458" r="8" fill="#ffffff"/>
+		<circle cx="270" cy="485" r="10" fill="#fdd835"/>
+		<circle cx="320" cy="452" r="9" fill="#e91e63"/>
+		<circle cx="365" cy="478" r="8" fill="#8e24aa"/>
+		<circle cx="410" cy="455" r="10" fill="#fdd835"/>
+		<circle cx="460" cy="482" r="9" fill="#e53935"/>
+		<circle cx="495" cy="450" r="7" fill="#ffffff"/>
+	</g>
+	<g fill="#5d4037">
+		<circle cx="40" cy="455" r="3"/>
+		<circle cx="130" cy="450" r="3"/>
+		<circle cx="175" cy="480" r="3"/>
+		<circle cx="320" cy="452" r="3"/>
+		<circle cx="410" cy="455" r="3"/>
+		<circle cx="460" cy="482" r="3"/>
+	</g>
+</svg>

@@ -20,8 +20,6 @@ const webEnvSchema = z.object({
 
 	BETTER_AUTH_SECRET: z.string(),
 	MARBLE_WORKSPACE_KEY: z.string(),
-	FREESOUND_CLIENT_ID: z.string(),
-	FREESOUND_API_KEY: z.string(),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

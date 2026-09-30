@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -11,25 +11,20 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-	DropdownMenu,
-	DropdownMenuCheckboxItem,
-	DropdownMenuContent,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
-import { useSoundSearch } from "@/sounds/use-sound-search";
-import { useSoundsStore } from "@/sounds/sounds-store";
+import {
+	BUILTIN_SOUND_EFFECTS,
+	useSoundsStore,
+	type SoundCategoryFilter,
+} from "@/sounds/sounds-store";
+import { SOUND_CATEGORIES } from "@/sounds/builtin-sounds";
 import type { SavedSound, SoundEffect } from "@/sounds/types";
-import { useT } from "@/i18n";
+import { useT, type MessageKey } from "@/i18n";
 import { cn } from "@/utils/ui";
 import {
 	FavouriteIcon,
-	FilterMailIcon,
 	PauseIcon,
 	PlayIcon,
 	PlusSignIcon,
@@ -67,115 +62,36 @@ export function SoundsView() {
 	);
 }
 
+const CATEGORY_LABEL_KEYS: Record<SoundCategoryFilter, MessageKey> = {
+	all: "assets.soundCatAll",
+	transition: "assets.soundCatTransition",
+	impact: "assets.soundCatImpact",
+	ui: "assets.soundCatUi",
+	electronic: "assets.soundCatElectronic",
+	foley: "assets.soundCatFoley",
+	nature: "assets.soundCatNature",
+	human: "assets.soundCatHuman",
+};
+
 function SoundEffectsView() {
 	const t = useT();
 	const {
-		topSoundEffects,
-		isLoading,
-		searchQuery,
-		setSearchQuery,
+		activeCategory,
+		setActiveCategory,
 		scrollPosition,
 		setScrollPosition,
 		loadSavedSounds,
-		showCommercialOnly,
-		toggleCommercialFilter,
-		hasLoaded,
-		setTopSoundEffects,
-		setLoading,
-		setError,
-		setHasLoaded,
-		setCurrentPage,
-		setHasNextPage,
-		setTotalCount,
 	} = useSoundsStore();
-	const {
-		results: searchResults,
-		isLoading: isSearching,
-		loadMore,
-		hasNextPage,
-		isLoadingMore,
-	} = useSoundSearch({
-		query: searchQuery,
-		commercialOnly: showCommercialOnly,
-	});
 
 	const [playingId, setPlayingId] = useState<number | null>(null);
 	const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(
 		null,
 	);
-
-	const { scrollAreaRef, handleScroll } = useInfiniteScroll({
-		onLoadMore: loadMore,
-		hasMore: hasNextPage,
-		isLoading: isLoadingMore || isSearching,
-	});
+	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
 	useEffect(() => {
 		loadSavedSounds();
 	}, [loadSavedSounds]);
-
-	useEffect(() => {
-		if (hasLoaded) {
-			return;
-		}
-
-		let shouldIgnore = false;
-
-		const fetchTopSounds = async () => {
-			try {
-				if (!shouldIgnore) {
-					setLoading({ loading: true });
-					setError({ error: null });
-				}
-
-				const response = await fetch(
-					"/api/sounds/search?page_size=50&sort=downloads",
-				);
-
-				if (!shouldIgnore) {
-					if (!response.ok) {
-						throw new Error(`Failed to fetch: ${response.status}`);
-					}
-
-					const data = await response.json();
-					setTopSoundEffects({ sounds: data.results });
-					setHasLoaded({ loaded: true });
-
-					setCurrentPage({ page: 1 });
-					setHasNextPage({ hasNext: !!data.next });
-					setTotalCount({ count: data.count });
-				}
-			} catch (error) {
-				if (!shouldIgnore) {
-					console.error("Failed to fetch top sounds:", error);
-					setError({
-						error:
-							error instanceof Error ? error.message : "Failed to load sounds",
-					});
-				}
-			} finally {
-				if (!shouldIgnore) {
-					setLoading({ loading: false });
-				}
-			}
-		};
-
-		const timeoutId = setTimeout(fetchTopSounds, 100, {});
-
-		return () => {
-			shouldIgnore = true;
-			clearTimeout(timeoutId);
-		};
-	}, [
-		hasLoaded,
-		setTopSoundEffects,
-		setLoading,
-		setError,
-		setHasLoaded,
-		setCurrentPage,
-		setHasNextPage,
-		setTotalCount,
-	]);
 
 	useEffect(() => {
 		if (!scrollAreaRef.current || scrollPosition <= 0) {
@@ -186,20 +102,20 @@ function SoundEffectsView() {
 			scrollAreaRef.current?.scrollTo({ top: scrollPosition });
 		};
 
-		const timeoutId = setTimeout(restoreScrollPosition, 100, {});
+		const timeoutId = setTimeout(restoreScrollPosition, 100);
 
 		return () => clearTimeout(timeoutId);
-	}, [scrollPosition, scrollAreaRef]);
+	}, [scrollPosition]);
 
-	const handleScrollWithPosition = ({
-		currentTarget,
-	}: React.UIEvent<HTMLDivElement>) => {
-		const { scrollTop } = currentTarget;
-		setScrollPosition({ position: scrollTop });
-		handleScroll({ currentTarget } as React.UIEvent<HTMLDivElement>);
-	};
-
-	const displayedSounds = searchQuery ? searchResults : topSoundEffects;
+	const displayedSounds = useMemo(
+		() =>
+			activeCategory === "all"
+				? BUILTIN_SOUND_EFFECTS
+				: BUILTIN_SOUND_EFFECTS.filter((sound) =>
+						sound.tags.includes(activeCategory),
+					),
+		[activeCategory],
+	);
 
 	const playSound = ({ sound }: { sound: SoundEffect }) => {
 		if (playingId === sound.id) {
@@ -229,62 +145,36 @@ function SoundEffectsView() {
 	};
 
 	return (
-		<div className="mt-1 flex h-full flex-col gap-5">
-			<div className="flex items-center gap-3">
-				<Input
-					placeholder={t("assets.searchSoundEffects")}
-					className="w-full"
-					containerClassName="w-full"
-					value={searchQuery}
-					onChange={({ currentTarget }) =>
-						setSearchQuery({ query: currentTarget.value })
-					}
-					showClearIcon
-					onClear={() => setSearchQuery({ query: "" })}
-				/>
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button
-							variant="text"
-							size="icon"
-							className={cn(showCommercialOnly && "text-primary")}
+		<div className="mt-1 flex h-full flex-col gap-4">
+			<div className="flex flex-wrap gap-1.5">
+				{(["all", ...SOUND_CATEGORIES] as SoundCategoryFilter[]).map(
+					(category) => (
+						<button
+							key={category}
+							type="button"
+							className={cn(
+								"rounded-full border px-2.5 py-1 text-xs transition-colors",
+								activeCategory === category
+									? "bg-accent text-foreground"
+									: "text-muted-foreground hover:text-foreground",
+							)}
+							onClick={() => setActiveCategory({ category })}
 						>
-							<HugeiconsIcon icon={FilterMailIcon} />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" className="w-56">
-						<DropdownMenuCheckboxItem
-							checked={showCommercialOnly}
-							onCheckedChange={() => toggleCommercialFilter()}
-						>
-							{t("assets.showCommercialOnly")}
-						</DropdownMenuCheckboxItem>
-						<div className="text-muted-foreground px-2 py-1.5 text-xs">
-							{showCommercialOnly
-								? t("assets.commercialOnlyHint")
-								: t("assets.allLicensesHint")}
-						</div>
-					</DropdownMenuContent>
-				</DropdownMenu>
+							{t(CATEGORY_LABEL_KEYS[category])}
+						</button>
+					),
+				)}
 			</div>
 
 			<div className="relative h-full overflow-hidden">
 				<ScrollArea
 					className="h-full flex-1"
 					ref={scrollAreaRef}
-					onScrollCapture={handleScrollWithPosition}
+					onScrollCapture={({ currentTarget }) =>
+						setScrollPosition({ position: currentTarget.scrollTop })
+					}
 				>
 					<div className="flex flex-col gap-4">
-						{isLoading && !searchQuery && (
-							<div className="text-muted-foreground text-sm">
-								{t("assets.loadingSounds")}
-							</div>
-						)}
-						{isSearching && searchQuery && (
-							<div className="text-muted-foreground text-sm">
-								{t("assets.searching")}
-							</div>
-						)}
 						{displayedSounds.map((sound) => (
 							<AudioItem
 								key={sound.id}
@@ -293,18 +183,6 @@ function SoundEffectsView() {
 								onPlay={playSound}
 							/>
 						))}
-						{!isLoading && !isSearching && displayedSounds.length === 0 && (
-							<div className="text-muted-foreground text-sm">
-								{searchQuery
-									? t("assets.noSoundsFound")
-									: t("assets.noSoundsAvailable")}
-							</div>
-						)}
-						{isLoadingMore && (
-							<div className="text-muted-foreground py-4 text-center text-sm">
-								{t("assets.loadingMoreSounds")}
-							</div>
-						)}
 					</div>
 				</ScrollArea>
 			</div>

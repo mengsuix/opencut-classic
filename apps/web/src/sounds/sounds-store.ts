@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import type { SoundEffect, SavedSound } from "@/sounds/types";
+import {
+	BUILTIN_SOUNDS,
+	type BuiltinSound,
+	type SoundCategory,
+} from "@/sounds/builtin-sounds";
 import { storageService } from "@/services/storage/service";
 import { toast } from "sonner";
 import { EditorCore } from "@/core";
@@ -7,46 +12,49 @@ import { t } from "@/i18n";
 import { buildLibraryAudioElement } from "@/timeline/element-utils";
 import { mediaTimeFromSeconds } from "@/wasm";
 
+export type SoundCategoryFilter = SoundCategory | "all";
+
+function builtinToSoundEffect({ sound }: { sound: BuiltinSound }): SoundEffect {
+	const url = `/sounds/${sound.file}`;
+	return {
+		id: sound.id,
+		name: sound.name,
+		description: "",
+		url,
+		previewUrl: url,
+		downloadUrl: url,
+		duration: sound.duration,
+		filesize: 0,
+		type: "audio",
+		channels: 0,
+		bitrate: 0,
+		bitdepth: 0,
+		samplerate: 0,
+		username: sound.author,
+		tags: [sound.category],
+		license: sound.license,
+		created: "",
+		downloads: 0,
+		rating: 0,
+		ratingCount: 0,
+	};
+}
+
+export const BUILTIN_SOUND_EFFECTS: SoundEffect[] = BUILTIN_SOUNDS.map(
+	(sound) => builtinToSoundEffect({ sound }),
+);
+
 interface SoundsStore {
-	topSoundEffects: SoundEffect[];
-	isLoading: boolean;
-	error: string | null;
-	hasLoaded: boolean;
-	showCommercialOnly: boolean;
-	toggleCommercialFilter: () => void;
-	searchQuery: string;
-	searchResults: SoundEffect[];
-	isSearching: boolean;
-	searchError: string | null;
-	lastSearchQuery: string;
+	activeCategory: SoundCategoryFilter;
 	scrollPosition: number;
-	currentPage: number;
-	hasNextPage: boolean;
-	totalCount: number;
-	isLoadingMore: boolean;
 	savedSounds: SavedSound[];
 	isSavedSoundsLoaded: boolean;
 	isLoadingSavedSounds: boolean;
 	savedSoundsError: string | null;
 
-	addSoundToTimeline: ({ sound }: { sound: SoundEffect }) => Promise<boolean>;
-	setTopSoundEffects: ({ sounds }: { sounds: SoundEffect[] }) => void;
-	setLoading: ({ loading }: { loading: boolean }) => void;
-	setError: ({ error }: { error: string | null }) => void;
-	setHasLoaded: ({ loaded }: { loaded: boolean }) => void;
-	setSearchQuery: ({ query }: { query: string }) => void;
-	setSearchResults: ({ results }: { results: SoundEffect[] }) => void;
-	setSearching: ({ searching }: { searching: boolean }) => void;
-	setSearchError: ({ error }: { error: string | null }) => void;
-	setLastSearchQuery: ({ query }: { query: string }) => void;
+	setActiveCategory: ({ category }: { category: SoundCategoryFilter }) => void;
 	setScrollPosition: ({ position }: { position: number }) => void;
-	setCurrentPage: ({ page }: { page: number }) => void;
-	setHasNextPage: ({ hasNext }: { hasNext: boolean }) => void;
-	setTotalCount: ({ count }: { count: number }) => void;
-	setLoadingMore: ({ loading }: { loading: boolean }) => void;
-	appendSearchResults: ({ results }: { results: SoundEffect[] }) => void;
-	appendTopSounds: ({ results }: { results: SoundEffect[] }) => void;
-	resetPagination: () => void;
+	addSoundToTimeline: ({ sound }: { sound: SoundEffect }) => Promise<boolean>;
 	loadSavedSounds: () => Promise<void>;
 	saveSoundEffect: ({
 		soundEffect,
@@ -64,64 +72,15 @@ interface SoundsStore {
 }
 
 export const useSoundsStore = create<SoundsStore>((set, get) => ({
-	topSoundEffects: [],
-	isLoading: false,
-	error: null,
-	hasLoaded: false,
-	showCommercialOnly: true,
-
-	toggleCommercialFilter: () => {
-		set((state) => ({ showCommercialOnly: !state.showCommercialOnly }));
-	},
-
-	searchQuery: "",
-	searchResults: [],
-	isSearching: false,
-	searchError: null,
-	lastSearchQuery: "",
+	activeCategory: "all",
 	scrollPosition: 0,
-	currentPage: 1,
-	hasNextPage: false,
-	totalCount: 0,
-	isLoadingMore: false,
 	savedSounds: [],
 	isSavedSoundsLoaded: false,
 	isLoadingSavedSounds: false,
 	savedSoundsError: null,
 
-	setTopSoundEffects: ({ sounds }) => set({ topSoundEffects: sounds }),
-	setLoading: ({ loading }) => set({ isLoading: loading }),
-	setError: ({ error }) => set({ error }),
-	setHasLoaded: ({ loaded }) => set({ hasLoaded: loaded }),
-	setSearchQuery: ({ query }) => set({ searchQuery: query }),
-	setSearchResults: ({ results }) =>
-		set({ searchResults: results, currentPage: 1 }),
-	setSearching: ({ searching }) => set({ isSearching: searching }),
-	setSearchError: ({ error }) => set({ searchError: error }),
-	setLastSearchQuery: ({ query }) => set({ lastSearchQuery: query }),
+	setActiveCategory: ({ category }) => set({ activeCategory: category }),
 	setScrollPosition: ({ position }) => set({ scrollPosition: position }),
-	setCurrentPage: ({ page }) => set({ currentPage: page }),
-	setHasNextPage: ({ hasNext }) => set({ hasNextPage: hasNext }),
-	setTotalCount: ({ count }) => set({ totalCount: count }),
-	setLoadingMore: ({ loading }) => set({ isLoadingMore: loading }),
-
-	appendSearchResults: ({ results }) =>
-		set((state) => ({
-			searchResults: [...state.searchResults, ...results],
-		})),
-
-	appendTopSounds: ({ results }) =>
-		set((state) => ({
-			topSoundEffects: [...state.topSoundEffects, ...results],
-		})),
-
-	resetPagination: () =>
-		set({
-			currentPage: 1,
-			hasNextPage: false,
-			totalCount: 0,
-			isLoadingMore: false,
-		}),
 
 	loadSavedSounds: async () => {
 		if (get().isSavedSoundsLoaded) return;

@@ -22,7 +22,7 @@ export interface SoundEffect {
 }
 
 export interface SavedSound {
-	id: number; // freesound id
+	id: number; // builtin sound id
 	name: string;
 	username: string;
 	previewUrl?: string;
