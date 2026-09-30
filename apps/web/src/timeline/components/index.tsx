@@ -432,7 +432,12 @@ export function Timeline() {
 		});
 
 	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
-	const { onRangeSelectMouseDown } = useTimelineRangeSelect({
+	const isRangeDragActive = useUserMarksStore((s) => s.draftTimeRange !== null);
+	const {
+		onRangeSelectMouseDown,
+		onRangeSelectClickCapture,
+		lastMouseXRef: rangeSelectLastMouseXRef,
+	} = useTimelineRangeSelect({
 		getRulerEl: () => rulerRef.current,
 		zoomLevel,
 	});
@@ -517,6 +522,14 @@ export function Timeline() {
 		contentWidth: dynamicTimelineWidth,
 	});
 
+	useEdgeAutoScroll({
+		isActive: isRangeMarking && isRangeDragActive,
+		getMouseClientX: () => rangeSelectLastMouseXRef.current,
+		rulerScrollRef,
+		tracksScrollRef,
+		contentWidth: dynamicTimelineWidth,
+	});
+
 	const showSnapIndicator =
 		snappingEnabled &&
 		currentSnapPoint !== null &&
@@ -573,8 +586,17 @@ export function Timeline() {
 					ref={tracksContainerRef}
 					onMouseDownCapture={(event) => {
 						if (!isRangeMarking) return;
+						// Let the range band's own clear button receive the press —
+						// this capture handler runs before the button can stop it.
+						if (
+							event.target instanceof HTMLElement &&
+							event.target.closest("[data-user-mark-action]")
+						) {
+							return;
+						}
 						onRangeSelectMouseDown(event);
 					}}
+					onClickCapture={onRangeSelectClickCapture}
 				>
 					<SelectionBox
 						bounds={selectionBox?.bounds ?? null}

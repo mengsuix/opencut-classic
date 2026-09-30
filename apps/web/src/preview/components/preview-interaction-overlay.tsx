@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePreviewViewport } from "@/preview/components/preview-viewport";
 import { usePreviewInteraction } from "@/preview/hooks/use-preview-interaction";
 import type { SnapLine } from "@/preview/preview-snap";
@@ -46,6 +46,12 @@ export function PreviewInteractionOverlay() {
 	);
 	const [regionDraft, setRegionDraft] = useState<RegionMarkDraft | null>(null);
 
+	// Escape exits the mode via the toolbar button's canceller — drop any
+	// in-progress draft immediately so a cancelled gesture never lingers.
+	useEffect(() => {
+		if (!isRegionMarking) setRegionDraft(null);
+	}, [isRegionMarking]);
+
 	const {
 		onPointerDown,
 		onPointerMove,
@@ -64,6 +70,7 @@ export function PreviewInteractionOverlay() {
 		}
 
 		if (isRegionMarking) {
+			if (event.button !== 0) return;
 			const point = viewport.screenToCanvas({
 				clientX: event.clientX,
 				clientY: event.clientY,
@@ -107,7 +114,8 @@ export function PreviewInteractionOverlay() {
 			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
 				event.currentTarget.releasePointerCapture(event.pointerId);
 			}
-			if (canvasSize) {
+			// Mode exited mid-drag (Escape) — discard instead of committing.
+			if (isRegionMarking && canvasSize) {
 				const left = clamp({
 					value: Math.min(regionDraft.x0, regionDraft.x1) / canvasSize.width,
 					min: 0,
@@ -153,6 +161,24 @@ export function PreviewInteractionOverlay() {
 		onPointerUp(event);
 	};
 
+	const handlePointerCancel = (event: React.PointerEvent) => {
+		if (viewport.handlePanPointerUp({ event })) {
+			return;
+		}
+
+		// The system cancelled the gesture — never commit a region from it.
+		if (regionDraft) {
+			if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+				event.currentTarget.releasePointerCapture(event.pointerId);
+			}
+			setRegionDraft(null);
+			setRegionMarking(false);
+			return;
+		}
+
+		onPointerUp(event);
+	};
+
 	return (
 		<div className="absolute inset-0">
 			<div
@@ -171,7 +197,7 @@ export function PreviewInteractionOverlay() {
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
 				onPointerUp={handlePointerUp}
-				onPointerCancel={handlePointerUp}
+				onPointerCancel={handlePointerCancel}
 				onDoubleClick={onDoubleClick}
 				onDragStart={(e) => e.preventDefault()}
 			/>

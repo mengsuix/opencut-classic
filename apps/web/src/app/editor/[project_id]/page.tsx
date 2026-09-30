@@ -19,8 +19,9 @@ import { MigrationDialog } from "@/project/components/migration-dialog";
 import { usePanelStore } from "@/editor/panel-store";
 import { usePasteMedia } from "@/media/use-paste-media";
 import { MobileGate } from "@/components/editor/mobile-gate";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useEditor } from "@/editor/use-editor";
+import { useUserMarksStore } from "@/editor/user-marks-store";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,16 @@ import {
 export default function Editor() {
 	const params = useParams();
 	const projectId = params.project_id as string;
+
+	// User marks (canvas rects / time ranges) belong to the project context
+	// they were drawn in — switching projects must not carry them over.
+	useEffect(() => {
+		const marks = useUserMarksStore.getState();
+		marks.clearCanvasRects();
+		marks.clearTimeRanges();
+		marks.setRegionMarking(false);
+		marks.setRangeMarking(false);
+	}, [projectId]);
 
 	return (
 		<MobileGate>

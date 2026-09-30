@@ -69,8 +69,9 @@ function RegionMarkButton() {
 	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
 	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
 
-	// The marking mode stays on after each region so several can be drawn in a
-	// row; Escape exits it (without also clearing the element selection).
+	// Each drag exits the mode on pointerup (marking another region requires
+	// pressing the button again); Escape also exits — without clearing the
+	// element selection — and discards any in-progress draft.
 	useEffect(() => {
 		if (!isRegionMarking) return;
 		return registerCanceller({ fn: () => setRegionMarking(false) });

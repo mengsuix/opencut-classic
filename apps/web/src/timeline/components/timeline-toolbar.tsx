@@ -110,8 +110,9 @@ function ToolbarLeftSection() {
 	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
 	const setRangeMarking = useUserMarksStore((s) => s.setRangeMarking);
 
-	// The marking mode stays on after each drag so several ranges can be drawn
-	// in a row; Escape exits it (without also clearing the element selection).
+	// Each drag exits the mode on mouseup (marking another range requires
+	// pressing the button again); Escape also exits — without clearing the
+	// element selection — and discards any in-progress draft.
 	useEffect(() => {
 		if (!isRangeMarking) return;
 		return registerCanceller({ fn: () => setRangeMarking(false) });

@@ -99,5 +99,10 @@ export const useUserMarksStore = create<UserMarksState>()((set, get) => ({
 	},
 	setDraftTimeRange: (range) => set({ draftTimeRange: range }),
 	setRegionMarking: (active) => set({ isRegionMarking: active }),
-	setRangeMarking: (active) => set({ isRangeMarking: active }),
+	// Turning the mode off (toolbar toggle, Escape, drag finished) also drops
+	// any in-progress draft so a cancelled gesture never lingers on screen.
+	setRangeMarking: (active) =>
+		set(active
+			? { isRangeMarking: true }
+			: { isRangeMarking: false, draftTimeRange: null }),
 }));

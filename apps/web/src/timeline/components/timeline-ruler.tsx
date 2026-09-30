@@ -154,24 +154,29 @@ export function TimelineRuler({
 								width: `${width}px`,
 							}}
 						>
-							{width >= 18 && (
-								<button
-									type="button"
-									aria-label={t("timeline.clearTimeRangeMark")}
-									title={t("timeline.clearTimeRangeMark")}
-									className="bg-background text-foreground pointer-events-auto absolute top-1/2 right-0.5 flex size-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border"
-									style={{
-										// The playhead's drag handle (z = playhead) sits at the
-										// same spot when the band ends at the playhead — lift the
-										// button above it so clicks reach it, not the handle.
-										zIndex: TIMELINE_LAYERS.playhead + 1,
-									}}
-									onMouseDown={(event) => event.stopPropagation()}
-									onClick={() => removeTimeRange(range.id)}
-								>
-									<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
-								</button>
-							)}
+							{/* Always render the clear button — bands narrower than
+								the button itself would otherwise be impossible to
+								remove. Narrow bands push it just outside the band. */}
+							<button
+								type="button"
+								data-user-mark-action
+								aria-label={t("timeline.clearTimeRangeMark")}
+								title={t("timeline.clearTimeRangeMark")}
+								className={cn(
+									"bg-background text-foreground pointer-events-auto absolute top-1/2 flex size-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border",
+									width >= 18 ? "right-0.5" : "-right-4",
+								)}
+								style={{
+									// The playhead's drag handle (z = playhead) sits at the
+									// same spot when the band ends at the playhead — lift the
+									// button above it so clicks reach it, not the handle.
+									zIndex: TIMELINE_LAYERS.playhead + 1,
+								}}
+								onMouseDown={(event) => event.stopPropagation()}
+								onClick={() => removeTimeRange(range.id)}
+							>
+								<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
+							</button>
 							{width >= 36 && (
 								<span className="bg-background text-foreground pointer-events-none absolute top-1/2 left-0.5 flex size-3.5 -translate-y-1/2 items-center justify-center rounded-sm border text-[9px] leading-none font-medium">
 									{range.id}
