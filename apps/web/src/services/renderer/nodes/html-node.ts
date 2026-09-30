@@ -121,17 +121,32 @@ export function extractHtmlParams({ html }: { html: string }): string[] {
 }
 
 /**
+ * HTML declaring CSS @keyframes is animated: the editor seeks its CSS
+ * animations to the element's local time on every frame. Scripts never run
+ * (foreignObject rasterization is a sandboxed image), so CSS is the only
+ * animation source.
+ */
+export function isAnimatedHtml({ html }: { html: string }): boolean {
+	return /@keyframes\b/i.test(html);
+}
+
+const ANIM_INDEX_ATTR = "data-hfx-i";
+
+/**
  * Prepare the HTML for foreignObject rasterization: inject param values into
  * data-param slots, move <head> styles into the rendered subtree (they would
  * otherwise be dropped), and serialize via XMLSerializer so the SVG payload is
- * always well-formed XML.
+ * always well-formed XML. Animated HTML additionally gets every element
+ * tagged with an index so per-frame seek rules can target it.
  */
 function prepareHtml({
 	html,
 	params,
+	tagElements = false,
 }: {
 	html: string;
 	params: ParamValues;
+	tagElements?: boolean;
 }): string {
 	const doc = new DOMParser().parseFromString(html, "text/html");
 	for (const node of Array.from(doc.querySelectorAll("[data-param]"))) {
@@ -153,7 +168,209 @@ function prepareHtml({
 		wrapper.appendChild(doc.body.firstChild);
 	}
 	doc.body.appendChild(wrapper);
+	if (tagElements) {
+		Array.from(wrapper.querySelectorAll("*")).forEach((element, index) => {
+			element.setAttribute(ANIM_INDEX_ATTR, String(index));
+		});
+	}
 	return new XMLSerializer().serializeToString(wrapper);
+}
+
+interface AnimatedTarget {
+	index: string;
+	pseudo: "" | "::before" | "::after";
+	/** Author animation-delay per animation-name entry, in seconds. */
+	delays: number[];
+}
+
+interface AnimatedHtmlTemplate {
+	bodyHtml: string;
+	targets: AnimatedTarget[];
+}
+
+const animatedTemplateCache = new Map<string, Promise<AnimatedHtmlTemplate>>();
+
+function parseCssTimeList(value: string): number[] {
+	return value.split(",").map((part) => {
+		const text = part.trim();
+		const amount = Number.parseFloat(text);
+		if (!Number.isFinite(amount)) return 0;
+		return text.endsWith("ms") ? amount / 1000 : amount;
+	});
+}
+
+/**
+ * Seeking needs each animation's authored delay (staggered delays must
+ * survive the seek), which only the cascade knows. Load the prepared markup
+ * once into a script-less, network-less iframe and read the computed
+ * animation lists; per-frame seeking then only rewrites delays.
+ */
+async function extractAnimatedTargets({
+	bodyHtml,
+	width,
+	height,
+}: {
+	bodyHtml: string;
+	width: number;
+	height: number;
+}): Promise<AnimatedTarget[]> {
+	const iframe = document.createElement("iframe");
+	iframe.setAttribute("sandbox", "allow-same-origin");
+	iframe.setAttribute("aria-hidden", "true");
+	iframe.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;visibility:hidden;border:0;`;
+	iframe.srcdoc = [
+		"<!doctype html><html><head><meta charset=\"utf-8\">",
+		"<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:\">",
+		"<style>html,body{margin:0;padding:0;width:100%;height:100%;}</style>",
+		"</head><body>",
+		bodyHtml,
+		"</body></html>",
+	].join("");
+	const loaded = new Promise<void>((resolve, reject) => {
+		iframe.onload = () => resolve();
+		iframe.onerror = () => reject(new Error("HTML animation probe failed"));
+	});
+	document.body.appendChild(iframe);
+	try {
+		await loaded;
+		const doc = iframe.contentDocument;
+		const view = iframe.contentWindow;
+		if (!doc || !view) return [];
+		const targets: AnimatedTarget[] = [];
+		for (const element of Array.from(doc.querySelectorAll(`[${ANIM_INDEX_ATTR}]`))) {
+			const index = element.getAttribute(ANIM_INDEX_ATTR) ?? "";
+			for (const pseudo of ["", "::before", "::after"] as const) {
+				const style = view.getComputedStyle(element, pseudo || null);
+				const names = style.animationName
+					.split(",")
+					.map((name) => name.trim());
+				if (names.every((name) => name === "none" || name === "")) continue;
+				const authored = parseCssTimeList(style.animationDelay);
+				targets.push({
+					index,
+					pseudo,
+					delays: names.map((_, i) => authored[i % authored.length] ?? 0),
+				});
+			}
+		}
+		return targets;
+	} finally {
+		iframe.remove();
+	}
+}
+
+function loadAnimatedTemplate({
+	html,
+	params,
+	width,
+	height,
+}: {
+	html: string;
+	params: ParamValues;
+	width: number;
+	height: number;
+}): Promise<AnimatedHtmlTemplate> {
+	const cacheKey = htmlCacheKey({ html, params, width, height });
+	const cached = animatedTemplateCache.get(cacheKey);
+	if (cached) return cached;
+	const bodyHtml = prepareHtml({ html, params, tagElements: true });
+	const promise = extractAnimatedTargets({ bodyHtml, width, height }).then(
+		(targets) => ({ bodyHtml, targets }),
+	);
+	animatedTemplateCache.set(cacheKey, promise);
+	return promise;
+}
+
+/**
+ * Freeze every animation at `seconds`: pause it and shift its delay by
+ * -seconds, so the first (and only) painted frame is the state at that time,
+ * with authored delays, easing, iteration and fill-mode all honoured.
+ */
+function buildSeekStyle({
+	targets,
+	seconds,
+}: {
+	targets: AnimatedTarget[];
+	seconds: number;
+}): string {
+	const rules = targets.map(({ index, pseudo, delays }) => {
+		const shifted = delays
+			.map((delay) => `${(delay - seconds).toFixed(4)}s`)
+			.join(",");
+		return `[${ANIM_INDEX_ATTR}="${index}"]${pseudo}{animation-delay:${shifted}!important;animation-play-state:paused!important;}`;
+	});
+	return `<style xmlns="http://www.w3.org/1999/xhtml">${rules.join("")}</style>`;
+}
+
+/** Rendered animated frames, LRU-bounded by pixel count (~200MB of RGBA). */
+const ANIMATED_FRAME_PIXEL_BUDGET = 50_000_000;
+const animatedFrameCache = new Map<string, Promise<CachedHtmlSource>>();
+const animatedFramePixels = new Map<string, number>();
+let animatedFramePixelTotal = 0;
+
+function rememberAnimatedFrame(
+	key: string,
+	promise: Promise<CachedHtmlSource>,
+	pixels: number,
+): void {
+	animatedFrameCache.set(key, promise);
+	animatedFramePixels.set(key, pixels);
+	animatedFramePixelTotal += pixels;
+	for (const oldest of animatedFrameCache.keys()) {
+		if (animatedFramePixelTotal <= ANIMATED_FRAME_PIXEL_BUDGET) break;
+		if (oldest === key) break;
+		animatedFrameCache.delete(oldest);
+		animatedFramePixelTotal -= animatedFramePixels.get(oldest) ?? 0;
+		animatedFramePixels.delete(oldest);
+	}
+}
+
+/**
+ * One frame of an animated HTML element. Unlike static HTML it is NOT cropped
+ * to painted pixels: the painted area changes every frame, so cropping would
+ * make the element jitter. The declared box is drawn 1:1 instead.
+ */
+export function loadAnimatedHtmlFrame({
+	html,
+	params,
+	width,
+	height,
+	seconds,
+	frameIndex,
+}: {
+	html: string;
+	params: ParamValues;
+	width: number;
+	height: number;
+	seconds: number;
+	frameIndex: number;
+}): Promise<CachedHtmlSource> {
+	const key = `${htmlCacheKey({ html, params, width, height })}#${frameIndex}`;
+	const cached = animatedFrameCache.get(key);
+	if (cached) {
+		animatedFrameCache.delete(key);
+		animatedFrameCache.set(key, cached);
+		return cached;
+	}
+	const promise = loadAnimatedTemplate({ html, params, width, height }).then(
+		async ({ bodyHtml, targets }) => {
+			const canvas = await drawHtmlToCanvas({
+				bodyHtml: buildSeekStyle({ targets, seconds }) + bodyHtml,
+				width,
+				height,
+			});
+			return { source: canvas, width, height };
+		},
+	);
+	promise.catch(() => {
+		if (animatedFrameCache.get(key) === promise) {
+			animatedFrameCache.delete(key);
+			animatedFramePixelTotal -= animatedFramePixels.get(key) ?? 0;
+			animatedFramePixels.delete(key);
+		}
+	});
+	rememberAnimatedFrame(key, promise, width * height);
+	return promise;
 }
 
 export function loadHtmlSource({
@@ -196,36 +413,15 @@ async function rasterizeHtml({
 	width: number;
 	height: number;
 }): Promise<CachedHtmlSource> {
-	const bodyHtml = prepareHtml({ html, params });
-
-	const svg = [
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
-		`<foreignObject width="100%" height="100%">`,
-		bodyHtml,
-		`</foreignObject>`,
-		`</svg>`,
-	].join("");
-
-	// A blob: URL makes Chrome treat the SVG image as cross-origin: drawing it
-	// taints the canvas, so WebGPU refuses the upload (SecurityError) and wgpu's
-	// unwrap panics, which permanently wedges the compositor. A data: URL keeps
-	// the canvas origin-clean and uploads fine.
-	const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-
-	const image = new Image();
-	image.decoding = "sync";
-	await new Promise<void>((resolve, reject) => {
-		image.onload = () => resolve();
-		image.onerror = () => reject(new Error("HTML rasterization failed"));
-		image.src = url;
+	const canvas = await drawHtmlToCanvas({
+		bodyHtml: prepareHtml({ html, params }),
+		width,
+		height,
 	});
-
-	const canvas = new OffscreenCanvas(width, height);
 	const ctx = canvas.getContext("2d");
 	if (!ctx) {
 		throw new Error("OffscreenCanvas 2d context unavailable");
 	}
-	ctx.drawImage(image, 0, 0, width, height);
 
 	// The declared canvas is only a layout box: the element should be exactly
 	// the painted content, so crop to the painted pixels. The renderer then
@@ -255,6 +451,46 @@ async function rasterizeHtml({
 		bounds.height,
 	);
 	return { source: cropped, width: bounds.width, height: bounds.height };
+}
+
+async function drawHtmlToCanvas({
+	bodyHtml,
+	width,
+	height,
+}: {
+	bodyHtml: string;
+	width: number;
+	height: number;
+}): Promise<OffscreenCanvas> {
+	const svg = [
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
+		`<foreignObject width="100%" height="100%">`,
+		bodyHtml,
+		`</foreignObject>`,
+		`</svg>`,
+	].join("");
+
+	// A blob: URL makes Chrome treat the SVG image as cross-origin: drawing it
+	// taints the canvas, so WebGPU refuses the upload (SecurityError) and wgpu's
+	// unwrap panics, which permanently wedges the compositor. A data: URL keeps
+	// the canvas origin-clean and uploads fine.
+	const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+	const image = new Image();
+	image.decoding = "sync";
+	await new Promise<void>((resolve, reject) => {
+		image.onload = () => resolve();
+		image.onerror = () => reject(new Error("HTML rasterization failed"));
+		image.src = url;
+	});
+
+	const canvas = new OffscreenCanvas(width, height);
+	const ctx = canvas.getContext("2d");
+	if (!ctx) {
+		throw new Error("OffscreenCanvas 2d context unavailable");
+	}
+	ctx.drawImage(image, 0, 0, width, height);
+	return canvas;
 }
 
 /** Tight bounding box of the non-transparent pixels. */
