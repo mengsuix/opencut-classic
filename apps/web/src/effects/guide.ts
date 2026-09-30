@@ -43,7 +43,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - fade 叠化 / black 黑场 / zoom 推近 / slide 滑入滑出；转场区前段音频自动淡出。
 - 转场只渲染画面重叠，后一片段视频会消耗 trimStart 余量，无余量时定格源首帧。
 - 内置类型以外的转场（擦除/旋转/白闪等）才需要手拼：重叠片段 + animIn/animOut 或关键帧。
-- 单个 clip 内部要出转场效果（成片里常见的光晕/闪白过场）：先用 timeline.split_elements 在转场点切开，再给前段设 transition.type；素材不允许切开时，用 fx_render 渲染一段光晕/闪白动画（format:"video"），blendMode screen 叠在切点位置。
+- 单个 clip 内部要出转场效果（成片里常见的光晕/闪白过场）：先用 timeline.split_elements 在转场点切开，再给前段设 transition.type；素材不允许切开时，用 fx_render 渲染一段透明背景的光晕/闪白动画（format:"video"），叠在切点位置（要提亮叠加感可再设 blendMode screen）。
 
 ## 文字样式参数（text 元素 params，用 timeline.update_elements / add_text 设置）
 - 描边：stroke.enabled=true, stroke.color, stroke.width
@@ -71,7 +71,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 ## 自定义 HTML 视觉（内置特效和组合配方都表达不了时）
 - 静态 + 文字以后要再改（标题条/徽章/字幕条）→ timeline.add_html：浏览器内栅格化、秒级、透明背景，文字槽用 data-param 声明后可继续改字，元素可正常移动/缩放/混合
 - 静态 + 像素级复刻参考图（精细渐变/发光/描边）→ fx_render format:"image"：真实 Chrome 渲染保真度高，产出透明 PNG；文字不可再编辑（改字需改 HTML 重渲）
-- 有动画 → fx_render：先 format:"frames" 秒级迭代确认，再 format:"video" 正式渲染（黑底 MP4，insert_element 时 element.params 带 {blendMode:"screen"}）
+- 有动画 → fx_render：先 format:"frames" 秒级迭代确认，再 format:"video" 正式渲染（透明背景 WebM，自带透明通道，insert_element 无需混合模式）
 - HTML 画布尺寸（data-width/data-height）一律用项目画布尺寸，内容在 HTML 里摆到目标位置，产物插入后 1:1 落位；不要用内容本身的小尺寸当画布，否则插入后会被放大铺满画布
 
 ## 导出前

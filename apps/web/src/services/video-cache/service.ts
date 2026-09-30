@@ -400,9 +400,12 @@ export class VideoCache {
 				throw new Error("Video codec not supported for decoding");
 			}
 
+			// Transparent tracks (e.g. VP9-alpha WebM from fx_render) must keep
+			// alpha; otherwise CanvasSink flattens them onto black.
 			const sink = new CanvasSink(videoTrack, {
 				poolSize: 3,
 				fit: "contain",
+				alpha: await videoTrack.canBeTransparent(),
 			});
 
 			this.sinks.set(mediaId, {

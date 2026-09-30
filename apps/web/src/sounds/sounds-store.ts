@@ -204,6 +204,16 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 			return true;
 		} catch (error) {
 			console.error("Failed to add sound to timeline:", error);
+			console.error(
+				"[debug] ctor:",
+				error?.constructor?.name,
+				"type:",
+				(error as Event)?.type,
+				"message:",
+				(error as Error)?.message,
+				"stack:",
+				(error as Error)?.stack,
+			);
 			toast.error(
 				error instanceof Error ? error.message : t("assets.addSoundFailed"),
 				{ id: `sound-${sound.id}` },

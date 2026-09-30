@@ -1,11 +1,12 @@
-"""HyperFrames 特效渲染：agent 提交 HTML → 本机渲染 MP4 → 静态路由回传浏览器
+"""HyperFrames 特效渲染：agent 提交 HTML → 本机渲染透明 WebM → 静态路由回传浏览器
 
 链路：fx.render MCP 工具 → render_fx()（npx 固定版本 HyperFrames，无头 Chrome 逐帧捕获）
-→ AGENT_DATA_DIR/fx/<session_id>/<job_id>/renders/*.mp4
+→ AGENT_DATA_DIR/fx/<session_id>/<job_id>/renders/fx.webm
 → GET /api/agent/sessions/{sid}/fx/{job_id}/{file_name}（api/fx.py，带会话归属校验）
 → 浏览器 media.import(url) 拉取入库。
 
-产物约定为黑底视频，配合时间线 blendMode:"screen" 合成（黑底自动透明）。
+视频产物为 VP9 alpha WebM（页面透明背景即视频透明），前端解码保留 alpha，
+按普通混合直接叠加，无需 screen 混合。
 
 已知边界：HTML 内的 JS 会在渲染机 Chrome 中执行并可访问网络（HyperFrames 模板
 依赖 CDN），当前与 agent 同信任级，未做网络沙箱；如需多租户强隔离再加固。
@@ -54,6 +55,16 @@ PREVIEW_CHECKER_CELL = 8
 PREVIEW_LIGHT = "#FFFFFF"
 PREVIEW_DARK = "#EDEDED"
 
+# frames：最多抽帧数；不超过 PREVIEW_SINGLE_MAX 帧逐张回传（看细节），
+# 超过则拼成一张带时间戳的联系表（看运动连贯性，省 token）
+FRAMES_MAX = 12
+PREVIEW_SINGLE_MAX = 4
+SHEET_GAP = 6
+SHEET_LABEL_HEIGHT = 26
+SHEET_BG = "#2B2B2B"
+
+VIDEO_FILE_NAME = "fx.webm"
+
 
 class FxRenderError(RuntimeError):
     """渲染失败（参数非法 / 渲染进程失败 / 无产物）"""
@@ -71,14 +82,21 @@ def _parse_composition(html: str) -> tuple[int, int, float]:
     return int(values["width"]), int(values["height"]), values["duration"]
 
 
-async def render_fx(session_id: str, html: str, *, format: str = "video") -> dict:
+async def render_fx(
+    session_id: str,
+    html: str,
+    *,
+    format: str = "video",
+    timestamps: list[float] | None = None,
+) -> dict:
     """渲染一个特效 HTML，返回产物信息（路径/尺寸/时长/kind）
 
     format:
-      "video" — HyperFrames render，黑底 MP4（配合 blendMode screen 使用）
+      "video" — HyperFrames render，透明背景 VP9 alpha WebM（普通混合直接叠加）
       "image" — HyperFrames snapshot，透明背景 PNG（静态特效，直接作 image 元素）
       "frames" — HyperFrames snapshot 多时间点关键帧（动态特效的秒级预览，
-                 多轮迭代确认效果后再用 "video" 正式渲染）
+                 多轮迭代确认效果后再用 "video" 正式渲染）；timestamps 缺省
+                 取 0.2/0.5/0.8 倍时长，超过 PREVIEW_SINGLE_MAX 帧时拼成一张联系表
     """
     if format not in ("video", "image", "frames"):
         raise FxRenderError(f"format 只支持 video/image/frames（got {format!r}）")
@@ -87,6 +105,8 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
     if len(html.encode("utf-8")) > MAX_HTML_BYTES:
         raise FxRenderError(f"html 超过 {MAX_HTML_BYTES // 1024}KB 上限")
     width, height, duration = _parse_composition(html)
+    if format == "frames":
+        at_list = _validate_timestamps(timestamps, duration)
 
     job_id = f"fx-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     work_dir = config.AGENT_DATA_DIR / "fx" / session_id / job_id
@@ -97,7 +117,7 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
         async with _RENDER_SEMAPHORE:
             stdout = await _run_render(work_dir)
     else:
-        at = "0" if format == "image" else _frames_timestamps(duration)
+        at = "0" if format == "image" else ",".join(f"{t:.2f}" for t in at_list)
         async with _SNAPSHOT_SEMAPHORE:
             stdout = await _run_snapshot(work_dir, at=at)
 
@@ -128,10 +148,16 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
             tail = "\n".join(stdout.splitlines()[-15:])
             raise FxRenderError(f"渲染未产出 PNG。渲染日志尾部：\n{tail}")
         preview_paths: list[str] = []
-        for i, frame in enumerate(frames):
-            preview = work_dir / f"preview-{i}.png"
-            if _make_preview(frame, preview):
-                preview_paths.append(str(preview))
+        if len(frames) > PREVIEW_SINGLE_MAX:
+            sheet = work_dir / "preview-sheet.png"
+            labels = [f"t={t:.2f}s" for t in at_list]
+            if _make_contact_sheet(frames, labels, sheet):
+                preview_paths.append(str(sheet))
+        else:
+            for i, frame in enumerate(frames):
+                preview = work_dir / f"preview-{i}.png"
+                if _make_preview(frame, preview):
+                    preview_paths.append(str(preview))
         return {
             "jobId": job_id,
             "fileName": frames[-1].name,
@@ -143,21 +169,39 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
             "previewPaths": preview_paths,
         }
 
-    outputs = sorted(
-        (work_dir / "renders").glob("*.mp4"), key=lambda p: p.stat().st_mtime
-    )
-    if not outputs:
+    output = work_dir / "renders" / VIDEO_FILE_NAME
+    if not output.is_file():
         tail = "\n".join(stdout.splitlines()[-15:])
         raise FxRenderError(f"渲染未产出视频文件。渲染日志尾部：\n{tail}")
     return {
         "jobId": job_id,
-        "fileName": outputs[-1].name,
+        "fileName": output.name,
         "width": width,
         "height": height,
         "durationSeconds": duration,
         "kind": "video",
-        "path": str(outputs[-1]),
+        "path": str(output),
     }
+
+
+def _validate_timestamps(timestamps: list[float] | None, duration: float) -> list[float]:
+    """frames 抽帧时间点：缺省 0.2/0.5/0.8 倍时长（覆盖入场中段、中间态与接近稳态，
+    避开 t=0 入场前空白与末尾）；显式传入时去重升序（snapshot 产物按序号命名，
+    与这里的顺序一一对应，联系表标签依赖该对应关系）。"""
+    if timestamps is None:
+        return [round(duration * f, 2) for f in (0.2, 0.5, 0.8)]
+    if not isinstance(timestamps, list) or not timestamps:
+        raise FxRenderError("timestamps 必须是非空数组（秒）")
+    values: set[float] = set()
+    for t in timestamps:
+        if isinstance(t, bool) or not isinstance(t, (int, float)):
+            raise FxRenderError(f"timestamps 含非法值 {t!r}")
+        if not 0 <= t <= duration:
+            raise FxRenderError(f"timestamps 中 {t:g} 超出 0~{duration:g} 秒")
+        values.add(round(float(t), 2))
+    if len(values) > FRAMES_MAX:
+        raise FxRenderError(f"timestamps 最多 {FRAMES_MAX} 个（got {len(values)}）")
+    return sorted(values)
 
 
 def _make_preview(src: Path, dest: Path) -> bool:
@@ -166,38 +210,66 @@ def _make_preview(src: Path, dest: Path) -> bool:
     失败（缺 Pillow / 解码异常）返回 False，渲染产物本身照常返回，不因此报错。
     """
     try:
-        from PIL import Image, ImageDraw
-
-        with Image.open(src) as opened:
-            img = opened.convert("RGBA")
-        longest = max(img.size)
-        if longest > PREVIEW_MAX_EDGE:
-            scale = PREVIEW_MAX_EDGE / longest
-            img = img.resize(
-                (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
-                Image.Resampling.LANCZOS,
-            )
-        background = Image.new("RGB", img.size, PREVIEW_LIGHT)
-        draw = ImageDraw.Draw(background)
-        cell = PREVIEW_CHECKER_CELL
-        for y in range(0, img.height, cell):
-            for x in range(0, img.width, cell):
-                if (x // cell + y // cell) % 2:
-                    draw.rectangle(
-                        [x, y, x + cell - 1, y + cell - 1], fill=PREVIEW_DARK
-                    )
-        background.paste(img, (0, 0), img)
-        background.save(dest, format="PNG", optimize=True)
+        _checker_preview(src, PREVIEW_MAX_EDGE).save(dest, format="PNG", optimize=True)
         return True
     except Exception as e:
         logger.warning(f"预览图生成失败（渲染产物不受影响）: {type(e).__name__}: {e}")
         return False
 
 
-def _frames_timestamps(duration: float) -> str:
-    """动态特效预览的抽帧时间点（逗号分隔）：0.2/0.5/0.8 倍时长，
-    覆盖入场中段、动画中间态与接近稳态，避开 t=0（常为入场前空白）与末尾。"""
-    return ",".join(f"{duration * f:.2f}" for f in (0.2, 0.5, 0.8))
+def _checker_preview(src: Path, max_edge: int):
+    """读入透明 PNG，长边限到 max_edge，透明区铺浅色棋盘格，返回 RGB Image"""
+    from PIL import Image, ImageDraw
+
+    with Image.open(src) as opened:
+        img = opened.convert("RGBA")
+    longest = max(img.size)
+    if longest > max_edge:
+        scale = max_edge / longest
+        img = img.resize(
+            (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    background = Image.new("RGB", img.size, PREVIEW_LIGHT)
+    draw = ImageDraw.Draw(background)
+    cell = PREVIEW_CHECKER_CELL
+    for y in range(0, img.height, cell):
+        for x in range(0, img.width, cell):
+            if (x // cell + y // cell) % 2:
+                draw.rectangle([x, y, x + cell - 1, y + cell - 1], fill=PREVIEW_DARK)
+    background.paste(img, (0, 0), img)
+    return background
+
+
+def _make_contact_sheet(frames: list[Path], labels: list[str], dest: Path) -> bool:
+    """多帧拼成一张联系表：总宽 PREVIEW_MAX_EDGE，每格上方标注时间戳，按时间从左到右、从上到下"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        n = len(frames)
+        cols = 2 if n <= 4 else 3 if n <= 9 else 4
+        rows = -(-n // cols)
+        cell_w = (PREVIEW_MAX_EDGE - SHEET_GAP * (cols + 1)) // cols
+        cells = [_checker_preview(f, cell_w) for f in frames]
+        cell_h = max(c.height for c in cells)
+        row_h = SHEET_LABEL_HEIGHT + cell_h
+        sheet = Image.new(
+            "RGB",
+            (PREVIEW_MAX_EDGE, SHEET_GAP + rows * (row_h + SHEET_GAP)),
+            SHEET_BG,
+        )
+        draw = ImageDraw.Draw(sheet)
+        font = ImageFont.load_default(size=18)
+        for i, (cell, label) in enumerate(zip(cells, labels)):
+            x = SHEET_GAP + (i % cols) * (cell_w + SHEET_GAP)
+            y = SHEET_GAP + (i // cols) * (row_h + SHEET_GAP)
+            draw.text((x + 4, y + 3), label, fill="#FFFFFF", font=font)
+            sheet.paste(cell, (x, y + SHEET_LABEL_HEIGHT))
+        sheet.save(dest, format="PNG", optimize=True)
+        return True
+    except Exception as e:
+        logger.warning(f"联系表生成失败（渲染产物不受影响）: {type(e).__name__}: {e}")
+        return False
 
 
 async def _run_snapshot(work_dir: Path, at: str = "0") -> str:
@@ -291,6 +363,12 @@ async def _run_render(work_dir: Path) -> str:
         f"hyperframes@{config.FX_HYPERFRAMES_VERSION}",
         "render",
         "--quiet",
+        # WebM = VP9 + alpha：页面透明背景直接成为视频透明通道；
+        # 帧率取 root 的 data-fps（agent 按项目 fps 填），缺省 30
+        "--format",
+        "webm",
+        "-o",
+        str(work_dir / "renders" / VIDEO_FILE_NAME),
     ]
     try:
         proc = await asyncio.create_subprocess_exec(

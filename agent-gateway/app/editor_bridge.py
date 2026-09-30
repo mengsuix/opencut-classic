@@ -330,17 +330,24 @@ def build_editor_mcp_server(session_id: str):
         "fx_render",
         'Render a self-contained HTML/CSS composition with HyperFrames (headless Chrome, frame-accurate CSS/WAAPI/GSAP '
         'animation). Use it for custom visuals beyond the editor\'s built-in text/effect params: tech-style badges, '
-        'glowing titles, particles, animated stickers, or replicating a reference image\'s look. Two output formats: '
-        '"video" (default) renders an animated black-background MP4 — insert on an overlay track with blendMode "screen" '
-        'so black turns transparent; "image" screenshots t=0 as a transparent-background PNG in seconds — for STATIC '
-        'visuals (badges, labels, decorations with no animation), the HTML must use a transparent page background; '
-        '"frames" captures key frames at evenly-spaced timestamps (0.2/0.5/0.8 of the duration) in seconds and attaches '
-        'them as preview images — ALWAYS use it first for ANIMATED effects to iterate on the look cheaply (seconds per '
-        'round, no browser round-trip), and only render the final "video" (1-3 minutes) once the frames match the target. The '
-        'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta name="viewport" '
+        'glowing titles, particles, animated stickers, or replicating a reference image\'s look. The HTML page background '
+        'must be transparent for every format. Three output formats: '
+        '"video" (default) renders an animated transparent-background WebM (real alpha channel — dark content stays '
+        'visible, no blend mode needed); "image" screenshots t=0 as a transparent-background PNG in seconds — for STATIC '
+        'visuals (badges, labels, decorations with no animation); '
+        '"frames" captures key frames (default 0.2/0.5/0.8 of the duration, or explicit "timestamps", up to 12) in '
+        'seconds and attaches them as preview images — more than 4 frames come back as ONE contact sheet labelled with '
+        'each timestamp (use it to check motion continuity/timing); ALWAYS use frames first for ANIMATED effects to '
+        'iterate on the look cheaply (seconds per round, no browser round-trip), and only render the final "video" '
+        '(1-3 minutes) once the frames match the target. The '
+        'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta charset="utf-8"> '
+        '(required, otherwise Chinese text renders as mojibake), <meta name="viewport" '
         'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
-        'data-duration="<seconds>" data-width="<px>" data-height="<px>"; children carry class "clip" with '
-        'data-start/data-duration/data-track-index. Set data-width/data-height to the PROJECT canvas size (see '
+        'data-duration="<seconds>" data-width="<px>" data-height="<px>" data-fps="<project fps>"; children carry class "clip" with '
+        'data-start/data-duration/data-track-index. Drive animation with exactly ONE paused GSAP timeline registered as '
+        'window.__timelines["main"] = gsap.timeline({paused:true}) (key = data-composition-id; no repeat:-1, no '
+        'Math.random/Date.now) — a composition without a registered timeline (e.g. CSS @keyframes only) stalls ~45s '
+        'waiting for timeline readiness on every render. Set data-width/data-height to the PROJECT canvas size (see '
         'get_editor_state) and position the content inside the HTML where it should appear on screen — the rendered '
         'asset then drops onto the timeline 1:1; a small canvas (e.g. a 520x152 badge) gets contain-scaled up to fill '
         'the project canvas on insert. Video rendering takes 1-3 minutes; image/frames take seconds. Returns a '
@@ -357,7 +364,12 @@ def build_editor_mcp_server(session_id: str):
                 "format": {
                     "type": "string",
                     "enum": ["video", "image", "frames"],
-                    "description": '"video": animated effect (black-background MP4, use blendMode "screen"); "image": static visual (transparent-background PNG, plain image element, no blend mode); "frames": key-frame previews of an animated effect (use first to iterate, then "video" for the final render). Default "video".',
+                    "description": '"video": animated effect (transparent-background WebM with alpha, plain video element, no blend mode); "image": static visual (transparent-background PNG, plain image element, no blend mode); "frames": key-frame previews of an animated effect (use first to iterate, then "video" for the final render). Default "video".',
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": 'Only for format "frames": seconds to capture (within 0..data-duration, max 12). Default 0.2/0.5/0.8 of the duration. Pass 1-4 timestamps to inspect details frame by frame; pass 6-12 to get one contact sheet showing the motion over time.',
                 },
             },
             "required": ["html"],
@@ -369,7 +381,9 @@ def build_editor_mcp_server(session_id: str):
             return _error("Missing required argument: html")
         format = args.get("format", "video")
         try:
-            result = await fx_render.render_fx(session_id, html, format=format)
+            result = await fx_render.render_fx(
+                session_id, html, format=format, timestamps=args.get("timestamps")
+            )
         except fx_render.FxRenderError as e:
             return _error(str(e))
         except Exception as e:
@@ -382,8 +396,9 @@ def build_editor_mcp_server(session_id: str):
                 "height": result["height"],
                 "durationSeconds": result["durationSeconds"],
                 "next": (
-                    "附带图片是本次渲染在多个时间点的关键帧（按时间顺序排列），不是参考图。"
-                    "逐张核对画面是否符合预期；与目标不一致就改 HTML 后仍以 format:'frames' "
+                    "附带图片是本次渲染在多个时间点的关键帧（按时间顺序排列；帧数多于 4 时"
+                    "拼成一张联系表，每格上方标注时间点），不是参考图。"
+                    "逐帧核对画面与运动过程是否符合预期；与目标不一致就改 HTML 后仍以 format:'frames' "
                     "重新渲染（秒级）继续迭代，不要直接 render video。确认一致后再改用 "
                     "format:'video' 正式渲染（约 1~3 分钟），并按返回的 next 步骤插入时间轴。"
                 ),
@@ -434,8 +449,8 @@ def build_editor_mcp_server(session_id: str):
                 '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
-                "{type:'video', mediaId: assetId, startTime, duration, params:{blendMode:'screen'}}"
-                "（blendMode 随插入一步生效，无需事后再 update），"
+                "{type:'video', mediaId: assetId, startTime, duration}"
+                "（视频自带透明通道，无需混合模式），"
                 "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
                 "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）"
             )
