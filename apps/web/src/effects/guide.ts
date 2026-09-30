@@ -65,5 +65,11 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 ## 音频淡入淡出（audio/video 元素 params，用 timeline.update_elements 设置）
 - fadeIn / fadeOut（秒，默认 0 关闭）：线性增益斜坡，播放、波形与导出自动生效
 
+## 自定义 HTML 视觉（内置特效和组合配方都表达不了时）
+- 静态 + 文字以后要再改（标题条/徽章/字幕条）→ timeline.add_html：浏览器内栅格化、秒级、透明背景，文字槽用 data-param 声明后可继续改字，元素可正常移动/缩放/混合
+- 静态 + 像素级复刻参考图（精细渐变/发光/描边）→ fx_render format:"image"：真实 Chrome 渲染保真度高，产出透明 PNG；文字不可再编辑（改字需改 HTML 重渲）
+- 有动画 → fx_render：先 format:"frames" 秒级迭代确认，再 format:"video" 正式渲染（黑底 MP4，insert_element 时 element.params 带 {blendMode:"screen"}）
+- HTML 画布尺寸（data-width/data-height）一律用项目画布尺寸，内容在 HTML 里摆到目标位置，产物插入后 1:1 落位；不要用内容本身的小尺寸当画布，否则插入后会被放大铺满画布
+
 ## 导出前
 涉及特效的导出无需特殊处理，效果与预览一致。修改视觉后务必 preview.capture 截图确认。`;

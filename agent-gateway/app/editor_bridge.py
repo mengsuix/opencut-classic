@@ -340,7 +340,10 @@ def build_editor_mcp_server(session_id: str):
         'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta name="viewport" '
         'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
         'data-duration="<seconds>" data-width="<px>" data-height="<px>"; children carry class "clip" with '
-        'data-start/data-duration/data-track-index. Video rendering takes 1-3 minutes; image/frames take seconds. Returns a '
+        'data-start/data-duration/data-track-index. Set data-width/data-height to the PROJECT canvas size (see '
+        'get_editor_state) and position the content inside the HTML where it should appear on screen — the rendered '
+        'asset then drops onto the timeline 1:1; a small canvas (e.g. a 520x152 badge) gets contain-scaled up to fill '
+        'the project canvas on insert. Video rendering takes 1-3 minutes; image/frames take seconds. Returns a '
         'URL plus the exact next steps (media.import with url, then timeline.insert_element). With format "image" the '
         'rendered preview is attached as an image, transparent areas shown as a light checkerboard — look at it and '
         'fix the HTML and re-render until it matches the target, instead of importing on the first try.',
@@ -431,11 +434,16 @@ def build_editor_mcp_server(session_id: str):
                 '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
-                "{type:'video', mediaId: assetId, startTime, duration}，"
+                "{type:'video', mediaId: assetId, startTime, duration, params:{blendMode:'screen'}}"
+                "（blendMode 随插入一步生效，无需事后再 update），"
                 "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
-                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）；"
-                '第四步：用 timeline.update_elements 把该元素的 blendMode 设为 "screen"'
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）"
             )
+        next_steps += (
+            "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"
+            "插入后即为设计稿位置，无需调 transform；不一致时用 timeline.update_elements "
+            "设 transform.scaleX/scaleY/positionX/positionY 调整"
+        )
         payload = {
             "jobId": result["jobId"],
             "kind": result["kind"],

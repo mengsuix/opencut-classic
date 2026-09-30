@@ -14,6 +14,7 @@
 import asyncio
 import logging
 import re
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -22,8 +23,11 @@ from . import config
 
 logger = logging.getLogger("agent-gateway.fx_render")
 
-# 渲染吃满 CPU/内存，全局串行避免多会话并发渲染互相拖垮
+# 视频渲染吃满 CPU/内存，全局串行避免多会话并发渲染互相拖垮；
+# snapshot（image/frames）秒级完成，放宽到 3 并发，
+# 否则一个会话的 1~3 分钟视频渲染会堵死其他会话的秒级预览
 _RENDER_SEMAPHORE = asyncio.Semaphore(1)
+_SNAPSHOT_SEMAPHORE = asyncio.Semaphore(3)
 
 JOB_ID_RE = re.compile(r"^fx-\d+-[0-9a-f]{8}$")
 OUTPUT_FILE_NAME_RE = re.compile(r"^[\w][\w.-]*\.(mp4|webm|png)$")
@@ -89,19 +93,18 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "index.html").write_text(html, encoding="utf-8")
 
-    async with _RENDER_SEMAPHORE:
-        if format == "image":
-            stdout = await _run_snapshot(work_dir, at="0")
-        elif format == "frames":
-            stdout = await _run_snapshot(work_dir, at=_frames_timestamps(duration))
-        else:
+    if format == "video":
+        async with _RENDER_SEMAPHORE:
             stdout = await _run_render(work_dir)
+    else:
+        at = "0" if format == "image" else _frames_timestamps(duration)
+        async with _SNAPSHOT_SEMAPHORE:
+            stdout = await _run_snapshot(work_dir, at=at)
 
     if format == "image":
-        frames = sorted(
-            (work_dir / "renders").glob("frame-*.png"),
-            key=lambda p: p.stat().st_mtime,
-        )
+        # 按文件名排序：snapshot 产物命名 frame-NN-at-<t>s.png（零填充序号），
+        # 名字序即时间序；mtime 同秒写盘会乱序
+        frames = sorted((work_dir / "renders").glob("frame-*.png"))
         if not frames:
             tail = "\n".join(stdout.splitlines()[-15:])
             raise FxRenderError(f"渲染未产出 PNG。渲染日志尾部：\n{tail}")
@@ -120,10 +123,7 @@ async def render_fx(session_id: str, html: str, *, format: str = "video") -> dic
         }
 
     if format == "frames":
-        frames = sorted(
-            (work_dir / "renders").glob("frame-*.png"),
-            key=lambda p: p.stat().st_mtime,
-        )
+        frames = sorted((work_dir / "renders").glob("frame-*.png"))
         if not frames:
             tail = "\n".join(stdout.splitlines()[-15:])
             raise FxRenderError(f"渲染未产出 PNG。渲染日志尾部：\n{tail}")
@@ -231,11 +231,57 @@ async def _run_snapshot(work_dir: Path, at: str = "0") -> str:
         raise FxRenderError(
             f"渲染超时（>{config.FX_RENDER_TIMEOUT_SECONDS:.0f}s），已终止"
         ) from None
+    except asyncio.CancelledError:
+        # 工具调用被取消（如用户中断本轮对话）时杀掉渲染进程，
+        # 否则子进程会继续占着渲染信号量跑到超时
+        proc.kill()
+        raise
     text = stdout.decode("utf-8", "replace")
     if proc.returncode != 0:
         tail = "\n".join(text.splitlines()[-15:])
         raise FxRenderError(f"渲染进程失败（exit={proc.returncode}）：\n{tail}")
     return text
+
+
+# job 目录名 fx-<epoch>-<rand> 内嵌创建时间戳，清理时直接解析，不依赖 mtime
+_JOB_TS_RE = re.compile(r"^fx-(\d+)-[0-9a-f]{8}$")
+
+
+def cleanup_fx_artifacts(max_age_seconds: float, now: float | None = None) -> int:
+    """删除超过 max_age_seconds 的特效产物目录（data/fx/<session>/<job>），返回删除数"""
+    fx_root = config.AGENT_DATA_DIR / "fx"
+    if not fx_root.is_dir():
+        return 0
+    cutoff = (now if now is not None else time.time()) - max_age_seconds
+    removed = 0
+    for job_dir in fx_root.glob(f"*/*"):
+        if not job_dir.is_dir():
+            continue
+        match = _JOB_TS_RE.match(job_dir.name)
+        if not match or int(match.group(1)) >= cutoff:
+            continue
+        try:
+            shutil.rmtree(job_dir)
+            removed += 1
+        except OSError as e:
+            logger.warning(f"清理特效产物失败: {job_dir}: {e}")
+    return removed
+
+
+async def warmup_hyperframes() -> None:
+    """启动时预热 npx 缓存（fire-and-forget），避免首个渲染任务撞上包安装"""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "npx",
+            "--yes",
+            f"hyperframes@{config.FX_HYPERFRAMES_VERSION}",
+            "--version",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=120)
+    except Exception as e:
+        logger.warning(f"HyperFrames 预热失败（不影响后续渲染，首个任务会自行安装）: {e}")
 
 
 async def _run_render(work_dir: Path) -> str:
@@ -264,6 +310,9 @@ async def _run_render(work_dir: Path) -> str:
         raise FxRenderError(
             f"渲染超时（>{config.FX_RENDER_TIMEOUT_SECONDS:.0f}s），已终止"
         ) from None
+    except asyncio.CancelledError:
+        proc.kill()
+        raise
     text = stdout.decode("utf-8", "replace")
     if proc.returncode != 0:
         tail = "\n".join(text.splitlines()[-15:])

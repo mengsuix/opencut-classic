@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config, db
+from . import config, db, fx_render
 from .agent_service import agent_service
 from .api.agent import router as agent_router
 from .api.fx import router as fx_router
@@ -35,6 +35,14 @@ async def _idle_cleanup_loop() -> None:
                 logger.info(f"空闲 session 清理完成: {cleaned} 个")
         except Exception as e:
             logger.error(f"空闲 session 清理失败: {e}")
+        try:
+            removed_fx = await asyncio.to_thread(
+                fx_render.cleanup_fx_artifacts, config.FX_ARTIFACT_TTL_SECONDS
+            )
+            if removed_fx:
+                logger.info(f"过期特效产物清理完成: {removed_fx} 个")
+        except Exception as e:
+            logger.error(f"特效产物清理失败: {e}")
 
 
 @asynccontextmanager
@@ -46,6 +54,7 @@ async def lifespan(app: FastAPI):
     config.AGENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
     await db.init_pool()
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+    asyncio.create_task(fx_render.warmup_hyperframes())
     logger.info(
         f"Agent Gateway 已启动 (port={config.GATEWAY_PORT}, provider={config.AGENT_PROVIDER}, "
         f"model={config.AGENT_MODEL}, auth_mode={config.AUTH_MODE})"

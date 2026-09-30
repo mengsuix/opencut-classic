@@ -76,6 +76,8 @@ FX_HYPERFRAMES_VERSION = os.environ.get("FX_HYPERFRAMES_VERSION", "0.8.46")
 FX_RENDER_TIMEOUT_SECONDS = float(os.environ.get("FX_RENDER_TIMEOUT_SECONDS", "900"))
 # 产物下载用的对外地址；留空则从编辑器 WebSocket 连接的 Host 头推导（反代需透传 Host）
 FX_PUBLIC_BASE_URL = os.environ.get("FX_PUBLIC_BASE_URL", "").rstrip("/")
+# 特效产物（data/fx/<session>/<job>）保留时长，超期由空闲清理循环删除，默认 7 天
+FX_ARTIFACT_TTL_SECONDS = float(os.environ.get("FX_ARTIFACT_TTL_SECONDS", str(7 * 24 * 3600)))
 
 MAX_TURNS_PER_SESSION = 1000
 IDLE_SESSION_SECONDS = float(os.environ.get("IDLE_SESSION_SECONDS", str(2 * 3600)))
