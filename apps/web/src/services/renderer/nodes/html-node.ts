@@ -93,6 +93,7 @@ export function getCachedHtmlContentSize({
 	width: number;
 	height: number;
 }): { width: number; height: number } | null {
+	if (isAnimatedHtml({ html })) return { width, height };
 	return htmlContentSizeCache.get(htmlCacheKey({ html, params, width, height })) ?? null;
 }
 
@@ -169,6 +170,9 @@ function prepareHtml({
 	}
 	doc.body.appendChild(wrapper);
 	if (tagElements) {
+		for (const node of Array.from(wrapper.querySelectorAll("script, iframe, frame, object, embed, meta, base, link"))) {
+			node.remove();
+		}
 		Array.from(wrapper.querySelectorAll("*")).forEach((element, index) => {
 			element.setAttribute(ANIM_INDEX_ATTR, String(index));
 		});
@@ -213,20 +217,22 @@ async function extractAnimatedTargets({
 	bodyHtml: string;
 	width: number;
 	height: number;
-}): Promise<AnimatedTarget[]> {
+}): Promise<AnimatedHtmlTemplate> {
 	const iframe = document.createElement("iframe");
 	iframe.setAttribute("sandbox", "allow-same-origin");
 	iframe.setAttribute("aria-hidden", "true");
 	iframe.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;visibility:hidden;border:0;`;
 	iframe.srcdoc = [
 		"<!doctype html><html><head><meta charset=\"utf-8\">",
-		"<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:\">",
-		"<style>html,body{margin:0;padding:0;width:100%;height:100%;}</style>",
+		"<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'\">",
+		"<style>html,body{margin:0;padding:0;width:100%;height:100%}:root{--opencut-html-time:0s}</style>",
 		"</head><body>",
 		bodyHtml,
 		"</body></html>",
 	].join("");
+	let timeout: ReturnType<typeof setTimeout>;
 	const loaded = new Promise<void>((resolve, reject) => {
+		timeout = setTimeout(() => reject(new Error("HTML animation probe timed out")), 5000);
 		iframe.onload = () => resolve();
 		iframe.onerror = () => reject(new Error("HTML animation probe failed"));
 	});
@@ -235,26 +241,27 @@ async function extractAnimatedTargets({
 		await loaded;
 		const doc = iframe.contentDocument;
 		const view = iframe.contentWindow;
-		if (!doc || !view) return [];
+		if (!doc?.body.firstElementChild || !view) throw new Error("HTML animation probe unavailable");
 		const targets: AnimatedTarget[] = [];
-		for (const element of Array.from(doc.querySelectorAll(`[${ANIM_INDEX_ATTR}]`))) {
+		for (const element of Array.from(doc.querySelectorAll<HTMLElement>(`[${ANIM_INDEX_ATTR}]`))) {
 			const index = element.getAttribute(ANIM_INDEX_ATTR) ?? "";
-			for (const pseudo of ["", "::before", "::after"] as const) {
+			for (const pseudo of ["::before", "::after", ""] as const) {
 				const style = view.getComputedStyle(element, pseudo || null);
-				const names = style.animationName
-					.split(",")
-					.map((name) => name.trim());
+				const names = style.animationName.split(",").map((name) => name.trim());
 				if (names.every((name) => name === "none" || name === "")) continue;
 				const authored = parseCssTimeList(style.animationDelay);
-				targets.push({
-					index,
-					pseudo,
-					delays: names.map((_, i) => authored[i % authored.length] ?? 0),
-				});
+				const delays = names.map((_, i) => authored[i % authored.length] ?? 0);
+				if (pseudo) {
+					targets.push({ index, pseudo, delays });
+				} else {
+					element.style.setProperty("animation-delay", delays.map((delay) => `calc(${delay}s - var(--opencut-html-time))`).join(","), "important");
+					element.style.setProperty("animation-play-state", "paused", "important");
+				}
 			}
 		}
-		return targets;
+		return { bodyHtml: new XMLSerializer().serializeToString(doc.body.firstElementChild), targets };
 	} finally {
+		clearTimeout(timeout!);
 		iframe.remove();
 	}
 }
@@ -272,12 +279,21 @@ function loadAnimatedTemplate({
 }): Promise<AnimatedHtmlTemplate> {
 	const cacheKey = htmlCacheKey({ html, params, width, height });
 	const cached = animatedTemplateCache.get(cacheKey);
-	if (cached) return cached;
+	if (cached) {
+		animatedTemplateCache.delete(cacheKey);
+		animatedTemplateCache.set(cacheKey, cached);
+		return cached;
+	}
 	const bodyHtml = prepareHtml({ html, params, tagElements: true });
-	const promise = extractAnimatedTargets({ bodyHtml, width, height }).then(
-		(targets) => ({ bodyHtml, targets }),
-	);
+	const promise = extractAnimatedTargets({ bodyHtml, width, height });
 	animatedTemplateCache.set(cacheKey, promise);
+	if (animatedTemplateCache.size > 32) {
+		const oldest = animatedTemplateCache.keys().next().value;
+		if (oldest !== undefined) animatedTemplateCache.delete(oldest);
+	}
+	promise.catch(() => {
+		if (animatedTemplateCache.get(cacheKey) === promise) animatedTemplateCache.delete(cacheKey);
+	});
 	return promise;
 }
 
@@ -299,7 +315,8 @@ function buildSeekStyle({
 			.join(",");
 		return `[${ANIM_INDEX_ATTR}="${index}"]${pseudo}{animation-delay:${shifted}!important;animation-play-state:paused!important;}`;
 	});
-	return `<style xmlns="http://www.w3.org/1999/xhtml">${rules.join("")}</style>`;
+	// The first layer wins among !important rules, including authored ID selectors.
+	return `<style xmlns="http://www.w3.org/1999/xhtml">:root{--opencut-html-time:${seconds}s}@layer opencut-seek{${rules.join("")}}</style>`;
 }
 
 /** Rendered animated frames, LRU-bounded by pixel count (~200MB of RGBA). */
@@ -330,22 +347,20 @@ function rememberAnimatedFrame(
  * to painted pixels: the painted area changes every frame, so cropping would
  * make the element jitter. The declared box is drawn 1:1 instead.
  */
-export function loadAnimatedHtmlFrame({
+function loadAnimatedHtmlFrame({
 	html,
 	params,
 	width,
 	height,
 	seconds,
-	frameIndex,
 }: {
 	html: string;
 	params: ParamValues;
 	width: number;
 	height: number;
 	seconds: number;
-	frameIndex: number;
 }): Promise<CachedHtmlSource> {
-	const key = `${htmlCacheKey({ html, params, width, height })}#${frameIndex}`;
+	const key = `${htmlCacheKey({ html, params, width, height })}#${seconds}`;
 	const cached = animatedFrameCache.get(key);
 	if (cached) {
 		animatedFrameCache.delete(key);
@@ -378,12 +393,17 @@ export function loadHtmlSource({
 	params,
 	width,
 	height,
+	seconds = 0,
 }: {
 	html: string;
 	params: ParamValues;
 	width: number;
 	height: number;
+	seconds?: number;
 }): Promise<CachedHtmlSource> {
+	if (isAnimatedHtml({ html })) {
+		return loadAnimatedHtmlFrame({ html, params, width, height, seconds });
+	}
 	const cacheKey = htmlCacheKey({ html, params, width, height });
 	const cached = htmlSourceCache.get(cacheKey);
 	if (cached) return cached;

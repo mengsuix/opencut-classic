@@ -329,7 +329,9 @@ def build_editor_mcp_server(session_id: str):
     @tool(
         "fx_render",
         'Render a self-contained HTML/CSS composition with HyperFrames (headless Chrome, frame-accurate CSS/WAAPI/GSAP '
-        'animation). Use it for custom visuals beyond the editor\'s built-in text/effect params: tech-style badges, '
+        'animation). Prefer execute_command timeline.add_html for self-contained CSS @keyframes animation or editable '
+        'text; it animates directly in the editor and retains editable slots. Use fx_render for JS/GSAP/Canvas/WebGL '
+        'animation or visuals the local HTML rasterizer cannot reproduce: tech-style badges, '
         'glowing titles, particles, animated stickers, or replicating a reference image\'s look. The HTML page background '
         'must be transparent for every format. Three output formats: '
         '"video" (default) renders an animated transparent-background WebM (real alpha channel — dark content stays '

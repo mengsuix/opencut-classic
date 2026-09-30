@@ -370,11 +370,19 @@ async function resolveHtmlNode({
 	node: HtmlNode;
 	context: ResolveContext;
 }): Promise<ResolvedVisualSourceNodeState | null> {
+	const clipTime = context.time - node.params.timeOffset;
+	const leadIn = transitionLeadInTicks({
+		transitionIn: node.params.transitionIn,
+		ticksPerSecond: TICKS_PER_SECOND,
+	});
+	if (clipTime < -leadIn || clipTime >= node.params.duration) return null;
+
 	const source = await loadHtmlSource({
 		html: node.params.html,
 		params: node.params.params,
 		width: node.params.intrinsicWidth,
 		height: node.params.intrinsicHeight,
+		seconds: Math.max(0, node.params.trimStart + clipTime) / TICKS_PER_SECOND,
 	});
 	throwIfAborted(context.signal);
 	const visualState = resolveVisualState({

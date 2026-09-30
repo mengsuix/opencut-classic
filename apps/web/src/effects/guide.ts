@@ -69,10 +69,12 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - fadeIn / fadeOut（秒，默认 0 关闭）：线性增益斜坡，播放、波形与导出自动生效
 
 ## 自定义 HTML 视觉（内置特效和组合配方都表达不了时）
-- 静态 + 文字以后要再改（标题条/徽章/字幕条）→ timeline.add_html：浏览器内栅格化、秒级、透明背景，文字槽用 data-param 声明后可继续改字，元素可正常移动/缩放/混合
-- 静态 + 像素级复刻参考图（精细渐变/发光/描边）→ fx_render format:"image"：真实 Chrome 渲染保真度高，产出透明 PNG；文字不可再编辑（改字需改 HTML 重渲）
-- 有动画 → fx_render：先 format:"frames" 秒级迭代确认，再 format:"video" 正式渲染（透明背景 WebM，自带透明通道，insert_element 无需混合模式）
-- HTML 画布尺寸（data-width/data-height）一律用项目画布尺寸，内容在 HTML 里摆到目标位置，产物插入后 1:1 落位；不要用内容本身的小尺寸当画布，否则插入后会被放大铺满画布
+- 静态可改字，或 CSS @keyframes 能表达的动画（入场、呼吸、扫光、错峰文字）→ timeline.add_html：浏览器按时间轴定格栅格化，透明背景，data-param 文字仍可改；通过 html.save_preset 保存源码与参数后可复用
+- 本地动画使用完整自包含 HTML、内联 CSS、有限时长/次数及 animation-fill-mode:both；支持 delay、缓动、多个动画、::before/::after。不执行 JS/GSAP，不加载外部资源，不依赖悬停、滚动或时钟。动画时间=片段本地时间+trimStart，裁剪/分割后延续而非重播
+- 静态 HTML 仍裁掉空白边缘、按内容像素尺寸放置；带 @keyframes 的 HTML 保持固定画布不裁边，用项目 data-width/data-height，并显式设置根容器尺寸和定位，内容在框内摆到目标位置
+- 静态 + 像素级复刻参考图（本地栅格化无法还原的样式）→ fx_render format:"image"：真实 Chrome 渲染透明 PNG；文字不可再编辑（改字需改 HTML 重渲）
+- 需要 JS/GSAP、Canvas/WebGL 或复杂粒子编排 → fx_render：先 format:"frames" 迭代确认，再 format:"video" 正式渲染（透明 WebM，无需混合模式）；用项目画布尺寸，插入后 1:1 落位
+- 本地动画插入后在入场、中间和结束前分别 preview.capture 检查，不能只看单帧确认动画完成
 
 ## 导出前
 涉及特效的导出无需特殊处理，效果与预览一致。修改视觉后务必 preview.capture 截图确认。`;
