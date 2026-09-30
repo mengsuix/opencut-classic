@@ -5,7 +5,6 @@ import {
 	ArrowRightDoubleIcon,
 	ClosedCaptionIcon,
 	Folder03Icon,
-	Happy01Icon,
 	HeadphonesIcon,
 	MagicWand05Icon,
 	TextIcon,
@@ -20,7 +19,6 @@ export const TAB_KEYS = [
 	"media",
 	"sounds",
 	"text",
-	"stickers",
 	"effects",
 	"transitions",
 	"captions",
@@ -53,12 +51,6 @@ export const tabs = {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
 		get label() {
 			return t("assets.tabText");
-		},
-	},
-	stickers: {
-		icon: createHugeiconsIcon({ icon: Happy01Icon }),
-		get label() {
-			return t("assets.tabStickers");
 		},
 	},
 	effects: {

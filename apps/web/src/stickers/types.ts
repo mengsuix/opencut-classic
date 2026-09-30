@@ -1,6 +1,4 @@
-import type { STICKER_CATEGORIES } from "@/stickers/categories";
-
-export type StickerCategory = keyof typeof STICKER_CATEGORIES;
+export type StickerCategory = "all" | "flags" | "shapes";
 
 export interface StickerItem {
 	id: string;

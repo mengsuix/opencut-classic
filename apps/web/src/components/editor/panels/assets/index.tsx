@@ -10,7 +10,6 @@ import { Captions } from "@/subtitles/components/assets-view";
 import { MediaView } from "./views/assets";
 import { SettingsView } from "./views/settings";
 import { SoundsView } from "@/sounds/components/assets-view";
-import { StickersView } from "@/stickers/components/assets-view";
 import { TextView } from "@/text/components/assets-view";
 import { EffectsView } from "@/effects/components/assets-view";
 import { AdjustmentView } from "@/effects/components/adjustment-view";
@@ -23,7 +22,6 @@ export function AssetsPanel() {
 		media: <MediaView />,
 		sounds: <SoundsView />,
 		text: <TextView />,
-		stickers: <StickersView />,
 		effects: <EffectsView />,
 		transitions: <TransitionsView />,
 		captions: <Captions />,
