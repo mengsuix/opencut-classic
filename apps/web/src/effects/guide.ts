@@ -15,6 +15,7 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 效果属于"这个素材"（抠像/锐化/调色）→ effects.add：跟随素材，只作用于该素材，素材移动/裁剪时自动跟随。
 - 效果属于"这一段时间的画面"（光效/故障/模糊/老电影/暗角）→ effects.add_layer：独立特效轨，作用于时间窗口内其下方已合成的整幅画面，不跟随素材（素材挪动后需手动对齐）。
 - 判断口诀：效果是"这个素材自带的"就挂载；是"覆盖在这段画面上的氛围"就上特效轨。
+- 时间窗口隔离：特效层只作用于 startTime ~ startTime+duration 之间的画面，窗口外的段落完全不受影响。分段调色/分段氛围（"就这两秒要夜景感"）直接 effects.add_layer 限定窗口即可，无需担心染到其他段。
 
 ## 内置特效速查
 - blur 模糊 / color-adjust 调色(brightness/contrast/saturation/temperature) / chroma-key 色度抠像 / channel-shift 通道偏移 / sharpen 锐化 / pixelate 马赛克 / edge-glow 轮廓发光 / glow 外发光 / distort-wave 波浪扭曲 / swirl 漩涡扭曲(angle/radius/centerX/centerY) / noise 噪点 / vignette 暗角
@@ -35,12 +36,14 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - 局部放大/放大镜：优先用 attention.spotlight 命令（一条命令完成复制、放大、蒙版定位，元素须在播放头可见）；只在需要非矩形/非椭圆蒙版或特殊层叠时才手拼：duplicate → 副本 transform.scaleX/Y 放大 → masks.add 圈出区域 → masks.set_canvas_rect 定位。
 - 局部特效（局部马赛克/模糊等）：duplicate 原片段叠到上层 → 副本 effects.add → 副本 masks.add(rectangle) 圈出区域，蒙版外自动透出下层原画面。定位蒙版优先用 masks.set_canvas_rect：传 left/top/right/bottom（画布 0~1 比例、左上原点，与预览截图目测一致），内部自动换算；元素须处于播放头可见帧（先 playback.seek 到目标帧再截图估算）。手动写蒙版参数时注意坐标系：centerX/centerY 是相对元素中心的偏移（0=中心，+0.5=右/下缘，-0.5=左/上缘），width/height 是相对元素宽高的比例（1=铺满）。视频元素默认铺满画布，此时元素坐标≈画布坐标。
 - 色彩罩染：先调用 graphics.list 获取合法 definitionId，再用 timeline.insert_element 创建 graphic 纯色矩形；graphic 的 definitionId 必填，不能只传 type。blendMode=overlay/soft-light，opacity 0.1~0.3。暖调用橙、冷调用蓝、褪色用灰。
+- 分段调色/氛围（复刻"某一段突然变色"类成片手法的标准做法）：effects.add_layer 限定 startTime/duration 窗口，叠 filter 或 color-adjust。夜景/冷峻=filter(cool, 0.5~0.7) 或 color-adjust(temperature -0.3, brightness -0.1~-0.2)；回忆/暖场=filter(warm)；压抑/黑白=filter(bw)。需要聚焦视线再叠 vignette(0.4~0.6)。
 
 ## 转场（video/image 元素 params，用 timeline.update_elements 设置）
 - 内置转场：给前一片段设 transition.type = fade|black|zoom|slide-left|slide-right，transition.duration（秒，0.1~5）。自动作用于同轨道下一个紧邻片段（间隙须 ≤1 帧），无需移动片段。
 - fade 叠化 / black 黑场 / zoom 推近 / slide 滑入滑出；转场区前段音频自动淡出。
 - 转场只渲染画面重叠，后一片段视频会消耗 trimStart 余量，无余量时定格源首帧。
 - 内置类型以外的转场（擦除/旋转/白闪等）才需要手拼：重叠片段 + animIn/animOut 或关键帧。
+- 单个 clip 内部要出转场效果（成片里常见的光晕/闪白过场）：先用 timeline.split_elements 在转场点切开，再给前段设 transition.type；素材不允许切开时，用 fx_render 渲染一段光晕/闪白动画（format:"video"），blendMode screen 叠在切点位置。
 
 ## 文字样式参数（text 元素 params，用 timeline.update_elements / add_text 设置）
 - 描边：stroke.enabled=true, stroke.color, stroke.width

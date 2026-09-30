@@ -44,6 +44,11 @@ function createBridgeConnection({ url }: { url: string }): () => void {
 			// undo history. Best-effort: concurrent bridge requests may overwrite
 			// each other's meta (MCP clients typically call tools sequentially).
 			editor.command.currentMeta = { source: "agent", label: request.command };
+			// Agent 按绝对时间操作：执行期间禁用波纹编辑，避免删除/裁剪后
+			// 同轨道后续元素被自动前移（UI 开关 rippleEditingEnabled 默认开启，
+			// 不隔离的话 agent 的每次删除都会意外移动无关元素）。
+			const rippleWasEnabled = editor.command.isRippleEnabled;
+			editor.command.isRippleEnabled = false;
 			try {
 				const result = await definition.run({
 					editor,
@@ -56,6 +61,7 @@ function createBridgeConnection({ url }: { url: string }): () => void {
 					result: result ?? null,
 				});
 			} finally {
+				editor.command.isRippleEnabled = rippleWasEnabled;
 				editor.command.currentMeta = null;
 			}
 		} catch (error) {

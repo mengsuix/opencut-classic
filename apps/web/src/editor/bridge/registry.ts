@@ -1279,7 +1279,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"timeline.delete_elements": {
-		description: "Delete elements from the timeline.",
+		description:
+			"Delete elements from the timeline. Neighboring elements keep their positions (bridge commands never ripple-shift followers).",
 		args: {
 			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
 		},

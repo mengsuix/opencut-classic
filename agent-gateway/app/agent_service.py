@@ -44,6 +44,7 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__list_commands",
     "mcp__opencut__get_editor_state",
     "mcp__opencut__get_selection",
+    "mcp__opencut__get_user_marks",
     "mcp__opencut__execute_command",
     "mcp__opencut__get_preview_frame",
     "mcp__opencut__get_preview_sequence",
