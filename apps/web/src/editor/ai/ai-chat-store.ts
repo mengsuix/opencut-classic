@@ -63,23 +63,20 @@ function formatReferenceLine({
 	reference: AiChatReference;
 	index: number;
 }): string {
-	const parts = [`「${reference.name}」`, `类型:${reference.type}`];
+	const parts = [`「${reference.name}」`, reference.type];
 	if (reference.duration != null) {
-		parts.push(`时长:${Math.round(reference.duration * 10) / 10}s`);
+		parts.push(`${Math.round(reference.duration * 10) / 10}s`);
 	}
-	parts.push(`素材ID:${reference.id}`);
+	parts.push(`id:${reference.id}`);
 	return `${index + 1}. ${parts.join(" ")}`;
 }
 
-/** 引用块拼在用户消息开头，agent 可按素材ID在 media.list 中精确定位 */
+/** 引用块拼在用户消息开头；语义与查看方式由 system prompt 规则 12 承载，此处只留数据 */
 function buildReferencesBlock(references: AiChatReference[]): string {
 	const lines = references.map((reference, index) =>
 		formatReferenceLine({ reference, index }),
 	);
-	return [
-		"我引用的素材（均已导入项目素材库，可按时长/素材ID在 media.list 或 get_editor_state 的 mediaAssets 中定位）：",
-		...lines,
-	].join("\n");
+	return ["我引用的素材：", ...lines].join("\n");
 }
 
 export const useAiChatStore = create<AiChatState>()((set, get) => {
