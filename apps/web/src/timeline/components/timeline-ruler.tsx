@@ -178,7 +178,7 @@ export function TimelineRuler({
 								<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
 							</button>
 							{width >= 36 && (
-								<span className="bg-background text-foreground pointer-events-none absolute top-1/2 left-0.5 flex size-3.5 -translate-y-1/2 items-center justify-center rounded-sm border text-[9px] leading-none font-medium">
+								<span className="bg-background text-foreground pointer-events-none absolute top-1/2 left-0.5 flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 text-[9px] leading-none font-medium">
 									{range.id}
 								</span>
 							)}

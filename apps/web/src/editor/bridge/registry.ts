@@ -1687,7 +1687,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"marks.get": {
 		description:
-			"Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a numeric id shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a numeric id shown on the band; seconds; numbered separately from canvasRects). The user can mark several of each and may point at one by its number; both are empty arrays when nothing is marked.",
+			"Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a label id like \"C1\", \"C2\", … shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a label id like \"T1\", \"T2\", … shown on the band; seconds). The user can mark several of each and points at one by its label (e.g. \"C1\"); both are empty arrays when nothing is marked.",
 		run: () => {
 			const { canvasRects, timeRanges } = useUserMarksStore.getState();
 			return { canvasRects, timeRanges };

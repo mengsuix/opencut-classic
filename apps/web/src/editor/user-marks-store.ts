@@ -6,17 +6,17 @@ import { create } from "zustand";
  * project data, not undoable. Read by the agent bridge (marks.get) and
  * cleared via marks.clear.
  *
- * Marks are numbered per kind (region 1, 2, 3… / range 1, 2, 3…) so the user
- * can point at one in conversation ("第 2 块区域"). Numbers keep increasing
- * while marks of that kind exist (a deleted number is not handed out again)
- * and restart at 1 when none are left.
+ * Marks are labeled per kind — canvas rects "C1", "C2", … and time ranges
+ * "T1", "T2", … — so the user can point at one in conversation ("C1 这块").
+ * Numbers keep increasing while marks of that kind exist (a deleted label is
+ * not handed out again) and restart at 1 when none are left.
  */
 let nextCanvasRectId = 1;
 let nextTimeRangeId = 1;
 
 export interface CanvasRectMark {
-	/** Per-kind display number, shown on the rect in the preview. */
-	id: number;
+	/** Display label like C1/C2, shown on the rect in the preview. */
+	id: string;
 	/** Canvas fractions 0~1, top-left origin — same coordinate system as masks.set_canvas_rect. */
 	left: number;
 	top: number;
@@ -29,8 +29,8 @@ export interface CanvasRectMark {
 export type CanvasRectInput = Omit<CanvasRectMark, "id">;
 
 export interface TimeRangeMark {
-	/** Per-kind display number, shown on the band in the ruler. */
-	id: number;
+	/** Display label like T1/T2, shown on the band in the ruler. */
+	id: string;
 	/** Timeline seconds. */
 	startTime: number;
 	endTime: number;
@@ -46,10 +46,10 @@ interface UserMarksState {
 	isRegionMarking: boolean;
 	isRangeMarking: boolean;
 	addCanvasRect: (rect: CanvasRectInput) => void;
-	removeCanvasRect: (id: number) => void;
+	removeCanvasRect: (id: string) => void;
 	clearCanvasRects: () => void;
 	addTimeRange: (range: TimeRangeInput) => void;
-	removeTimeRange: (id: number) => void;
+	removeTimeRange: (id: string) => void;
 	clearTimeRanges: () => void;
 	setDraftTimeRange: (range: TimeRangeInput | null) => void;
 	setRegionMarking: (active: boolean) => void;
@@ -66,7 +66,7 @@ export const useUserMarksStore = create<UserMarksState>()((set, get) => ({
 		set((state) => ({
 			canvasRects: [
 				...state.canvasRects,
-				{ ...rect, id: nextCanvasRectId++ },
+				{ ...rect, id: `C${nextCanvasRectId++}` },
 			],
 		})),
 	removeCanvasRect: (id) => {
@@ -83,7 +83,10 @@ export const useUserMarksStore = create<UserMarksState>()((set, get) => ({
 	},
 	addTimeRange: (range) =>
 		set((state) => ({
-			timeRanges: [...state.timeRanges, { ...range, id: nextTimeRangeId++ }],
+			timeRanges: [
+				...state.timeRanges,
+				{ ...range, id: `T${nextTimeRangeId++}` },
+			],
 		})),
 	removeTimeRange: (id) => {
 		set((state) => ({

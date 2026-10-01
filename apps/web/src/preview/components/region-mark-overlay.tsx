@@ -92,7 +92,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 						height: box.height,
 					}}
 				>
-					<span className="bg-background text-foreground pointer-events-none absolute top-0.5 left-0.5 flex size-4 items-center justify-center rounded-sm border text-[10px] leading-none font-medium">
+					<span className="bg-background text-foreground pointer-events-none absolute top-0.5 left-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm border px-0.5 text-[10px] leading-none font-medium">
 						{id}
 					</span>
 					<button
