@@ -32,6 +32,8 @@ COMMAND_TIMEOUTS: dict[str, float] = {
     "export.start": 1800,
     # 批量抽帧逐帧离屏渲染，24 帧在复杂工程上可能超过默认 120s
     "preview.capture_sequence": 300,
+    # 视频素材离线抽帧，长 GOP 的 4K 素材多次 seek 解码可能较慢
+    "media.read": 300,
 }
 
 # session_id -> 浏览器编辑器 WS
@@ -327,6 +329,126 @@ def build_editor_mcp_server(session_id: str):
         }
 
     @tool(
+        "read_media",
+        "Read the VISUAL content of an imported media asset by asset id — WITHOUT touching the timeline. "
+        "Images return the picture itself; videos return one contact sheet of frames sampled across a "
+        "time range (default the whole clip), each labelled with its timestamp, near-identical frames "
+        "dropped by default — same sampling semantics as get_preview_sequence, narrow start/end for "
+        "finer detail; audio has no visual content and returns metadata only. Asset ids come from "
+        "media.list, get_editor_state mediaAssets, or the \"我引用的素材\" block at the start of a user "
+        "message. ALWAYS use this to view a library asset — never insert it onto the timeline just to "
+        "look at it.",
+        {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Media asset id",
+                },
+                "start": {
+                    "type": "number",
+                    "description": "Video only: range start in seconds (default 0)",
+                },
+                "end": {
+                    "type": "number",
+                    "description": "Video only: range end in seconds (default asset duration)",
+                },
+                "count": {
+                    "type": "number",
+                    "description": "Video only: frames to sample before dedupe (default 9, max 24 — rejected outside that range)",
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Video only: explicit sample times in seconds (max 24 entries); overrides start/end/count",
+                },
+                "dedupe": {
+                    "type": "boolean",
+                    "description": "Video only: drop near-identical frames (default true)",
+                },
+                "cellWidth": {
+                    "type": "number",
+                    "description": "Video only: px width per cell, default 320, allowed 120~640 (rejected outside that range)",
+                },
+            },
+            "required": ["id"],
+        },
+    )
+    async def read_media(args):
+        asset_id = args.get("id")
+        if not isinstance(asset_id, str) or not asset_id:
+            return _error("Missing required argument: id")
+        payload = {"id": asset_id}
+        for key in ("start", "end"):
+            value = args.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                payload[key] = value
+        count = args.get("count")
+        if isinstance(count, (int, float)) and not isinstance(count, bool):
+            if count < 1 or count > MAX_SEQUENCE_FRAMES:
+                return _error(
+                    f"count must be between 1 and {MAX_SEQUENCE_FRAMES} (got {count})"
+                )
+            payload["count"] = count
+        stamps = args.get("timestamps")
+        if isinstance(stamps, list) and stamps:
+            cleaned = [
+                t
+                for t in stamps
+                if isinstance(t, (int, float)) and not isinstance(t, bool)
+            ]
+            if len(cleaned) > MAX_SEQUENCE_FRAMES:
+                return _error(
+                    f"timestamps may contain at most {MAX_SEQUENCE_FRAMES} "
+                    f"entries (got {len(cleaned)})."
+                )
+            payload["timestamps"] = cleaned
+        dedupe = args.get("dedupe")
+        if isinstance(dedupe, bool):
+            payload["dedupe"] = dedupe
+        cell_width = args.get("cellWidth")
+        if isinstance(cell_width, (int, float)) and not isinstance(cell_width, bool):
+            if cell_width < 120 or cell_width > 640:
+                return _error(
+                    f"cellWidth must be between 120 and 640 (got {cell_width})"
+                )
+            payload["cellWidth"] = cell_width
+        try:
+            result = await call_editor(session_id, "media.read", payload)
+        except Exception as e:
+            return _error(str(e))
+        meta = {
+            k: result[k]
+            for k in (
+                "id",
+                "name",
+                "type",
+                "duration",
+                "width",
+                "height",
+                "sampled",
+                "kept",
+                "dropped",
+                "frames",
+                "note",
+            )
+            if k in (result or {})
+        }
+        data_url = (result or {}).get("dataUrl", "")
+        if not data_url:
+            return _text(meta)
+        base64_data = data_url.split(",", 1)[-1] if "," in data_url else data_url
+        mime = "image/png"
+        if data_url.startswith("data:") and ";" in data_url:
+            mime = data_url[5 : data_url.index(";")]
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(meta, ensure_ascii=False)},
+                {"type": "image", "data": base64_data, "mimeType": mime},
+            ]
+        }
+
+    @tool(
         "fx_render",
         'Render a self-contained HTML/CSS composition with HyperFrames (headless Chrome, frame-accurate CSS/WAAPI/GSAP '
         'animation). Default flow for custom HTML visuals: try execute_command timeline.add_html FIRST — HTML/CSS '
@@ -514,6 +636,7 @@ def build_editor_mcp_server(session_id: str):
             execute_command,
             get_preview_frame,
             get_preview_sequence,
+            read_media,
             fx_render_tool,
         ],
     )

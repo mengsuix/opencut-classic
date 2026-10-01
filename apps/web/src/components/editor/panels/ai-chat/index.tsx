@@ -12,10 +12,22 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useAiChatStore, type AiChatMessage } from "@/editor/ai/ai-chat-store";
+import {
+	useAiChatStore,
+	type AiChatMessage,
+	type AiChatReference,
+} from "@/editor/ai/ai-chat-store";
 import { EditorCore } from "@/core";
 import { cn } from "@/utils/ui";
-import { PlusIcon, Square, SendHorizonal } from "lucide-react";
+import {
+	PlusIcon,
+	Square,
+	SendHorizonal,
+	Image as ImageIcon,
+	Video,
+	Music,
+	X,
+} from "lucide-react";
 
 function getProjectId(): string | null {
 	const project = EditorCore.getInstance().project.getActiveOrNull();
@@ -157,6 +169,43 @@ function MessageList() {
 	);
 }
 
+const REFERENCE_TYPE_ICONS: Record<string, typeof ImageIcon> = {
+	image: ImageIcon,
+	video: Video,
+	audio: Music,
+};
+
+function ReferenceChips() {
+	const references = useAiChatStore((s) => s.references);
+	const removeReference = useAiChatStore((s) => s.removeReference);
+	if (references.length === 0) return null;
+
+	return (
+		<div className="flex flex-wrap gap-1 pb-2">
+			{references.map((reference: AiChatReference) => {
+				const Icon = REFERENCE_TYPE_ICONS[reference.type] ?? ImageIcon;
+				return (
+					<span
+						key={reference.id}
+						className="bg-muted flex max-w-32 items-center gap-1 rounded px-1.5 py-0.5 text-xs"
+						title={reference.name}
+					>
+						<Icon className="size-3 shrink-0" />
+						<span className="truncate">{reference.name}</span>
+						<button
+							type="button"
+							onClick={() => removeReference({ id: reference.id })}
+							aria-label="移除引用"
+						>
+							<X className="size-3 shrink-0 opacity-60 hover:opacity-100" />
+						</button>
+					</span>
+				);
+			})}
+		</div>
+	);
+}
+
 function InputArea() {
 	const input = useAiChatStore((s) => s.input);
 	const setInput = useAiChatStore((s) => s.setInput);
@@ -167,6 +216,7 @@ function InputArea() {
 
 	return (
 		<div className="shrink-0 border-t p-2">
+			<ReferenceChips />
 			<div className="flex items-end gap-2">
 				<Textarea
 					value={input}

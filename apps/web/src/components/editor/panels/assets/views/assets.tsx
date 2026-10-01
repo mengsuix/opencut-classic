@@ -48,6 +48,7 @@ import {
 import { MASKABLE_ELEMENT_TYPES } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
 import { useT, type MessageKey } from "@/i18n";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { cn } from "@/utils/ui";
 import {
 	CloudUploadIcon,
@@ -261,6 +262,24 @@ function MediaAssetDraggable({
 	isRounded?: boolean;
 }) {
 	const editor = useEditor();
+	const t = useT();
+
+	const handleAddToAiReference = () => {
+		const { isOpen, addReference } = useAiChatStore.getState();
+		if (!isOpen) {
+			toast.error(t("assets.openAiPanelFirst"));
+			return;
+		}
+		addReference({
+			reference: {
+				id: item.id,
+				name: item.name,
+				type: item.type,
+				duration: item.duration ?? null,
+			},
+		});
+		toast.success(t("assets.addedToAiReference"));
+	};
 
 	const addElementAtTime = ({
 		asset,
@@ -303,6 +322,7 @@ function MediaAssetDraggable({
 			onAddToTimeline={({ currentTime }) =>
 				addElementAtTime({ asset: item, startTime: currentTime })
 			}
+			onAddToAiReference={handleAddToAiReference}
 			variant={variant}
 			isRounded={isRounded}
 		/>

@@ -26,6 +26,7 @@ import { generateUUID } from "@/utils/id";
 import type { AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
 import { extractTimelineAudio } from "@/media/mediabunny";
+import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
 import { decodeAudioToFloat32 } from "@/media/audio";
 import { processMediaAssets } from "@/media/processing";
 import { transcriptionService } from "@/services/transcription/service";
@@ -631,6 +632,124 @@ function buildContactSheet({
 		);
 	});
 	return sheet;
+}
+
+interface SequenceSampledFrame {
+	time: number;
+	canvas: HTMLCanvasElement;
+	signature: Uint8Array;
+}
+
+/**
+ * preview.capture_sequence 与 media.read 共用的采样点解析：
+ * timestamps 显式指定优先；否则在 [start, end] 内取等分 slice 中点
+ * （保持在 slice 内部，避免正好落在切点上）。
+ */
+function resolveSequenceTimes({
+	args,
+	durationSeconds,
+}: {
+	args: Record<string, unknown>;
+	durationSeconds: number;
+}): number[] {
+	const rawTimestamps = args.timestamps;
+	let times: number[];
+	if (Array.isArray(rawTimestamps) && rawTimestamps.length > 0) {
+		times = rawTimestamps.map((value) =>
+			requireNumber(value, "timestamps[]"),
+		);
+	} else {
+		const start = clampNumberArg({
+			value: args.start,
+			fallback: 0,
+			min: 0,
+			max: durationSeconds,
+		});
+		const end = clampNumberArg({
+			value: args.end,
+			fallback: durationSeconds,
+			min: 0,
+			max: durationSeconds,
+		});
+		if (end <= start) {
+			throw new Error("end must be greater than start");
+		}
+		const rawCount =
+			typeof args.count === "number" && Number.isFinite(args.count)
+				? args.count
+				: 9;
+		const count = Math.round(rawCount);
+		// Reject instead of silently clamping: a caller that asked for 100
+		// frames must not be told it got them when only 24 were sampled.
+		if (count < 1 || count > MAX_SEQUENCE_FRAMES) {
+			throw new Error(
+				`count must be between 1 and ${MAX_SEQUENCE_FRAMES}, got ${rawCount}`,
+			);
+		}
+		times = Array.from(
+			{ length: count },
+			(_, index) => start + ((end - start) * (index + 0.5)) / count,
+		);
+	}
+	if (times.length > MAX_SEQUENCE_FRAMES) {
+		throw new Error(
+			`Too many timestamps: ${times.length} (max ${MAX_SEQUENCE_FRAMES})`,
+		);
+	}
+	return [
+		...new Set(
+			times.map((time) => Math.max(0, Math.min(time, durationSeconds))),
+		),
+	].sort((a, b) => a - b);
+}
+
+/**
+ * Compare against the last KEPT frame (not the previous one) so slow
+ * fades collapse while gradual content changes survive.
+ */
+function dedupeSequenceFrames({
+	sampled,
+	dedupe,
+}: {
+	sampled: SequenceSampledFrame[];
+	dedupe: boolean;
+}): SequenceSampledFrame[] {
+	if (!dedupe || sampled.length === 0) {
+		return [...sampled];
+	}
+	const kept: SequenceSampledFrame[] = [sampled[0]];
+	let lastSignature = sampled[0].signature;
+	for (const frame of sampled.slice(1)) {
+		if (
+			frameDelta({ a: frame.signature, b: lastSignature }) <=
+			SEQUENCE_DEDUPE_THRESHOLD
+		) {
+			continue;
+		}
+		kept.push(frame);
+		lastSignature = frame.signature;
+	}
+	return kept;
+}
+
+function buildSequenceResult({
+	sheet,
+	sampled,
+	kept,
+}: {
+	sheet: HTMLCanvasElement;
+	sampled: SequenceSampledFrame[];
+	kept: SequenceSampledFrame[];
+}) {
+	return {
+		dataUrl: sheet.toDataURL("image/jpeg", 0.85),
+		width: sheet.width,
+		height: sheet.height,
+		sampled: sampled.length,
+		kept: kept.length,
+		dropped: sampled.length - kept.length,
+		frames: kept.map((frame) => Number(frame.time.toFixed(2))),
+	};
 }
 
 function buildSelectionState(editor: EditorCore) {
@@ -1946,6 +2065,153 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		}),
 	},
 
+	"media.read": {
+		description:
+			"Read the VISUAL content of an imported media asset WITHOUT adding it to the timeline. For image assets returns the picture itself (downscaled, long edge 1280, transparency composited on white). For video assets returns one contact sheet of frames sampled across a time range (default the whole clip), each labelled with its timestamp; near-identical frames are dropped by default — same sampling semantics as preview.capture_sequence, narrow start/end for finer detail. Audio assets have no visual content — returns metadata only. Use this to look at library assets (e.g. the user's referenced 素材ID) instead of inserting them onto the timeline.",
+		args: {
+			id: "string (asset id from media.list / get_editor_state mediaAssets)",
+			start: "seconds? (video only: range start, default 0)",
+			end: "seconds? (video only: range end, default asset duration)",
+			count: "number? (video only: frames to sample before dedupe, default 9, max 24)",
+			timestamps:
+				"number[]? (video only: explicit sample times in seconds; overrides start/end/count)",
+			dedupe: "boolean? (video only: default true)",
+			cellWidth:
+				"number? (video only: px width of each cell, default 320, min 120, max 640 — clamped)",
+		},
+		run: async ({ editor, args }) => {
+			const id = requireString(args.id, "id");
+			const asset = editor.media.getAssets().find((item) => item.id === id);
+			if (!asset) {
+				throw new Error(`Media asset not found: ${id}`);
+			}
+			const base = {
+				id: asset.id,
+				name: asset.name,
+				type: asset.type,
+				duration: asset.duration ?? null,
+			};
+
+			if (asset.type === "audio") {
+				return { ...base, note: "Audio asset: no visual content." };
+			}
+
+			if (asset.type === "image") {
+				const objectUrl = URL.createObjectURL(asset.file);
+				try {
+					const image = await new Promise<HTMLImageElement>(
+						(resolve, reject) => {
+							const element = new window.Image();
+							element.addEventListener("load", () => resolve(element));
+							element.addEventListener("error", () =>
+								reject(new Error("Could not load image")),
+							);
+							element.src = objectUrl;
+						},
+					);
+					const MAX_EDGE = 1280;
+					const scale = Math.min(
+						1,
+						MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight),
+					);
+					const outWidth = Math.max(1, Math.round(image.naturalWidth * scale));
+					const outHeight = Math.max(
+						1,
+						Math.round(image.naturalHeight * scale),
+					);
+					const canvas = document.createElement("canvas");
+					canvas.width = outWidth;
+					canvas.height = outHeight;
+					const ctx = canvas.getContext("2d");
+					if (!ctx) {
+						throw new Error("Failed to create canvas context");
+					}
+					ctx.fillStyle = "#ffffff";
+					ctx.fillRect(0, 0, outWidth, outHeight);
+					ctx.drawImage(image, 0, 0, outWidth, outHeight);
+					return {
+						...base,
+						dataUrl: canvas.toDataURL("image/jpeg", 0.85),
+						width: outWidth,
+						height: outHeight,
+					};
+				} finally {
+					URL.revokeObjectURL(objectUrl);
+				}
+			}
+
+			// video：离线抽帧拼联系表，采样点/去重与 preview.capture_sequence 同一套
+			const duration = asset.duration ?? 0;
+			if (!Number.isFinite(duration) || duration <= 0) {
+				throw new Error(`Video asset ${id} has no duration metadata`);
+			}
+			const times = resolveSequenceTimes({ args, durationSeconds: duration });
+			const dedupe = args.dedupe !== false;
+			const cellWidth = Math.round(
+				clampNumberArg({
+					value: args.cellWidth,
+					fallback: 320,
+					min: 120,
+					max: 640,
+				}),
+			);
+
+			const input = new Input({
+				source: new BlobSource(asset.file),
+				formats: ALL_FORMATS,
+			});
+			try {
+				const videoTrack = await input.getPrimaryVideoTrack();
+				if (!videoTrack) {
+					throw new Error("No video track found in the file");
+				}
+				if (!(await videoTrack.canDecode())) {
+					throw new Error(
+						`Video codec ${videoTrack.codec ?? "unknown"} cannot be decoded in this browser`,
+					);
+				}
+				const sink = new VideoSampleSink(videoTrack);
+				const cellHeight = Math.max(
+					1,
+					Math.round(
+						(cellWidth * videoTrack.displayHeight) / videoTrack.displayWidth,
+					),
+				);
+				const sampled: SequenceSampledFrame[] = [];
+				for (const time of times) {
+					const frame = await sink.getSample(
+						Math.min(time, Math.max(0, duration - 0.05)),
+					);
+					if (!frame) continue;
+					const cell = document.createElement("canvas");
+					cell.width = cellWidth;
+					cell.height = cellHeight;
+					const cellContext = cell.getContext("2d");
+					if (!cellContext) {
+						frame.close();
+						throw new Error("Failed to create cell canvas context");
+					}
+					try {
+						frame.draw(cellContext, 0, 0, cellWidth, cellHeight);
+					} finally {
+						frame.close();
+					}
+					sampled.push({
+						time,
+						canvas: cell,
+						signature: buildGraySignature({ source: cell }),
+					});
+				}
+
+				const kept = dedupeSequenceFrames({ sampled, dedupe });
+				const sheet = buildContactSheet({ frames: kept, cellWidth, cellHeight });
+				return { ...base, ...buildSequenceResult({ sheet, sampled, kept }) };
+			} finally {
+				input.dispose();
+			}
+		},
+	},
+
 	"preview.capture": {
 		description:
 			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead. Pass rect ({left, top, right, bottom} as canvas fractions 0~1 — e.g. a canvasRect from get_user_marks) to crop the output to that region at native resolution for inspecting fine details (small icons, text) that a full-frame downscale would blur.",
@@ -2088,58 +2354,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const durationSeconds = toSeconds(durationTicks as MediaTime);
 			const lastFrameTime = editor.timeline.getLastFrameTime();
 
-			const rawTimestamps = args.timestamps;
-			let times: number[];
-			if (Array.isArray(rawTimestamps) && rawTimestamps.length > 0) {
-				times = rawTimestamps.map((value) =>
-					requireNumber(value, "timestamps[]"),
-				);
-			} else {
-				const start = clampNumberArg({
-					value: args.start,
-					fallback: 0,
-					min: 0,
-					max: durationSeconds,
-				});
-				const end = clampNumberArg({
-					value: args.end,
-					fallback: durationSeconds,
-					min: 0,
-					max: durationSeconds,
-				});
-				if (end <= start) {
-					throw new Error("end must be greater than start");
-				}
-				const rawCount =
-					typeof args.count === "number" && Number.isFinite(args.count)
-						? args.count
-						: 9;
-				const count = Math.round(rawCount);
-				// Reject instead of silently clamping: a caller that asked for 100
-				// frames must not be told it got them when only 24 were sampled.
-				if (count < 1 || count > MAX_SEQUENCE_FRAMES) {
-					throw new Error(
-						`count must be between 1 and ${MAX_SEQUENCE_FRAMES}, got ${rawCount}`,
-					);
-				}
-				// Midpoints of equal slices: stays inside each slice and avoids
-				// landing exactly on a cut.
-				times = Array.from(
-					{ length: count },
-					(_, index) => start + ((end - start) * (index + 0.5)) / count,
-				);
-			}
-			if (times.length > MAX_SEQUENCE_FRAMES) {
-				throw new Error(
-					`Too many timestamps: ${times.length} (max ${MAX_SEQUENCE_FRAMES})`,
-				);
-			}
-			times = [
-				...new Set(
-					times.map((time) => Math.max(0, Math.min(time, durationSeconds))),
-				),
-			].sort((a, b) => a - b);
-
+			const times = resolveSequenceTimes({ args, durationSeconds });
 			const dedupe = args.dedupe !== false;
 			const cellWidth = Math.round(
 				clampNumberArg({
@@ -2172,11 +2387,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				Math.round((cellWidth * canvasSize.height) / canvasSize.width),
 			);
 
-			const sampled: Array<{
-				time: number;
-				canvas: HTMLCanvasElement;
-				signature: Uint8Array;
-			}> = [];
+			const sampled: SequenceSampledFrame[] = [];
 			for (const time of times) {
 				const renderTime = Math.min(toTicks(time), lastFrameTime);
 				await renderer.renderToCanvas({
@@ -2199,36 +2410,11 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				});
 			}
 
-			// Compare against the last KEPT frame (not the previous one) so slow
-			// fades collapse while gradual content changes survive.
-			const kept: typeof sampled = [];
-			if (dedupe && sampled.length > 0) {
-				kept.push(sampled[0]);
-				let lastSignature = sampled[0].signature;
-				for (const frame of sampled.slice(1)) {
-					if (
-						frameDelta({ a: frame.signature, b: lastSignature }) <=
-						SEQUENCE_DEDUPE_THRESHOLD
-					) {
-						continue;
-					}
-					kept.push(frame);
-					lastSignature = frame.signature;
-				}
-			} else {
-				kept.push(...sampled);
-			}
-
+			const kept = dedupeSequenceFrames({ sampled, dedupe });
 			const sheet = buildContactSheet({ frames: kept, cellWidth, cellHeight });
 			const missingMedia = collectMissingMediaRefs(editor);
 			return {
-				dataUrl: sheet.toDataURL("image/jpeg", 0.85),
-				width: sheet.width,
-				height: sheet.height,
-				sampled: sampled.length,
-				kept: kept.length,
-				dropped: sampled.length - kept.length,
-				frames: kept.map((frame) => Number(frame.time.toFixed(2))),
+				...buildSequenceResult({ sheet, sampled, kept }),
 				...(missingMedia.length > 0
 					? { warning: MISSING_MEDIA_WARNING, missingMedia }
 					: {}),

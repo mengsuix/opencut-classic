@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -22,6 +22,8 @@ export interface DraggableItemProps {
 	dragData: TimelineDragData;
 	onDragStart?: ({ e }: { e: React.DragEvent }) => void;
 	onAddToTimeline?: ({ currentTime }: { currentTime: MediaTime }) => void;
+	/** 传入时卡片 hover 显示"添加到 AI 引用"按钮（素材面板用） */
+	onAddToAiReference?: () => void;
 	aspectRatio?: number;
 	className?: string;
 	containerClassName?: string;
@@ -38,6 +40,7 @@ export function DraggableItem({
 	dragData,
 	onDragStart,
 	onAddToTimeline,
+	onAddToAiReference,
 	aspectRatio = 16 / 9,
 	className = "",
 	containerClassName,
@@ -124,6 +127,20 @@ export function DraggableItem({
 									className="opacity-0 group-hover:opacity-100"
 									onClick={handleAddToTimeline}
 								/>
+							)}
+							{!isDragging && onAddToAiReference && (
+								<Button
+									size="icon"
+									className="bg-background hover:bg-background text-foreground absolute right-8 bottom-2 size-5 opacity-0 group-hover:opacity-100"
+									onClick={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										onAddToAiReference();
+									}}
+									title={t("assets.addToAiReference")}
+								>
+									<Sparkles />
+								</Button>
 							)}
 						</AspectRatio>
 						{shouldShowLabel && (

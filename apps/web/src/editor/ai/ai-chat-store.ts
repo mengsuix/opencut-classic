@@ -18,6 +18,14 @@ export interface AiChatMessage {
 	timestamp: number;
 }
 
+/** 用户从素材面板引用的素材，发送时拼进消息文本 */
+export interface AiChatReference {
+	id: string;
+	name: string;
+	type: string;
+	duration?: number | null;
+}
+
 interface AiChatState {
 	isOpen: boolean;
 	sessionId: string | null;
@@ -29,9 +37,12 @@ interface AiChatState {
 	toolStatus: string;
 	/** 本轮请求开始时间戳（ms），用于展示等待秒数；非发送中为 null */
 	sendStartedAt: number | null;
+	references: AiChatReference[];
 
 	togglePanel: ({ projectId }: { projectId: string }) => void;
 	setInput: ({ value }: { value: string }) => void;
+	addReference: ({ reference }: { reference: AiChatReference }) => void;
+	removeReference: ({ id }: { id: string }) => void;
 	sendMessage: () => Promise<void>;
 	abort: () => void;
 	newSession: ({ projectId }: { projectId: string }) => void;
@@ -43,6 +54,32 @@ let bridgeCleanup: (() => void) | null = null;
 
 function nowSeconds(): number {
 	return Date.now() / 1000;
+}
+
+function formatReferenceLine({
+	reference,
+	index,
+}: {
+	reference: AiChatReference;
+	index: number;
+}): string {
+	const parts = [`「${reference.name}」`, `类型:${reference.type}`];
+	if (reference.duration != null) {
+		parts.push(`时长:${Math.round(reference.duration * 10) / 10}s`);
+	}
+	parts.push(`素材ID:${reference.id}`);
+	return `${index + 1}. ${parts.join(" ")}`;
+}
+
+/** 引用块拼在用户消息开头，agent 可按素材ID在 media.list 中精确定位 */
+function buildReferencesBlock(references: AiChatReference[]): string {
+	const lines = references.map((reference, index) =>
+		formatReferenceLine({ reference, index }),
+	);
+	return [
+		"我引用的素材（均已导入项目素材库，可按时长/素材ID在 media.list 或 get_editor_state 的 mediaAssets 中定位）：",
+		...lines,
+	].join("\n");
 }
 
 export const useAiChatStore = create<AiChatState>()((set, get) => {
@@ -162,6 +199,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			streamingText: "",
 			input: "",
 			toolStatus: "",
+			references: [],
 		});
 		try {
 			const session = await openAgentSession({ projectId, forceNew });
@@ -195,6 +233,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		streamingText: "",
 		toolStatus: "",
 		sendStartedAt: null,
+		references: [],
 
 		togglePanel: ({ projectId }) => {
 			if (get().isOpen) {
@@ -202,7 +241,12 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 				abortController = null;
 				bridgeCleanup?.();
 				bridgeCleanup = null;
-				set({ isOpen: false, streamingText: "", toolStatus: "" });
+				set({
+					isOpen: false,
+					streamingText: "",
+					toolStatus: "",
+					references: [],
+				});
 				return;
 			}
 			set({ isOpen: true });
@@ -225,15 +269,37 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 
 		setInput: ({ value }) => set({ input: value }),
 
+		addReference: ({ reference }) =>
+			set((state) =>
+				state.references.some((item) => item.id === reference.id)
+					? state
+					: { references: [...state.references, reference] },
+			),
+
+		removeReference: ({ id }) =>
+			set((state) => ({
+				references: state.references.filter((item) => item.id !== id),
+			})),
+
 		sendMessage: async () => {
-			const { input, sending, sessionId } = get();
+			const { input, sending, sessionId, references } = get();
 			const message = input.trim();
 			if (!message || sending || !sessionId) return;
 
-			pushMessage({ role: "user", content: message, timestamp: nowSeconds() });
+			const fullMessage = references.length
+				? `${buildReferencesBlock(references)}\n${message}`
+				: message;
+
+			pushMessage({
+				role: "user",
+				content: fullMessage,
+				timestamp: nowSeconds(),
+			});
 			// 立即给出等待提示：首 token 到达前（长上下文可达 1-2 分钟）界面不能空着
+			// references 随快照一并清空：窗口期新增的引用不会被误清（与 input 策略一致，失败不恢复）
 			set({
 				input: "",
+				references: [],
 				sending: true,
 				streamingText: "",
 				toolStatus: "思考中...",
@@ -246,7 +312,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 				abortController = new AbortController();
 				const res = await sendAgentMessage({
 					sessionId,
-					message,
+					message: fullMessage,
 					signal: abortController.signal,
 				});
 				const reader = res.body?.getReader();
