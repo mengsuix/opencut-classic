@@ -10,6 +10,7 @@ import {
 	type CanvasRectMark,
 } from "@/editor/user-marks-store";
 import { useT } from "@/i18n";
+import { cn } from "@/utils/ui";
 import { usePreviewViewport } from "./preview-viewport";
 
 /** In-progress drag rect, in canvas pixel coordinates. */
@@ -114,7 +115,14 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 						height: box.height,
 					}}
 				>
-					<span className="bg-background text-foreground pointer-events-none absolute top-0.5 left-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm border px-0.5 text-[10px] leading-none font-medium">
+					{/* Narrow rects can't fit the label inside — push it out to
+						the left of the rect instead of letting it overlap. */}
+					<span
+						className={cn(
+							"bg-background text-foreground pointer-events-none absolute top-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm border px-0.5 text-[10px] leading-none font-medium",
+							box.width >= 36 ? "left-0.5" : "-left-5",
+						)}
+					>
 						{id}
 					</span>
 					{/* Timecode above the rect's top-left corner; flips below when
@@ -133,7 +141,10 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 						type="button"
 						aria-label={t("shell.clearRegionMark")}
 						title={t("shell.clearRegionMark")}
-						className="bg-background text-foreground pointer-events-auto absolute top-0.5 right-0.5 flex size-4 cursor-pointer items-center justify-center rounded-sm border"
+						className={cn(
+							"bg-background text-foreground pointer-events-auto absolute top-0.5 flex size-4 cursor-pointer items-center justify-center rounded-sm border",
+							box.width >= 36 ? "right-0.5" : "-right-5",
+						)}
 						onClick={() => removeCanvasRect(id)}
 					>
 						<HugeiconsIcon icon={Cancel01Icon} className="size-3" />

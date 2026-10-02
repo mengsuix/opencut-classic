@@ -164,7 +164,7 @@ export function TimelineRuler({
 								title={t("timeline.clearTimeRangeMark")}
 								className={cn(
 									"bg-background text-foreground pointer-events-auto absolute top-1/2 flex size-3.5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border",
-									width >= 18 ? "right-0.5" : "-right-4",
+									width >= 36 ? "right-0.5" : "-right-4",
 								)}
 								style={{
 									// The playhead's drag handle (z = playhead) sits at the
@@ -177,11 +177,16 @@ export function TimelineRuler({
 							>
 								<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
 							</button>
-							{width >= 36 && (
-								<span className="bg-background text-foreground pointer-events-none absolute top-1/2 left-0.5 flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 text-[9px] leading-none font-medium">
-									{range.id}
-								</span>
-							)}
+							{/* Narrow bands can't fit the label inside — push it out to
+								the left of the band instead of hiding it. */}
+							<span
+								className={cn(
+									"bg-background text-foreground pointer-events-none absolute top-1/2 flex h-3.5 min-w-3.5 -translate-y-1/2 items-center justify-center rounded-sm border px-0.5 text-[9px] leading-none font-medium",
+									width >= 36 ? "left-0.5" : "-left-4",
+								)}
+							>
+								{range.id}
+							</span>
 						</div>
 					);
 				})}
