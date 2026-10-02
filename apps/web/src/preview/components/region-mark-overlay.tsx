@@ -2,7 +2,9 @@
 
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { FrameRate } from "opencut-wasm";
 import { useEditor } from "@/editor/use-editor";
+import { frameRateToFloat } from "@/fps/utils";
 import {
 	useUserMarksStore,
 	type CanvasRectMark,
@@ -25,6 +27,24 @@ interface OverlayBox {
 	height: number;
 }
 
+/** Formats seconds as HH:MM:SS:FF, matching the playback timecode display. */
+function formatTimecode({
+	timeInSeconds,
+	fps,
+}: {
+	timeInSeconds: number;
+	fps: FrameRate;
+}): string {
+	const fpsFloat = frameRateToFloat(fps);
+	const fpsInt = Math.round(fpsFloat);
+	const totalFrames = Math.max(0, Math.round(timeInSeconds * fpsFloat));
+	const totalSeconds = Math.floor(totalFrames / fpsFloat);
+	const p = (n: number) => n.toString().padStart(2, "0");
+	return `${p(Math.floor(totalSeconds / 3600))}:${p(
+		Math.floor(totalSeconds / 60) % 60,
+	)}:${p(totalSeconds % 60)}:${p(totalFrames % fpsInt)}`;
+}
+
 /**
  * Renders the user's canvas-region marks (drawn via the region-marking mode
  * in the preview toolbar): every persistent rect plus the in-progress draft.
@@ -36,10 +56,11 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 	const canvasSize = useEditor(
 		(e) => e.project.getActiveOrNull()?.settings.canvasSize,
 	);
+	const fps = useEditor((e) => e.project.getActiveOrNull()?.settings.fps);
 	const canvasRects = useUserMarksStore((s) => s.canvasRects);
 	const removeCanvasRect = useUserMarksStore((s) => s.removeCanvasRect);
 
-	if (!canvasSize) {
+	if (!canvasSize || !fps) {
 		return null;
 	}
 
@@ -61,6 +82,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 
 	const markBoxes = canvasRects.map((rect: CanvasRectMark) => ({
 		id: rect.id,
+		time: rect.time,
 		box: toOverlayBox(
 			rect.left * canvasSize.width,
 			rect.top * canvasSize.height,
@@ -81,7 +103,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 
 	return (
 		<div className="pointer-events-none absolute inset-0">
-			{markBoxes.map(({ id, box }) => (
+			{markBoxes.map(({ id, time, box }) => (
 				<div
 					key={id}
 					className="border-primary/60 bg-primary/10 absolute border-2"
@@ -94,6 +116,18 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 				>
 					<span className="bg-background text-foreground pointer-events-none absolute top-0.5 left-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm border px-0.5 text-[10px] leading-none font-medium">
 						{id}
+					</span>
+					{/* Timecode above the rect's top-left corner; flips below when
+						the rect hugs the top edge so it never gets clipped. */}
+					<span
+						className="bg-muted text-muted-foreground pointer-events-none absolute left-0 flex h-4 items-center whitespace-nowrap rounded-sm border px-0.5 text-[10px] leading-none font-medium"
+						style={
+							box.top < 18
+								? { top: "100%", marginTop: 2 }
+								: { bottom: "100%", marginBottom: 2 }
+						}
+					>
+						{formatTimecode({ timeInSeconds: time, fps })}
 					</span>
 					<button
 						type="button"
