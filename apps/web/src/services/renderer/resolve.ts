@@ -377,38 +377,13 @@ async function resolveHtmlNode({
 	});
 	if (clipTime < -leadIn || clipTime >= node.params.duration) return null;
 
-	const seconds = Math.max(0, node.params.trimStart + clipTime) / TICKS_PER_SECOND;
-	const sourcePromise = loadHtmlSource({
+	const source = await loadHtmlSource({
 		html: node.params.html,
 		params: node.params.params,
 		width: node.params.intrinsicWidth,
 		height: node.params.intrinsicHeight,
-		seconds,
+		seconds: Math.max(0, node.params.trimStart + clipTime) / TICKS_PER_SECOND,
 	});
-	// Prefetch the next project frame's raster while this one is being
-	// produced. Playback time is frame-aligned (the playback manager rounds to
-	// frame boundaries), so the next frame's seconds are exactly predictable
-	// and the frame cache will hit when the next render asks for it.
-	// cancelVideoDecode means a seek is pending — the next rendered frame is
-	// not the sequential one, so prefetching would guess wrong.
-	if (!context.cancelVideoDecode && clipTime >= 0) {
-		const ticksPerFrame = Math.round(
-			(TICKS_PER_SECOND * context.renderer.fps.denominator) /
-				context.renderer.fps.numerator,
-		);
-		const nextClipTime = clipTime + ticksPerFrame;
-		if (nextClipTime < node.params.duration) {
-			void loadHtmlSource({
-				html: node.params.html,
-				params: node.params.params,
-				width: node.params.intrinsicWidth,
-				height: node.params.intrinsicHeight,
-				seconds:
-					Math.max(0, node.params.trimStart + nextClipTime) / TICKS_PER_SECOND,
-			});
-		}
-	}
-	const source = await sourcePromise;
 	throwIfAborted(context.signal);
 	const visualState = resolveVisualState({
 		params: node.params,
