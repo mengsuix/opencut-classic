@@ -682,14 +682,18 @@ function findPaintedBounds({
 	height: number;
 }): { left: number; top: number; width: number; height: number } | null {
 	const { data } = ctx.getImageData(0, 0, width, height);
+	// Read pixels through a 32-bit view: one lookup per pixel instead of four.
+	// Every platform we run on is little-endian, where RGBA bytes pack as
+	// A<<24|B<<16|G<<8|R, so `>>> 24` extracts the alpha channel directly.
+	const pixels = new Uint32Array(data.buffer);
 	let minX = width;
 	let minY = height;
 	let maxX = -1;
 	let maxY = -1;
 	for (let y = 0; y < height; y++) {
-		const rowOffset = y * width * 4;
+		const rowOffset = y * width;
 		for (let x = 0; x < width; x++) {
-			if (data[rowOffset + x * 4 + 3] === 0) continue;
+			if (pixels[rowOffset + x] >>> 24 === 0) continue;
 			if (x < minX) minX = x;
 			if (x > maxX) maxX = x;
 			if (y < minY) minY = y;

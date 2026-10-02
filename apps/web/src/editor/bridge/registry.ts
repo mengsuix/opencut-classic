@@ -10,7 +10,11 @@ import {
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { buildScene } from "@/services/renderer/scene-builder";
-import { resolveHtmlSize } from "@/services/renderer/nodes/html-node";
+import {
+	isAnimatedHtml,
+	isScriptedHtml,
+	resolveHtmlSize,
+} from "@/services/renderer/nodes/html-node";
 import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
 import { effectsRegistry } from "@/effects";
 import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
@@ -877,6 +881,28 @@ function insertAndSelect(
 	return { selected };
 }
 
+// Animated/scripted HTML is re-rasterized at full document cost on every
+// preview frame; past this size playback measurably drops below 30fps
+// (benchmarked ~20fps at 3000 elements / ~400KB). Static HTML is unaffected.
+const LARGE_ANIMATED_HTML_BYTES = 200 * 1024;
+const LARGE_ANIMATED_HTML_ELEMENTS = 1000;
+
+/** Soft guardrail: warn the agent when an animated document is likely to
+ * drop preview frame rate. Static HTML plays back for free, so no warning. */
+function largeAnimatedHtmlWarnings({ html }: { html: string }): string[] {
+	if (!isAnimatedHtml({ html }) && !isScriptedHtml({ html })) return [];
+	const approxElements = (html.match(/<[a-zA-Z]/g) ?? []).length;
+	if (
+		html.length <= LARGE_ANIMATED_HTML_BYTES &&
+		approxElements <= LARGE_ANIMATED_HTML_ELEMENTS
+	) {
+		return [];
+	}
+	return [
+		`Large animated HTML (~${Math.round(html.length / 1024)}KB, ~${approxElements} elements): it is re-rasterized every preview frame at full document cost, and past ~1000 elements preview drops below 30fps (measured ~20fps at 3000 elements). Prefer fewer DOM nodes/CSS rules, split it into multiple smaller html elements, or drop the animation if a static visual suffices.`,
+	];
+}
+
 export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	"commands.list": {
 		description: "List all available bridge commands with argument hints.",
@@ -917,7 +943,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.add_html": {
 		description:
-						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as fx_render) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — those stay with fx_render. Animated HTML is NOT cropped: use project canvas data-width/data-height and size/position the root explicitly so the fixed box holds every frame. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use fx_render only for Canvas/WebGL/shader/particle visuals whose pixels never touch the DOM.",
+						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as fx_render) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — those stay with fx_render. Animated HTML is NOT cropped: use project canvas data-width/data-height and size/position the root explicitly so the fixed box holds every frame. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use fx_render only for Canvas/WebGL/shader/particle visuals whose pixels never touch the DOM. Keep the document small: animated HTML is re-rasterized every preview frame at full document cost — stay under ~1000 DOM elements / ~200KB (measured ~30fps at 1000 elements, ~20fps at 3000); prefer fewer nodes over large backgrounds, split complex visuals into multiple elements, and use static HTML when no animation is needed.",
 		args: {
 			html: "string? (complete self-contained HTML document; required unless presetId is given)",
 			presetId:
@@ -983,7 +1009,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const placement: InsertElementParams["placement"] = requestedTrackId
 				? { mode: "explicit", trackId: requestedTrackId }
 				: { mode: "auto", trackType: "graphic" };
-			return insertAndSelect(editor, element, placement);
+			const inserted = insertAndSelect(editor, element, placement);
+			const warnings = largeAnimatedHtmlWarnings({ html });
+			return warnings.length > 0 ? { ...inserted, warnings } : inserted;
 		},
 	},
 
