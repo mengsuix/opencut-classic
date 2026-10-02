@@ -69,9 +69,9 @@ export const EFFECTS_COMPOSITION_GUIDE = `# 特效实现指南（组合优先）
 - fadeIn / fadeOut（秒，默认 0 关闭）：线性增益斜坡，播放、波形与导出自动生效
 
 ## 自定义 HTML 视觉（内置特效和组合配方都表达不了时）
-- 默认顺序：先 timeline.add_html 用 HTML+CSS 尝试（本地即时出结果、文字仍可改），截图确认不合适再升级 fx_render；需求明确要 JS/GSAP、Canvas/WebGL、复杂粒子编排时跳过 HTML 尝试，直接 fx_render
+- 默认顺序：先 timeline.add_html 用 HTML 尝试（本地即时出结果、文字仍可改），截图确认不合适再升级 fx_render；add_html 同样支持 JS/GSAP（脚本在沙箱 iframe 内运行、编辑器按时间轴 seek 驱动），只有 Canvas/WebGL/shader/物理粒子等像素级效果（DOM 序列化拿不到像素）才必须直接 fx_render
 - add_html：浏览器按时间轴定格栅格化，透明背景，data-param 文字仍可改；通过 html.save_preset 保存源码与参数后可复用。CSS @keyframes 能表达入场、呼吸、扫光、错峰文字、位移/旋转/变形/透明度/滤镜过渡等动画
-- 本地动画使用完整自包含 HTML、内联 CSS、有限时长/次数及 animation-fill-mode:both；支持 delay、缓动、多个动画、::before/::after。不执行 JS/GSAP，不加载外部资源，不依赖悬停、滚动或时钟。动画时间=片段本地时间+trimStart，裁剪/分割后延续而非重播
+- 本地动画使用完整自包含 HTML、内联 CSS、有限时长/次数及 animation-fill-mode:both；支持 delay、缓动、多个动画、::before/::after。JS/GSAP 可用：脚本跑在沙箱 iframe（内联或 HTTPS CDN 脚本），注册一个 paused GSAP timeline 到 window.__timelines["main"]（与 fx_render 同约定），编辑器按时间轴 seek 驱动；脚本可运行时生成 DOM（逐字拆分等）。图片/字体限 data: 内联，不依赖定时器/真实时钟/悬停/滚动。动画时间=片段本地时间+trimStart，裁剪/分割后延续而非重播
 - 静态 HTML 仍裁掉空白边缘、按内容像素尺寸放置；带 @keyframes 的 HTML 保持固定画布不裁边，用项目 data-width/data-height，并显式设置根容器尺寸和定位，内容在框内摆到目标位置
 - fx_render 产物是定型的图/视频，文字不可再编辑（改字需改 HTML 重渲）——用户需要后续改文字的需求必须停在 add_html
 - 升级 fx_render：静态像素级复刻用 format:"image"（真实 Chrome 渲染透明 PNG）；动画先 format:"frames" 迭代确认，再 format:"video" 正式渲染（透明 WebM，无需混合模式）；用项目画布尺寸，插入后 1:1 落位

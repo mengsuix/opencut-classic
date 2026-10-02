@@ -162,7 +162,7 @@ describe.skipIf(!browser)("HTML renderer in Chromium", () => {
 	}, 15_000);
 
 	test("animation probing does not execute scripts, navigate or request external resources", async () => {
-		const html = movingHtml + `<meta http-equiv="refresh" content="0;url=/must-not-navigate"><script>parent.htmlProbeExecuted=true</script><img src="/must-not-fetch" onerror="parent.htmlProbeExecuted=true"><iframe src="/must-not-frame"></iframe><style>@import url('/must-not-import');</style>`;
+		const html = movingHtml + `<meta http-equiv="refresh" content="0;url=/must-not-navigate"><img src="/must-not-fetch" onerror="parent.htmlProbeExecuted=true"><iframe src="/must-not-frame"></iframe><style>@import url('/must-not-import');</style>`;
 		const result = await evaluate(`
 			const frame = await loadHtmlSource({html:${JSON.stringify(html)},params:{},width:160,height:60,seconds:0.5});
 			await new Promise(resolve=>setTimeout(resolve,100));
@@ -171,4 +171,52 @@ describe.skipIf(!browser)("HTML renderer in Chromium", () => {
 		expect(result).toEqual({ pixel: [255, 0, 0, 255], executed: false, iframes: 0 });
 		expect(requests.filter((path) => path.startsWith("/must-not-"))).toEqual([]);
 	}, 15_000);
+
+	test("scripted HTML seeks JS timelines and freezes CSS animations in the same frame", async () => {
+		const html = `<style>
+@keyframes fade { from {opacity:0} to {opacity:1} }
+#css {position:absolute;top:30px;width:10px;height:10px;background:lime;animation:fade 1s linear both}
+</style><div id="box" style="position:absolute;width:20px;height:20px;background:red"></div><div id="css"></div><script>window.__timelines={main:{seek:function(t){document.getElementById('box').style.transform='translateX('+(t*100)+'px)';}}};</script>`;
+		const result = await evaluate(`
+			const args = {html:${JSON.stringify(html)},params:{},width:200,height:80};
+			const a = await loadHtmlSource({...args,seconds:0.5});
+			const again = await loadHtmlSource({...args,seconds:0.5});
+			const moved = await loadHtmlSource({...args,seconds:1});
+			return {half:[pixel(a,55,5),pixel(a,5,35)],end:pixel(moved,105,5),same:a===again,iframes:document.querySelectorAll('iframe').length};
+		`);
+		expect(result).toEqual({
+			half: [
+				[255, 0, 0, 255],
+				[0, 255, 0, 128],
+			],
+			end: [255, 0, 0, 255],
+			same: true,
+			iframes: 1,
+		});
+	}, 15_000);
+
+	test("sandboxed scripts run but cannot reach the editor page, navigate or fetch", async () => {
+		const html = `<meta http-equiv="refresh" content="0;url=/must-not-navigate"><div id="flag" style="width:10px;height:10px;background:red"></div><img src="/must-not-fetch"><script>try{parent.document.title;}catch(e){document.getElementById('flag').style.background='blue';}window.__timelines={main:{seek:function(t){}}};</script>`;
+		const result = await evaluate(`
+			const frame = await loadHtmlSource({html:${JSON.stringify(html)},params:{},width:40,height:20,seconds:0});
+			await new Promise(resolve=>setTimeout(resolve,100));
+			return {pixel:pixel(frame,5,5),executed:window.htmlProbeExecuted===true,hasIframe:document.querySelectorAll('iframe').length>0};
+		`);
+		expect(result).toEqual({ pixel: [0, 0, 255, 255], executed: false, hasIframe: true });
+		expect(requests.filter((path) => path.startsWith("/must-not-"))).toEqual([]);
+	}, 15_000);
+
+	test("scripted HTML sustains playback-rate seeking (30fps x 60 frames)", async () => {
+		const html = `<div id="box" style="position:absolute;width:20px;height:20px;background:red"></div><script>window.__timelines={main:{seek:function(t){document.getElementById('box').style.transform='translateX('+(t*80)+'px)';}}};</script>`;
+		const result = await evaluate(`
+			const args = {html:${JSON.stringify(html)},params:{},width:640,height:360};
+			const t0 = performance.now();
+			for (let i=0;i<60;i++) await loadHtmlSource({...args,seconds:i/30});
+			const total = performance.now()-t0;
+			return {totalMs:Math.round(total),perFrame:+(total/60).toFixed(1)};
+		`);
+		const { perFrame } = result as { totalMs: number; perFrame: number };
+		console.log(`scripted playback seek: ${perFrame}ms/frame`);
+		expect(perFrame).toBeLessThan(33);
+	}, 30_000);
 });

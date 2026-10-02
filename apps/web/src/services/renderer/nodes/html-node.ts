@@ -1,4 +1,5 @@
 import type { ParamValues } from "@/params";
+import { acquireHtmlRuntime, buildRuntimeSrcdoc } from "./html-runtime";
 import {
 	VisualNode,
 	type ResolvedVisualSourceNodeState,
@@ -93,7 +94,7 @@ export function getCachedHtmlContentSize({
 	width: number;
 	height: number;
 }): { width: number; height: number } | null {
-	if (isAnimatedHtml({ html })) return { width, height };
+	if (isAnimatedHtml({ html }) || isScriptedHtml({ html })) return { width, height };
 	return htmlContentSizeCache.get(htmlCacheKey({ html, params, width, height })) ?? null;
 }
 
@@ -123,12 +124,22 @@ export function extractHtmlParams({ html }: { html: string }): string[] {
 
 /**
  * HTML declaring CSS @keyframes is animated: the editor seeks its CSS
- * animations to the element's local time on every frame. Scripts never run
- * (foreignObject rasterization is a sandboxed image), so CSS is the only
- * animation source.
+ * animations to the element's local time on every frame. CSS animations never
+ * run live — they are frozen at the seek time during rasterization.
  */
 export function isAnimatedHtml({ html }: { html: string }): boolean {
 	return /@keyframes\b/i.test(html);
+}
+
+/**
+ * HTML carrying <script> is scripted: it renders through the sandboxed iframe
+ * runtime (html-runtime.ts), where scripts run and JS animation state (GSAP
+ * timelines on window.__timelines) is captured via DOM serialization on every
+ * seek. Canvas/WebGL pixels do not survive serialization — those effects
+ * still belong to server-side rendering.
+ */
+export function isScriptedHtml({ html }: { html: string }): boolean {
+	return /<script[\s/>]/i.test(html);
 }
 
 const ANIM_INDEX_ATTR = "data-hfx-i";
@@ -144,10 +155,15 @@ function prepareHtml({
 	html,
 	params,
 	tagElements = false,
+	stripEmbedded = false,
 }: {
 	html: string;
 	params: ParamValues;
 	tagElements?: boolean;
+	/** Runtime mode: drop meta/base/link and nested browsing tags (a meta
+	 * refresh would navigate the sandboxed iframe away from the srcdoc), but
+	 * keep <script> — scripts are the point of the runtime. */
+	stripEmbedded?: boolean;
 }): string {
 	const doc = new DOMParser().parseFromString(html, "text/html");
 	for (const node of Array.from(doc.querySelectorAll("[data-param]"))) {
@@ -176,6 +192,10 @@ function prepareHtml({
 		Array.from(wrapper.querySelectorAll("*")).forEach((element, index) => {
 			element.setAttribute(ANIM_INDEX_ATTR, String(index));
 		});
+	} else if (stripEmbedded) {
+		for (const node of Array.from(wrapper.querySelectorAll("iframe, frame, object, embed, meta, base, link"))) {
+			node.remove();
+		}
 	}
 	return new XMLSerializer().serializeToString(wrapper);
 }
@@ -388,6 +408,61 @@ function loadAnimatedHtmlFrame({
 	return promise;
 }
 
+/**
+ * One frame of a scripted HTML element: seek the sandboxed runtime, then
+ * rasterize the serialized DOM through the shared path. CSS animation seek
+ * rules (pseudo-element targets) are injected exactly like the script-less
+ * animated pipeline. Scripted frames are never cropped — the painted area
+ * changes as scripts animate, same as keyframes-driven frames.
+ */
+function loadScriptedHtmlFrame({
+	html,
+	params,
+	width,
+	height,
+	seconds,
+}: {
+	html: string;
+	params: ParamValues;
+	width: number;
+	height: number;
+	seconds: number;
+}): Promise<CachedHtmlSource> {
+	const key = `${htmlCacheKey({ html, params, width, height })}#${seconds}`;
+	const cached = animatedFrameCache.get(key);
+	if (cached) {
+		animatedFrameCache.delete(key);
+		animatedFrameCache.set(key, cached);
+		return cached;
+	}
+	const promise = (async () => {
+		const runtime = acquireHtmlRuntime({
+			key: htmlCacheKey({ html, params, width, height }),
+			srcdoc: buildRuntimeSrcdoc({
+				bodyHtml: prepareHtml({ html, params, stripEmbedded: true }),
+			}),
+			width,
+			height,
+		});
+		const frame = await runtime.seek(seconds);
+		const canvas = await drawHtmlToCanvas({
+			bodyHtml: buildSeekStyle({ targets: frame.pseudoTargets, seconds }) + frame.serialized,
+			width,
+			height,
+		});
+		return { source: canvas, width, height };
+	})();
+	promise.catch(() => {
+		if (animatedFrameCache.get(key) === promise) {
+			animatedFrameCache.delete(key);
+			animatedFramePixelTotal -= animatedFramePixels.get(key) ?? 0;
+			animatedFramePixels.delete(key);
+		}
+	});
+	rememberAnimatedFrame(key, promise, width * height);
+	return promise;
+}
+
 export function loadHtmlSource({
 	html,
 	params,
@@ -401,6 +476,9 @@ export function loadHtmlSource({
 	height: number;
 	seconds?: number;
 }): Promise<CachedHtmlSource> {
+	if (isScriptedHtml({ html })) {
+		return loadScriptedHtmlFrame({ html, params, width, height, seconds });
+	}
 	if (isAnimatedHtml({ html })) {
 		return loadAnimatedHtmlFrame({ html, params, width, height, seconds });
 	}
