@@ -38,6 +38,29 @@ const htmlContentSizeCache = new Map<
 	{ width: number; height: number }
 >();
 
+/**
+ * Static rasters live as long as their cache entry — and the compositor keeps
+ * the uploaded texture alive too — so a project accumulating many distinct
+ * HTML elements would otherwise hold every canvas forever. Bound them by
+ * painted pixels, mirroring the animated frame cache below.
+ */
+const STATIC_FRAME_PIXEL_BUDGET = 50_000_000;
+const htmlSourcePixels = new Map<string, number>();
+let htmlSourcePixelTotal = 0;
+
+/** Drop the oldest static rasters until the budget fits; `keep` (the entry
+ * just inserted) is never evicted by this pass. */
+function evictStaticFrames({ keep }: { keep: string }): void {
+	for (const oldest of htmlSourceCache.keys()) {
+		if (htmlSourcePixelTotal <= STATIC_FRAME_PIXEL_BUDGET) break;
+		if (oldest === keep) break;
+		htmlSourceCache.delete(oldest);
+		htmlContentSizeCache.delete(oldest);
+		htmlSourcePixelTotal -= htmlSourcePixels.get(oldest) ?? 0;
+		htmlSourcePixels.delete(oldest);
+	}
+}
+
 type HtmlContentSizeListener = () => void;
 const contentSizeListeners = new Set<HtmlContentSizeListener>();
 
@@ -520,7 +543,12 @@ export function loadHtmlSource({
 	}
 	const cacheKey = htmlCacheKey({ html, params, width, height });
 	const cached = htmlSourceCache.get(cacheKey);
-	if (cached) return cached;
+	if (cached) {
+		// LRU touch so hot elements survive eviction.
+		htmlSourceCache.delete(cacheKey);
+		htmlSourceCache.set(cacheKey, cached);
+		return cached;
+	}
 
 	const promise = rasterizeHtml({ html, params, width, height }).then(
 		(result) => {
@@ -529,9 +557,20 @@ export function loadHtmlSource({
 				height: result.height,
 			});
 			contentSizeListeners.forEach((listener) => listener());
+			htmlSourcePixels.set(cacheKey, result.width * result.height);
+			htmlSourcePixelTotal += result.width * result.height;
+			evictStaticFrames({ keep: cacheKey });
 			return result;
 		},
 	);
+	promise.catch(() => {
+		// Don't latch failures: drop the rejected entry so the next render
+		// retries instead of serving the same rejection forever.
+		if (htmlSourceCache.get(cacheKey) === promise) {
+			htmlSourceCache.delete(cacheKey);
+			htmlContentSizeCache.delete(cacheKey);
+		}
+	});
 	htmlSourceCache.set(cacheKey, promise);
 	return promise;
 }

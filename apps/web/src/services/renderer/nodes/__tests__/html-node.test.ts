@@ -219,4 +219,17 @@ describe.skipIf(!browser)("HTML renderer in Chromium", () => {
 		console.log(`scripted playback seek: ${perFrame}ms/frame`);
 		expect(perFrame).toBeLessThan(33);
 	}, 30_000);
+
+	test("static rasters are evicted once the shared pixel budget is exceeded", async () => {
+		const result = await evaluate(`
+			const frames = [];
+			for (let i = 0; i < 30; i++) {
+				const args = {html:'<div style="width:1920px;height:1080px;background:hsl(' + (i * 12) + ',80%,60%)"></div>',params:{},width:1920,height:1080};
+				await loadHtmlSource(args);
+				frames.push(args);
+			}
+			return {first:getCachedHtmlContentSize(frames[0]),last:getCachedHtmlContentSize(frames[29])};
+		`);
+		expect(result).toEqual({ first: null, last: { width: 1920, height: 1080 } });
+	}, 30_000);
 });
