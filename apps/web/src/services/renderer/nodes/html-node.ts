@@ -1,4 +1,5 @@
 import type { ParamValues } from "@/params";
+import { markCanvasUploadable } from "../canvas-uploadable";
 import { acquireHtmlRuntime, buildRuntimeSrcdoc } from "./html-runtime";
 import {
 	VisualNode,
@@ -409,6 +410,42 @@ function loadAnimatedHtmlFrame({
 }
 
 /**
+ * Runtime srcdoc per raster key. Building it parses and re-serializes the
+ * whole document; the sandboxed runtime only reads it when its iframe is
+ * created, so scripted playback — which hits this path on every frame — would
+ * otherwise rebuild the same string 30+ times a second.
+ */
+const scriptedSrcdocCache = new Map<string, string>();
+
+function loadScriptedSrcdoc({
+	rasterKey,
+	html,
+	params,
+}: {
+	rasterKey: string;
+	html: string;
+	params: ParamValues;
+}): string {
+	const cached = scriptedSrcdocCache.get(rasterKey);
+	if (cached !== undefined) {
+		scriptedSrcdocCache.delete(rasterKey);
+		scriptedSrcdocCache.set(rasterKey, cached);
+		return cached;
+	}
+	const srcdoc = buildRuntimeSrcdoc({
+		bodyHtml: prepareHtml({ html, params, stripEmbedded: true }),
+	});
+	scriptedSrcdocCache.set(rasterKey, srcdoc);
+	if (scriptedSrcdocCache.size > 32) {
+		const oldest = scriptedSrcdocCache.keys().next().value;
+		if (oldest !== undefined && oldest !== rasterKey) {
+			scriptedSrcdocCache.delete(oldest);
+		}
+	}
+	return srcdoc;
+}
+
+/**
  * One frame of a scripted HTML element: seek the sandboxed runtime, then
  * rasterize the serialized DOM through the shared path. CSS animation seek
  * rules (pseudo-element targets) are injected exactly like the script-less
@@ -428,7 +465,8 @@ function loadScriptedHtmlFrame({
 	height: number;
 	seconds: number;
 }): Promise<CachedHtmlSource> {
-	const key = `${htmlCacheKey({ html, params, width, height })}#${seconds}`;
+	const rasterKey = htmlCacheKey({ html, params, width, height });
+	const key = `${rasterKey}#${seconds}`;
 	const cached = animatedFrameCache.get(key);
 	if (cached) {
 		animatedFrameCache.delete(key);
@@ -437,10 +475,8 @@ function loadScriptedHtmlFrame({
 	}
 	const promise = (async () => {
 		const runtime = acquireHtmlRuntime({
-			key: htmlCacheKey({ html, params, width, height }),
-			srcdoc: buildRuntimeSrcdoc({
-				bodyHtml: prepareHtml({ html, params, stripEmbedded: true }),
-			}),
+			key: rasterKey,
+			srcdoc: loadScriptedSrcdoc({ rasterKey, html, params }),
 			width,
 			height,
 		});
@@ -583,6 +619,11 @@ async function drawHtmlToCanvas({
 	});
 
 	const canvas = new OffscreenCanvas(width, height);
+	// This canvas is only ever painted from a `data:` SVG image, and an SVG
+	// loaded as an image never pulls in cross-origin pixels, so it cannot be
+	// tainted — declare it uploadable instead of paying the compositor's 1×1
+	// getImageData probe (a GPU sync, measured 3–25ms) on every single frame.
+	markCanvasUploadable(canvas);
 	const ctx = canvas.getContext("2d");
 	if (!ctx) {
 		throw new Error("OffscreenCanvas 2d context unavailable");

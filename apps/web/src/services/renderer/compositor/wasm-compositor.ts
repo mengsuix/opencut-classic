@@ -12,6 +12,7 @@ import {
 	isRenderPerfEnabled,
 	recordWasmFrameProfile,
 } from "@/diagnostics/render-perf";
+import { isCanvasUploadable } from "../canvas-uploadable";
 import type {
 	ExternalTextureDescriptor,
 	FrameDescriptor,
@@ -205,27 +206,6 @@ function createBackingCanvas({
 		throw new Error("OffscreenCanvas is not supported in this environment");
 	}
 	return new OffscreenCanvas(width, height);
-}
-
-/**
- * WebGPU rejects canvases that cross-origin content has tainted, and wgpu's
- * unwrap turns that error into a panic that wedges the whole compositor. Read
- * one pixel up front to detect it; the result is memoized per canvas, so
- * pooled canvases (video frames) only pay for this once.
- */
-const uploadableCanvases = new WeakSet<OffscreenCanvas>();
-
-function isCanvasUploadable(canvas: OffscreenCanvas): boolean {
-	if (uploadableCanvases.has(canvas)) return true;
-	const context = canvas.getContext("2d");
-	if (!context) return true;
-	try {
-		context.getImageData(0, 0, 1, 1);
-		uploadableCanvases.add(canvas);
-		return true;
-	} catch {
-		return false;
-	}
 }
 
 function ensureOffscreenCanvas({
