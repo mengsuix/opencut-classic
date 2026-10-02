@@ -2623,7 +2623,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"effects.guide": {
 		description:
-			"Get the effects composition playbook: how to build looks (glow, shake, vignette, echo, karaoke text, glitch, old film, color wash, ...) by composing built-in effects, masks, keyframes, blend modes and text style params. Call this before attempting complex visual styling.",
+			"Get the effects playbook: built-in effect usage (effects.add per-clip vs effects.add_layer for a time window), built-in element params (text styles/animations, in/out animations, transitions, retime, fades), and when to fall back to timeline.add_html for custom visuals. Call this before attempting any visual styling.",
 		run: () => ({ guide: EFFECTS_COMPOSITION_GUIDE }),
 	},
 
