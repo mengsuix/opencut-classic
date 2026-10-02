@@ -27,7 +27,7 @@ import {
 	type ElementBounds,
 } from "@/preview/element-bounds";
 import { generateUUID } from "@/utils/id";
-import type { AnimationInterpolation } from "@/animation/types";
+import { ANIMATION_PROPERTY_PATHS, type AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
@@ -45,7 +45,7 @@ import type {
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
-import { EFFECTS_COMPOSITION_GUIDE } from "@/effects/guide";
+import { getBuiltInElementParams } from "@/params/registry";
 import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
@@ -1555,7 +1555,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		args: {
 			trackId: "string",
 			elementId: "string",
-			retime: "{ rate: number (1 = normal, 2 = 2x, 0.5 = half), maintainPitch?: boolean } | null",
+			retime: "{ rate: number (1 = normal, 2 = 2x, 0.5 = half, allowed 0.01~5), maintainPitch?: boolean } | null",
 			pushHistory: "boolean? (default true)",
 		},
 		run: ({ editor, args }) => {
@@ -2452,7 +2452,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"keyframes.upsert": {
 		description:
-			"Create or update element animation keyframes. Times in seconds, relative to the timeline (not element-local).",
+			"Create or update element animation keyframes. Times in seconds, relative to the timeline (not element-local). Legal propertyPath values: see params.list (transform.positionX/Y, scaleX/Y, rotate, opacity, retime.sourceTime, background.*, effects.<effectId>.params.<key> for clip effects, masks.<maskId>.params.<key> for masks).",
 		args: {
 			keyframes:
 				"[{ trackId, elementId, propertyPath, time, value, interpolation?, keyframeId? }] (interpolation: linear|hold|bezier; pass keyframeId to update an existing keyframe)",
@@ -2621,10 +2621,24 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		}),
 	},
 
-	"effects.guide": {
+	"params.list": {
 		description:
-			"Get the effects playbook: built-in effect usage (effects.add per-clip vs effects.add_layer for a time window), built-in element params (text styles/animations, in/out animations, transitions, retime, fades), and when to fall back to timeline.add_html for custom visuals. Call this before attempting any visual styling.",
-		run: () => ({ guide: EFFECTS_COMPOSITION_GUIDE }),
+			"List built-in element params per element type (video/image/text/sticker/graphic/html/audio) with full definitions (key, label, type, default, min, max, step, options), plus legal keyframe propertyPaths (element params; effects.<effectId>.params.<key> for clip effects; masks.<maskId>.params.<key> for masks). Use this to discover legal param keys and enum values before calling timeline.update_elements, timeline.add_text or keyframes.upsert.",
+		run: () => ({
+			elementParams: (
+				["video", "image", "text", "sticker", "graphic", "html", "audio"] as const
+			).map((elementType) => ({
+				elementType,
+				params: sanitizeJson(
+					getBuiltInElementParams({ type: elementType }),
+				),
+			})),
+			keyframePaths: [
+				...ANIMATION_PROPERTY_PATHS,
+				"effects.<effectId>.params.<key>",
+				"masks.<maskId>.params.<key>",
+			],
+		}),
 	},
 
 	"effects.add": {
@@ -2740,7 +2754,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"effects.upsert_keyframe": {
 		description:
-			"Animate an effect param over time. Time in seconds; interpolation: linear|hold.",
+			"Animate a clip-attached effect param over time. Works only for effects added via effects.add (per-clip); effect-layer params (effects.add_layer) cannot be keyframed. Time in seconds; interpolation: linear|hold.",
 		args: {
 			trackId: "string",
 			elementId: "string",
