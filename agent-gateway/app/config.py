@@ -94,7 +94,7 @@ JUDGE_MODEL = os.environ.get("JUDGE_MODEL", _provider_config["judge_model"])
 # 不传 max_tokens：走 DeepSeek 思考模式默认上限（默认 64K，effort=max 时 128K），
 # 正常评判合计仅数百~数千 token，默认值足够且避免截断
 # 思考强度：none/low/high/max（思考模式下 temperature 不生效，故不传）
-JUDGE_REASONING_EFFORT = os.environ.get("JUDGE_REASONING_EFFORT", "max")
+JUDGE_REASONING_EFFORT = os.environ.get("JUDGE_REASONING_EFFORT", "high")
 
 MAX_TURNS_PER_SESSION = 1000
 IDLE_SESSION_SECONDS = float(os.environ.get("IDLE_SESSION_SECONDS", str(2 * 3600)))
