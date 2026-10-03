@@ -12,9 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -50,7 +52,34 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__get_preview_sequence",
     "mcp__opencut__read_media",
     "mcp__opencut__add_media",
+    "mcp__opencut__fx_components",
 ]
+
+# agent-gateway/skills/ 下的裁剪版技能（html-fx），会话创建时软链进工作区
+SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+SKILL_NAMES = (
+    [d.name for d in sorted(SKILLS_DIR.iterdir()) if (d / "SKILL.md").is_file()]
+    if SKILLS_DIR.is_dir()
+    else []
+)
+
+
+def _provision_skills(data_dir: Path) -> None:
+    """把 vendored skills 软链进会话工作区的 .claude/skills/（project source），
+    不支持软链的环境退化为复制；已存在则跳过"""
+    if not SKILL_NAMES:
+        return
+    skills_link_dir = data_dir / ".claude" / "skills"
+    skills_link_dir.mkdir(parents=True, exist_ok=True)
+    for name in SKILL_NAMES:
+        src = (SKILLS_DIR / name).resolve()
+        link = skills_link_dir / name
+        if link.is_symlink() or link.exists():
+            continue
+        try:
+            link.symlink_to(src)
+        except OSError:
+            shutil.copytree(src, link)
 
 
 @dataclass
@@ -130,6 +159,7 @@ class AgentService:
         data_dir = config.AGENT_DATA_DIR / session_id
         config_dir = data_dir / "claude-config"
         config_dir.mkdir(parents=True, exist_ok=True)
+        _provision_skills(data_dir)
         settings_path = config_dir / "settings.json"
         if not settings_path.exists():
             settings_path.write_text(
@@ -147,6 +177,7 @@ class AgentService:
             cwd=str(data_dir),
             model=config.AGENT_MODEL,
             tools=OPENCUT_MCP_TOOLS,
+            skills=SKILL_NAMES or None,
             mcp_servers={"opencut": build_editor_mcp_server(session_id)},
             env=agent_env,
             # 服务端自动化场景无确认通道，工具面已由 tools 限定为编辑器 MCP 工具

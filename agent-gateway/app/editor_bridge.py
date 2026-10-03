@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import auth, config, db, fx_render, visual_judge
+from . import auth, config, db, fx_catalog, fx_render, visual_judge
 # 注：fx_render 是内部渲染模块（HyperFrames 封装），agent 侧暴露的工具名为 add_media。
 
 logger = logging.getLogger("agent-gateway.bridge")
@@ -653,6 +653,46 @@ def build_editor_mcp_server(session_id: str):
         return _text(payload)
 
     @tool(
+        "fx_components",
+        "Search and fetch ready-made HTML effect components (236 self-contained HTML+CSS+JS "
+        "snippets with declared variables: charts, glitch, film grain, shimmer sweep, confetti, "
+        "terminal/code windows, badges, tickers...). BEFORE hand-building any named visual, search "
+        "by keyword — if one matches, fetch it by name and merge the snippet into the HTML you are "
+        "writing instead of starting from scratch. Works for both timeline.add_html and add_media "
+        "(the merged HTML stays one self-contained document). Bake variable values into the markup; "
+        "map text variables to data-param slots when the user should keep editing them; wire any "
+        "animation into the window.__timelines[\"main\"] contract yourself. Pass query to search "
+        "(returns ranked candidates with metadata) OR name to fetch the full snippet source.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search keywords (matched against name/tags/title/description), space-separated",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Exact component name to fetch the full snippet source",
+                },
+            },
+        },
+    )
+    async def fx_components_tool(args):
+        name = args.get("name")
+        if isinstance(name, str) and name.strip():
+            item = fx_catalog.get(name.strip())
+            if item is None:
+                return _error(f"未找到组件 {name!r}，先用 query 搜索确认名称")
+            return _text(item)
+        query = args.get("query")
+        if isinstance(query, str) and query.strip():
+            matches = fx_catalog.search(query.strip())
+            if not matches:
+                return _text({"matches": [], "note": "无命中，换个关键词或手写"})
+            return _text({"matches": matches})
+        return _error("需要 query（搜索）或 name（取片段原文）之一")
+
+    @tool(
         "judge_visual",
         "Independent visual judge: a separate LLM call that checks whether result image(s) meet the "
         "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
@@ -767,6 +807,7 @@ def build_editor_mcp_server(session_id: str):
             read_media,
             judge_visual_tool,
             add_media_tool,
+            fx_components_tool,
         ],
     )
 
