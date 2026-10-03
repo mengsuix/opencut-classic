@@ -54,50 +54,6 @@ class EditorNotConnectedError(RuntimeError):
     pass
 
 
-_ROOT_TAG_RE = re.compile(
-    r"<(?P<tag>[a-zA-Z][\w-]*)"
-    r"(?P<attrs>(?:[^>\"]|\"[^\"]*\")*?\bdata-width\s*=\s*\"\d+\")"
-    r"(?P<rest>(?:[^>\"]|\"[^\"]*\")*)>"
-)
-
-
-def _prepare_html_for_snapshot(html: str, timestamps: list[float] | None) -> str:
-    """把 add_html 约定的 HTML 补齐成 HyperFrames snapshot 可识别的 composition：
-    root（第一个带 data-width 的元素）缺啥补啥——data-composition-id/data-start/
-    data-duration；无 window.__timelines 时补 data-no-timeline 跳过 45s 注册等待。
-    duration 至少覆盖最后一个抽帧点 +0.5s（t==duration 的帧是空白）。
-    另补 <meta charset> 防中文乱码。
-    """
-    match = _ROOT_TAG_RE.search(html)
-    if not match:
-        raise fx_render.FxRenderError(
-            "html 的 root 元素缺少 data-width/data-height（与 add_html 要求一致）"
-        )
-    attrs = match.group("attrs") + match.group("rest")
-    inject = ""
-    if "data-composition-id" not in attrs:
-        inject += ' data-composition-id="main"'
-    if "data-start" not in attrs:
-        inject += ' data-start="0"'
-    if "data-duration" not in attrs:
-        duration = 5.0
-        if timestamps:
-            duration = max(duration, max(timestamps) + 0.5)
-        inject += f' data-duration="{duration:g}"'
-    if "window.__timelines" not in html and "data-no-timeline" not in attrs:
-        inject += " data-no-timeline"
-    if inject:
-        tag_end = match.start() + len(f"<{match.group('tag')}")
-        html = html[:tag_end] + inject + html[tag_end:]
-    if "charset" not in html.lower():
-        head = re.search(r"<head[^>]*>", html, re.IGNORECASE)
-        if head:
-            html = html[: head.end()] + '<meta charset="utf-8">' + html[head.end() :]
-        else:
-            html = '<meta charset="utf-8">' + html
-    return html
-
-
 def _derive_base_url(websocket: WebSocket) -> str:
     """产物下载用对外地址：配置优先，否则从编辑器连接的 Host 头推导"""
     if config.FX_PUBLIC_BASE_URL:
@@ -234,72 +190,9 @@ def build_editor_mcp_server(session_id: str):
     async def get_user_marks(args):
         return await run("marks.get")
 
-    async def preview_add_html(preview, cmd_args):
-        """timeline.add_html 的 preview 分支：本地 headless 渲染 HTML 回图，不触碰编辑器"""
-        html = cmd_args.get("html")
-        if not isinstance(html, str) or not html.strip():
-            return _error("preview 模式需要 html 原文（不支持 presetId 预览）")
-        timestamps: list[float] | None = None
-        if isinstance(preview, list):
-            if not 1 <= len(preview) <= 4:
-                return _error("preview 时间点数组需 1~4 个（秒）")
-            if not all(
-                isinstance(t, (int, float)) and not isinstance(t, bool) and t >= 0
-                for t in preview
-            ):
-                return _error("preview 时间点必须是非负数值（秒）")
-            timestamps = sorted({round(float(t), 2) for t in preview})
-        try:
-            result = await fx_render.render_fx(
-                session_id,
-                _prepare_html_for_snapshot(html, timestamps),
-                format="frames" if timestamps else "image",
-                timestamps=timestamps,
-            )
-        except fx_render.FxRenderError as e:
-            return _error(f"预览渲染失败: {e}")
-        except Exception as e:
-            return _error(f"预览渲染异常: {type(e).__name__}: {e}")
-        paths = result.get("previewPaths") or []
-        if not paths and result.get("previewPath"):
-            paths = [result["previewPath"]]
-        images: list[dict] = []
-        handles: list[str] = []
-        for path in paths:
-            try:
-                png = Path(path).read_bytes()
-            except OSError as e:
-                logger.warning(f"读取预览图失败: {e}")
-                continue
-            b64 = base64.b64encode(png).decode("ascii")
-            handles.append(_register_image(b64, "image/png"))
-            images.append({"type": "image", "data": b64, "mimeType": "image/png"})
-        if not handles:
-            return _error("渲染成功但预览图生成失败")
-        meta = {
-            "preview": True,
-            "width": result["width"],
-            "height": result["height"],
-            "imageHandles": handles,
-            "next": (
-                "附带图片是本地 headless 渲染的预览（透明区显示为浅色棋盘格），"
-                "未插入时间轴、工程零污染。与参考图对比调 judge_visual"
-                "（imageHandles 传上述句柄，参考图句柄传 referenceHandles，"
-                "单效果图对单参考图传 sideBySide:true）。不达标就改 html 后再带 "
-                "preview 调本命令迭代；达标后用同一 html 去掉 preview 正式插入。"
-                "动画效果的 t=0 可能是入场前空白，截指定时刻用 preview: [秒, ...]。"
-            ),
-        }
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(meta, ensure_ascii=False, indent=2)},
-                *images,
-            ]
-        }
-
     @tool(
         "execute_command",
-        'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected. Special gateway-side extension: timeline.add_html accepts an extra "preview" arg in args — true renders the html headlessly and returns a preview image WITHOUT inserting (iterate against judge_visual); a list of timestamps [sec,...] captures those moments (for animated html); omit preview to actually insert.',
+        'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected.',
         {
             "type": "object",
             "properties": {
@@ -322,10 +215,6 @@ def build_editor_mcp_server(session_id: str):
         cmd_args = args.get("args")
         if not isinstance(cmd_args, dict):
             cmd_args = {}
-        if command == "timeline.add_html":
-            preview = cmd_args.pop("preview", None)
-            if preview:
-                return await preview_add_html(preview, cmd_args)
         return await run(command, cmd_args)
 
     @tool(
@@ -593,184 +482,176 @@ def build_editor_mcp_server(session_id: str):
         }
 
     # ------------------------------------------------------------------
-    # fx_render 工具暂时停用（add_html 已覆盖大部分能力，只保留 add_html 路线）。
-    # 以下整块仅注释、未删除；恢复时取消注释并重新加入下方 tools 列表即可。
+    # fx_render：独立视频素材工具，与 add_html 平级。add_html 产活特效元素
+    # （文字可编辑、DOM/CSS/GSAP 动画），fx_render 产固定像素素材（透明 WebM 视频 /
+    # PNG 图片），供 Canvas/WebGL/shader/粒子等 DOM 序列化承载不了的视觉。
+    # 迭代统一走 frames/image（headless 秒级回图、注册 imageHandle 供评委对比），
+    # 达标后再 video 正式渲染（1~3 分钟）。
     # ------------------------------------------------------------------
-    # @tool(
-    #     "fx_render",
-    #     'Render a self-contained HTML/CSS composition with HyperFrames (headless Chrome, frame-accurate CSS/WAAPI/GSAP '
-    #     'animation). Default flow for custom HTML visuals: try execute_command timeline.add_html FIRST — HTML/CSS '
-    #     'animates directly in the editor via CSS @keyframes, text stays editable via data-param slots, near-zero '
-    #     'cost. Escalate to fx_render only when the add_html result falls short; its output is a fixed image/video, '
-    #     'so text is no longer editable (stay on add_html when the user needs editable text). Skip the add_html '
-    #     'attempt and go straight to fx_render when the need clearly requires JS/GSAP/Canvas/WebGL animation or '
-    #     'complex particle choreography: tech-style badges, glowing titles, particles, animated stickers, or '
-    #     'replicating a reference image\'s look. The HTML page background '
-    #     'must be transparent for every format. Three output formats: '
-    #     '"video" (default) renders an animated transparent-background WebM (real alpha channel — dark content stays '
-    #     'visible, no blend mode needed); "image" screenshots t=0 as a transparent-background PNG in seconds — for STATIC '
-    #     'visuals (badges, labels, decorations with no animation); '
-    #     '"frames" captures key frames (default 0.2/0.5/0.8 of the duration, or explicit "timestamps", up to 12) in '
-    #     'seconds and attaches them as preview images — more than 4 frames come back as ONE contact sheet labelled with '
-    #     'each timestamp (use it to check motion continuity/timing); ALWAYS use frames first for ANIMATED effects to '
-    #     'iterate on the look cheaply (seconds per round, no browser round-trip), and only render the final "video" '
-    #     '(1-3 minutes) once the frames match the target. The '
-    #     'html argument must be a COMPLETE HTML document following the HyperFrames convention: <meta charset="utf-8"> '
-    #     '(required, otherwise Chinese text renders as mojibake), <meta name="viewport" '
-    #     'content="width=W,height=H">, and a root element carrying data-composition-id="main" data-start="0" '
-    #     'data-duration="<seconds>" data-width="<px>" data-height="<px>" data-fps="<project fps>"; children carry class "clip" with '
-    #     'data-start/data-duration/data-track-index. Drive animation with exactly ONE paused GSAP timeline registered as '
-    #     'window.__timelines["main"] = gsap.timeline({paused:true}) (key = data-composition-id; no repeat:-1, no '
-    #     'Math.random/Date.now) — a composition without a registered timeline (e.g. CSS @keyframes only) stalls ~45s '
-    #     'waiting for timeline readiness on every render. Set data-width/data-height to the PROJECT canvas size (see '
-    #     'get_editor_state) and position the content inside the HTML where it should appear on screen — the rendered '
-    #     'asset then drops onto the timeline 1:1; a small canvas (e.g. a 520x152 badge) gets contain-scaled up to fill '
-    #     'the project canvas on insert. Video rendering takes 1-3 minutes; image/frames take seconds. Returns a '
-    #     'URL plus the exact next steps (media.import with url, then timeline.insert_element). With format "image" the '
-    #     'rendered preview is attached as an image, transparent areas shown as a light checkerboard — look at it and '
-    #     'fix the HTML and re-render until it matches the target, instead of importing on the first try.',
-    #     {
-    #         "type": "object",
-    #         "properties": {
-    #             "html": {
-    #                 "type": "string",
-    #                 "description": "Complete HTML document following the HyperFrames composition convention",
-    #             },
-    #             "format": {
-    #                 "type": "string",
-    #                 "enum": ["video", "image", "frames"],
-    #                 "description": '"video": animated effect (transparent-background WebM with alpha, plain video element, no blend mode); "image": static visual (transparent-background PNG, plain image element, no blend mode); "frames": key-frame previews of an animated effect (use first to iterate, then "video" for the final render). Default "video".',
-    #             },
-    #             "timestamps": {
-    #                 "type": "array",
-    #                 "items": {"type": "number"},
-    #                 "description": 'Only for format "frames": seconds to capture (within 0..data-duration, max 12). Default 0.2/0.5/0.8 of the duration. Pass 1-4 timestamps to inspect details frame by frame; pass 6-12 to get one contact sheet showing the motion over time.',
-    #             },
-    #         },
-    #         "required": ["html"],
-    #     },
-    # )
-    # async def fx_render_tool(args):
-    #     html = args.get("html")
-    #     if not isinstance(html, str) or not html.strip():
-    #         return _error("Missing required argument: html")
-    #     format = args.get("format", "video")
-    #     try:
-    #         result = await fx_render.render_fx(
-    #             session_id, html, format=format, timestamps=args.get("timestamps")
-    #         )
-    #     except fx_render.FxRenderError as e:
-    #         return _error(str(e))
-    #     except Exception as e:
-    #         return _error(f"渲染异常: {type(e).__name__}: {e}")
-    #     if result["kind"] == "frames":
-    #         payload = {
-    #             "jobId": result["jobId"],
-    #             "kind": "frames",
-    #             "width": result["width"],
-    #             "height": result["height"],
-    #             "durationSeconds": result["durationSeconds"],
-    #             "next": (
-    #                 "附带图片是本次渲染在多个时间点的关键帧（按时间顺序排列；帧数多于 4 时"
-    #                 "拼成一张联系表，每格上方标注时间点），不是参考图。"
-    #                 "逐帧核对画面与运动过程是否符合预期；与目标不一致就改 HTML 后仍以 format:'frames' "
-    #                 "重新渲染（秒级）继续迭代，不要直接 render video。确认一致后再改用 "
-    #                 "format:'video' 正式渲染（约 1~3 分钟），并按返回的 next 步骤插入时间轴。"
-    #             ),
-    #         }
-    #         images = []
-    #         for preview_path in result.get("previewPaths") or []:
-    #             try:
-    #                 images.append(Path(preview_path).read_bytes())
-    #             except OSError as e:
-    #                 logger.warning(f"读取特效关键帧预览失败: {e}")
-    #         content: list = [
-    #             {
-    #                 "type": "text",
-    #                 "text": json.dumps(payload, ensure_ascii=False, indent=2),
-    #             }
-    #         ]
-    #         for png in images:
-    #             content.append(
-    #                 {
-    #                     "type": "image",
-    #                     "data": base64.b64encode(png).decode("ascii"),
-    #                     "mimeType": "image/png",
-    #                 }
-    #             )
-    #         return {"content": content}
-    #     base = _editor_base_urls.get(session_id, "")
-    #     if not base:
-    #         return _error(
-    #             "无法确定 Gateway 对外地址（编辑器未通过 WebSocket 连接）。"
-    #             "请在 Gateway 配置 FX_PUBLIC_BASE_URL 后重试。"
-    #         )
-    #     url = (
-    #         f"{base}/api/agent/sessions/{session_id}"
-    #         f"/fx/{result['jobId']}/{result['fileName']}"
-    #     )
-    #     if result["kind"] == "image":
-    #         next_steps = (
-    #             "确认附带预览图与目标一致后再插入："
-    #             '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
-    #             '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
-    #             "第三步：execute_command 执行 timeline.insert_element，element 为 "
-    #             "{type:'image', mediaId: assetId, startTime, duration}，"
-    #             "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
-    #             "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道），无需混合模式"
-    #         )
-    #     else:
-    #         next_steps = (
-    #             '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
-    #             '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
-    #             "第三步：execute_command 执行 timeline.insert_element，element 为 "
-    #             "{type:'video', mediaId: assetId, startTime, duration}"
-    #             "（视频自带透明通道，无需混合模式），"
-    #             "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
-    #             "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）"
-    #         )
-    #     next_steps += (
-    #         "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"
-    #         "插入后即为设计稿位置，无需调 transform；不一致时用 timeline.update_elements "
-    #         "设 transform.scaleX/scaleY/positionX/positionY 调整"
-    #     )
-    #     payload = {
-    #         "jobId": result["jobId"],
-    #         "kind": result["kind"],
-    #         "url": url,
-    #         "fileName": result["fileName"],
-    #         "width": result["width"],
-    #         "height": result["height"],
-    #         "durationSeconds": result["durationSeconds"],
-    #         "next": next_steps,
-    #     }
-    #     preview_path = result.get("previewPath") or ""
-    #     png = b""
-    #     if preview_path:
-    #         try:
-    #             png = Path(preview_path).read_bytes()
-    #         except OSError as e:
-    #             logger.warning(f"读取特效预览图失败: {e}")
-    #     if png:
-    #         payload["preview"] = (
-    #             "附带图片就是本次渲染结果（透明区域显示为浅色棋盘格），不是参考图。"
-    #             "先按 system prompt 的核对项逐条看图，与目标不一致就改 HTML 重新 fx_render；"
-    #             "一致后再执行上面的 next 步骤。"
-    #         )
-    #         return {
-    #             "content": [
-    #                 {
-    #                     "type": "text",
-    #                     "text": json.dumps(payload, ensure_ascii=False, indent=2),
-    #                 },
-    #                 {
-    #                     "type": "image",
-    #                     "data": base64.b64encode(png).decode("ascii"),
-    #                     "mimeType": "image/png",
-    #                 },
-    #             ]
-    #         }
-    #     return _text(payload)
+    @tool(
+        "fx_render",
+        "Render a self-contained HTML/CSS composition headlessly (HyperFrames, frame-accurate "
+        "CSS/WAAPI/GSAP animation) into a MEDIA ASSET. Peer of timeline.add_html — choose by "
+        "deliverable: add_html produces a LIVE editable effect element (text editable via data-param, "
+        "DOM/CSS/GSAP animation in the editor, near-zero cost); fx_render produces fixed pixels — a "
+        "transparent-background VP9-alpha WebM video (or PNG) imported into the media library — for "
+        "Canvas/WebGL/shader/particle visuals whose pixels never survive DOM serialization, or when a "
+        "rendered video asset is wanted. "
+        "ITERATION FLOW: author the HTML, then iterate with format \"frames\" (animated) or \"image\" "
+        "(static) — seconds per round, headless, transparent background, zero project pollution; "
+        "preview images come back with imageHandle fields that feed judge_visual directly. Only after "
+        "the frames/image pass judgement, render format \"video\" (1-3 minutes) and follow the "
+        "returned next steps to import. "
+        "HTML: a COMPLETE self-contained document with a root element carrying data-width=\"<px>\" "
+        "data-height=\"<px>\" (the render viewport) and a transparent page background; <meta "
+        "charset=\"utf-8\"> for Chinese text. HyperFrames contract attributes "
+        "(data-composition-id/data-start/data-duration/data-no-timeline) are AUTO-FILLED when missing — "
+        "add data-duration=\"<seconds>\" yourself for animated content (default 5s). Animation: CSS "
+        "@keyframes (finite iterations, animation-fill-mode:both) or ONE paused GSAP timeline "
+        "registered as window.__timelines[\"main\"] (same contract as add_html; no repeat:-1, no "
+        "Math.random/Date.now). Set data-width/data-height to the PROJECT canvas size (see "
+        "get_editor_state) and position content where it should appear on screen — the rendered asset "
+        "drops onto the timeline 1:1; a small canvas (e.g. a 520x152 badge) gets contain-scaled up on "
+        "insert. "
+        "Formats: \"frames\" — key frames at default 0.2/0.5/0.8 of the duration or explicit "
+        "\"timestamps\" (max 12; avoid t=0 and t==duration, both can be blank), more than 4 frames "
+        "return as ONE contact sheet; \"image\" — static PNG at t=0; \"video\" (default) — animated "
+        "transparent-background WebM (plain video element compositing, no blend mode needed).",
+        {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Complete self-contained HTML document; root carries data-width/data-height; contract attributes auto-filled",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["video", "image", "frames"],
+                    "description": '"video": final animated asset (transparent WebM with alpha); "image": static transparent PNG asset; "frames": key-frame previews for iteration (use first, then "video"). Default "video".',
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": 'Only for format "frames": seconds to capture (within 0..data-duration, max 12). Default 0.2/0.5/0.8 of the duration. Pass 1-4 timestamps to inspect details frame by frame; pass 6-12 to get one contact sheet showing the motion over time.',
+                },
+            },
+            "required": ["html"],
+        },
+    )
+    async def fx_render_tool(args):
+        html = args.get("html")
+        if not isinstance(html, str) or not html.strip():
+            return _error("Missing required argument: html")
+        format = args.get("format", "video")
+        try:
+            result = await fx_render.render_fx(
+                session_id, html, format=format, timestamps=args.get("timestamps")
+            )
+        except fx_render.FxRenderError as e:
+            return _error(str(e))
+        except Exception as e:
+            return _error(f"渲染异常: {type(e).__name__}: {e}")
+
+        def _attach_previews(paths):
+            images, handles = [], []
+            for p in paths:
+                try:
+                    png = Path(p).read_bytes()
+                except OSError as e:
+                    logger.warning(f"读取特效预览失败: {e}")
+                    continue
+                b64 = base64.b64encode(png).decode("ascii")
+                handles.append(_register_image(b64, "image/png"))
+                images.append({"type": "image", "data": b64, "mimeType": "image/png"})
+            return images, handles
+
+        if result["kind"] == "frames":
+            images, handles = _attach_previews(result.get("previewPaths") or [])
+            payload = {
+                "jobId": result["jobId"],
+                "kind": "frames",
+                "width": result["width"],
+                "height": result["height"],
+                "durationSeconds": result["durationSeconds"],
+                "imageHandles": handles,
+                "next": (
+                    "附带图片是本次渲染在多个时间点的关键帧（按时间顺序排列；帧数多于 4 时"
+                    "拼成一张联系表，每格上方标注时间点），不是参考图；已登记 imageHandle，"
+                    "可直接传 judge_visual 的 imageHandles 与参考图对比。"
+                    "与目标不一致就改 HTML 后仍以 format:'frames' 重新渲染（秒级）继续迭代，"
+                    "不要直接 render video。确认达标后再改用 format:'video' 正式渲染"
+                    "（约 1~3 分钟），并按返回的 next 步骤导入素材库插入时间轴。"
+                ),
+            }
+            return {
+                "content": [
+                    {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
+                    *images,
+                ]
+            }
+        base = _editor_base_urls.get(session_id, "")
+        if not base:
+            return _error(
+                "无法确定 Gateway 对外地址（编辑器未通过 WebSocket 连接）。"
+                "请在 Gateway 配置 FX_PUBLIC_BASE_URL 后重试。"
+            )
+        url = (
+            f"{base}/api/agent/sessions/{session_id}"
+            f"/fx/{result['jobId']}/{result['fileName']}"
+        )
+        if result["kind"] == "image":
+            next_steps = (
+                "确认附带预览图与目标一致后再插入："
+                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
+                "第三步：execute_command 执行 timeline.insert_element，element 为 "
+                "{type:'image', mediaId: assetId, startTime, duration}，"
+                "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道），无需混合模式"
+            )
+        else:
+            next_steps = (
+                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
+                "第三步：execute_command 执行 timeline.insert_element，element 为 "
+                "{type:'video', mediaId: assetId, startTime, duration}"
+                "（视频自带透明通道，无需混合模式），"
+                "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）"
+            )
+        next_steps += (
+            "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"
+            "插入后即为设计稿位置，无需调 transform；不一致时用 timeline.update_elements "
+            "设 transform.scaleX/scaleY/positionX/positionY 调整"
+        )
+        payload = {
+            "jobId": result["jobId"],
+            "kind": result["kind"],
+            "url": url,
+            "fileName": result["fileName"],
+            "width": result["width"],
+            "height": result["height"],
+            "durationSeconds": result["durationSeconds"],
+            "next": next_steps,
+        }
+        if result["kind"] == "image":
+            images, handles = _attach_previews(
+                [result["previewPath"]] if result.get("previewPath") else []
+            )
+            if images:
+                payload["imageHandles"] = handles
+                payload["preview"] = (
+                    "附带图片就是本次渲染结果（透明区域显示为浅色棋盘格），不是参考图；"
+                    "已登记 imageHandle，可直接传 judge_visual 与参考图对比。"
+                    "与目标不一致就改 HTML 重新渲染；一致后再执行上面的 next 步骤。"
+                )
+                return {
+                    "content": [
+                        {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)},
+                        *images,
+                    ]
+                }
+        return _text(payload)
 
     @tool(
         "judge_visual",
@@ -778,9 +659,9 @@ def build_editor_mcp_server(session_id: str):
         "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
         "for custom visuals (HTML effects, replicated styles) before reporting completion to the user — "
         "your own screenshot check is the draft review, this is the final review. "
-        "HOW TO FEED IMAGES: result images come from timeline.add_html preview (headless render — "
-        "preferred during iteration, zero project pollution) or get_preview_frame (on-canvas composite "
-        "— for the final integration check after inserting); read references with read_media/"
+        "HOW TO FEED IMAGES: result images come from fx_render frames/image previews (headless "
+        "render — preferred during iteration, zero project pollution) or get_preview_frame (on-canvas "
+        "composite — for the final integration check after inserting); read references with read_media/"
         "get_preview_frame first — their JSON results contain imageHandle fields; pass result handles "
         "as imageHandles (1~4) and, when the task references source images, those handles as "
         "referenceHandles (0~4). Reference handles are pinned once used here and never expire, so the "
@@ -886,7 +767,7 @@ def build_editor_mcp_server(session_id: str):
             get_preview_sequence,
             read_media,
             judge_visual_tool,
-            # fx_render_tool,  # fx_render 暂时停用（见上方注释块），恢复时取消注释
+            fx_render_tool,
         ],
     )
 

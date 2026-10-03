@@ -70,6 +70,55 @@ class FxRenderError(RuntimeError):
     """渲染失败（参数非法 / 渲染进程失败 / 无产物）"""
 
 
+_ROOT_TAG_RE = re.compile(
+    r"<(?P<tag>[a-zA-Z][\w-]*)"
+    r"(?P<attrs>(?:[^>\"]|\"[^\"]*\")*?\bdata-width\s*=\s*\"\d+\")"
+    r"(?P<rest>(?:[^>\"]|\"[^\"]*\")*)>"
+)
+
+
+def _prepare_html(html: str, timestamps: list[float] | None) -> str:
+    """把 add_html 约定的 HTML 补齐成 HyperFrames composition（一份 HTML 双路通用）：
+    root（第一个带 data-width 的元素）缺啥补啥——data-composition-id/data-start/
+    data-duration；无 window.__timelines 时补 data-no-timeline 跳过 45s 注册等待。
+    自补的 duration 至少覆盖最后一个抽帧点 +0.5s（t==duration 的帧是空白）。
+    另补 <meta charset> 防中文乱码。
+    """
+    match = _ROOT_TAG_RE.search(html)
+    if not match:
+        raise FxRenderError(
+            "html 的 root 元素缺少 data-width/data-height（与 add_html 约定一致）"
+        )
+    attrs = match.group("attrs") + match.group("rest")
+    inject = ""
+    if "data-composition-id" not in attrs:
+        inject += ' data-composition-id="main"'
+    if "data-start" not in attrs:
+        inject += ' data-start="0"'
+    if "data-duration" not in attrs:
+        duration = _ATTR_LIMITS["duration"][2]
+        valid_ts = [
+            t
+            for t in (timestamps or [])
+            if isinstance(t, (int, float)) and not isinstance(t, bool)
+        ]
+        if valid_ts:
+            duration = max(duration, max(valid_ts) + 0.5)
+        inject += f' data-duration="{duration:g}"'
+    if "window.__timelines" not in html and "data-no-timeline" not in attrs:
+        inject += " data-no-timeline"
+    if inject:
+        tag_end = match.start() + len(f"<{match.group('tag')}")
+        html = html[:tag_end] + inject + html[tag_end:]
+    if "charset" not in html.lower():
+        head = re.search(r"<head[^>]*>", html, re.IGNORECASE)
+        if head:
+            html = html[: head.end()] + '<meta charset="utf-8">' + html[head.end() :]
+        else:
+            html = '<meta charset="utf-8">' + html
+    return html
+
+
 def _parse_composition(html: str) -> tuple[int, int, float]:
     values: dict[str, float] = {}
     for key, pattern in _ATTR_RES.items():
@@ -104,6 +153,7 @@ async def render_fx(
         raise FxRenderError("html 不能为空")
     if len(html.encode("utf-8")) > MAX_HTML_BYTES:
         raise FxRenderError(f"html 超过 {MAX_HTML_BYTES // 1024}KB 上限")
+    html = _prepare_html(html, timestamps if format == "frames" else None)
     width, height, duration = _parse_composition(html)
     if format == "frames":
         at_list = _validate_timestamps(timestamps, duration)

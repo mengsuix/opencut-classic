@@ -54,8 +54,7 @@ async def lifespan(app: FastAPI):
     config.AGENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
     await db.init_pool()
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
-    # fx_render 暂时停用，预热一并关闭（恢复 fx_render 时取消注释）
-    # asyncio.create_task(fx_render.warmup_hyperframes())
+    asyncio.create_task(fx_render.warmup_hyperframes())
     logger.info(
         f"Agent Gateway 已启动 (port={config.GATEWAY_PORT}, provider={config.AGENT_PROVIDER}, "
         f"model={config.AGENT_MODEL}, auth_mode={config.AUTH_MODE})"
