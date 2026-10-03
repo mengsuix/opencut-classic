@@ -19,9 +19,9 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import auth, config, db, html_replicate
-# fx_render 主 agent 工具暂时停用（工具块见下方注释）；模块本身由
-# html_replicate（参考图复刻内层循环）使用。
+from . import auth, config, db, visual_judge
+# fx_render 暂时停用（工具块见下方注释），恢复时重新加入导入：
+# from . import fx_render
 
 logger = logging.getLogger("agent-gateway.bridge")
 
@@ -112,15 +112,12 @@ def _error(message: str) -> dict:
 def build_editor_mcp_server(session_id: str):
     """为某个 session 构建 in-process MCP server（工具闭包绑定 session_id）"""
 
-    # 图片/HTML 句柄缓存：模型能"看"图但无法在工具参数里复述图片原文，
-    # 故回传给模型的图片同时在此登记 img-N 句柄；replicate_html 产出的 HTML
-    # 同理登记 html-N 句柄，add_html 传 "@html-N" 由网关替换为真实内容
-    # （避免长 HTML 经模型上下文复述出错）。
+    # 图片句柄缓存：模型能"看"图但无法在工具参数里复述图片原文，
+    # 故回传给模型的图片同时在此登记 img-N 句柄，judge_visual 等工具
+    # 凭句柄取图，图片字节不再传输。
     image_handles: dict[str, tuple[str, str]] = {}  # handle -> (base64_data, mime)
-    html_handles: dict[str, str] = {}  # handle -> html
-    handle_seq = {"img": 0, "html": 0}
+    handle_seq = {"img": 0}
     MAX_IMAGE_HANDLES = 20
-    MAX_HTML_HANDLES = 10
 
     def _register_image(base64_data: str, mime: str) -> str:
         handle_seq["img"] += 1
@@ -128,14 +125,6 @@ def build_editor_mcp_server(session_id: str):
         image_handles[handle] = (base64_data, mime)
         while len(image_handles) > MAX_IMAGE_HANDLES:
             image_handles.pop(next(iter(image_handles)))
-        return handle
-
-    def _register_html(html: str) -> str:
-        handle_seq["html"] += 1
-        handle = f"html-{handle_seq['html']}"
-        html_handles[handle] = html
-        while len(html_handles) > MAX_HTML_HANDLES:
-            html_handles.pop(next(iter(html_handles)))
         return handle
 
     async def run(command: str, args: dict | None = None) -> dict:
@@ -214,18 +203,6 @@ def build_editor_mcp_server(session_id: str):
         cmd_args = args.get("args")
         if not isinstance(cmd_args, dict):
             cmd_args = {}
-        # add_html 的 html 参数支持 "@html-N" 句柄（replicate_html 的产出），
-        # 网关替换为真实 HTML，避免长 HTML 经模型上下文复述出错
-        if command == "timeline.add_html":
-            html_arg = cmd_args.get("html")
-            if isinstance(html_arg, str) and html_arg.startswith("@html-"):
-                real_html = html_handles.get(html_arg[1:])
-                if real_html is None:
-                    return _error(
-                        f"HTML 句柄 {html_arg} 不存在或已被淘汰——"
-                        "请重新调用 replicate_html 产出"
-                    )
-                cmd_args = {**cmd_args, "html": real_html}
         return await run(command, cmd_args)
 
     @tool(
@@ -673,155 +650,85 @@ def build_editor_mcp_server(session_id: str):
     #     return _text(payload)
 
     @tool(
-        "replicate_html",
-        "Iteratively design a self-contained HTML effect that replicates reference image(s). An inner loop "
-        "(independent of you) writes the HTML, renders it headlessly, compares the render against the reference "
-        "images, and revises — up to a fixed round cap. Use this whenever the user provides a reference (a media "
-        "asset, a canvas region, a frame in the preview) to replicate as an HTML effect; for free-form HTML with "
-        "no reference, use execute_command timeline.add_html directly instead. "
-        "HOW TO FEED REFERENCES: call read_media (library asset) or get_preview_frame (frame on the timeline; "
-        "pass rect for a region close-up) first — their JSON results contain an imageHandle field; pass those "
-        "handles as imageHandles (1~4, most relevant first). The images themselves never enter your context again. "
-        "SIZING: width/height = the project canvas size (see get_editor_state); for animated effects also pass "
-        "duration (seconds) and fps. Set animated=true for anything that moves (frames at multiple timestamps are "
-        "used for iteration); false for static visuals. "
-        "RETURNS: an htmlHandle plus the final render preview image(s) for you to eyeball. Insert with "
-        "execute_command timeline.add_html passing html: \"@html-N\" verbatim (the gateway substitutes the real "
-        "HTML — do NOT try to write the HTML yourself), params for any data-param slots, then verify on canvas "
-        "with get_preview_frame as usual. Static HTML is cropped to its painted content on insert, so position "
-        "the element with transform.positionX/positionY afterwards.",
+        "judge_visual",
+        "Independent visual judge: a separate LLM call that checks whether result image(s) meet the "
+        "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
+        "for custom visuals (HTML effects, replicated styles) before reporting completion to the user — "
+        "your own screenshot check is the draft review, this is the final review. "
+        "HOW TO FEED IMAGES: capture the result with get_preview_frame (on-canvas composite) and read "
+        "references with read_media/get_preview_frame first — their JSON results contain imageHandle "
+        "fields; pass result handles as imageHandles (1~4) and, when the task references source images, "
+        "those handles as referenceHandles (0~4). "
+        "REQUIREMENT: write the acceptance criteria verbatim from the user's ask (e.g. '1:1 replicate the "
+        "badge in the reference, exact text NEW' or 'same glowing style as the reference but text 限时优惠'). "
+        "The judge scores ONLY against this text — anything not stated is not penalized, so be specific. "
+        "On pass=false, iterate with the stated reasons (fix the HTML/params, re-capture, re-judge); "
+        "report completion only after a pass.",
         {
             "type": "object",
             "properties": {
+                "requirement": {
+                    "type": "string",
+                    "description": "Acceptance criteria: what the result must satisfy, including how reference images should be used (exact replica vs style reference)",
+                },
                 "imageHandles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "1~4 image handles (img-N) from read_media/get_preview_frame/get_preview_sequence results",
+                    "description": "1~4 image handles (img-N) of the RESULT to be judged, e.g. from get_preview_frame",
                 },
-                "brief": {
-                    "type": "string",
-                    "description": "What to replicate: which subject in the reference(s), exact text content, where it sits on the canvas, static or how it should animate",
-                },
-                "width": {
-                    "type": "number",
-                    "description": "Project canvas width in px (see get_editor_state)",
-                },
-                "height": {
-                    "type": "number",
-                    "description": "Project canvas height in px",
-                },
-                "duration": {
-                    "type": "number",
-                    "description": "Effect duration in seconds; required when animated=true (0.5~60)",
-                },
-                "fps": {
-                    "type": "number",
-                    "description": "Project frame rate (default 30)",
-                },
-                "animated": {
-                    "type": "boolean",
-                    "description": "true = animated effect (iterate on key frames); false = static visual (default)",
+                "referenceHandles": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "0~4 image handles of reference images the result is judged against",
                 },
             },
-            "required": ["imageHandles", "brief", "width", "height"],
+            "required": ["requirement", "imageHandles"],
         },
     )
-    async def replicate_html_tool(args):
-        handles = args.get("imageHandles")
-        if (
-            not isinstance(handles, list)
-            or not 1 <= len(handles) <= 4
-            or not all(isinstance(h, str) for h in handles)
-        ):
-            return _error("imageHandles 必须是 1~4 个句柄字符串（img-N）")
-        brief = args.get("brief")
-        if not isinstance(brief, str) or not brief.strip():
-            return _error("Missing required argument: brief")
+    async def judge_visual_tool(args):
+        requirement = args.get("requirement")
+        if not isinstance(requirement, str) or not requirement.strip():
+            return _error("Missing required argument: requirement")
 
-        def _num(key: str) -> float | None:
-            v = args.get(key)
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                return float(v)
-            return None
+        def _resolve_handles(key: str, lo: int, hi: int) -> list[tuple[bytes, str]] | dict:
+            handles = args.get(key)
+            if handles is None:
+                handles = []
+            if (
+                not isinstance(handles, list)
+                or not lo <= len(handles) <= hi
+                or not all(isinstance(h, str) for h in handles)
+            ):
+                return _error(f"{key} 必须是 {lo}~{hi} 个句柄字符串（img-N）")
+            images: list[tuple[bytes, str]] = []
+            for handle in handles:
+                entry = image_handles.get(handle)
+                if entry is None:
+                    return _error(
+                        f"图片句柄 {handle} 不存在或已被淘汰——"
+                        "请重新调用 read_media/get_preview_frame 获取"
+                    )
+                b64_data, mime = entry
+                try:
+                    images.append((base64.b64decode(b64_data), mime))
+                except Exception:
+                    return _error(f"图片句柄 {handle} 数据损坏")
+            return images
 
-        width, height = _num("width"), _num("height")
-        if width is None or height is None:
-            return _error("width/height 必填（项目画布尺寸，见 get_editor_state）")
-        if not (32 <= width <= 3840) or not (32 <= height <= 3840):
-            return _error(f"width/height 超出允许范围 32~3840（got {width}x{height}）")
-        animated = args.get("animated") is True
-        duration = _num("duration")
-        if animated and duration is None:
-            return _error("animated=true 时 duration 必填（特效时长秒数，0.5~60）")
-        if duration is None:
-            duration = 5.0
-        if not 0.5 <= duration <= 60:
-            return _error(f"duration 超出允许范围 0.5~60（got {duration}）")
-        fps = _num("fps") or 30.0
-        if not 1 <= fps <= 120:
-            return _error(f"fps 超出允许范围 1~120（got {fps}）")
-
-        images: list[tuple[bytes, str]] = []
-        for handle in handles:
-            entry = image_handles.get(handle)
-            if entry is None:
-                return _error(
-                    f"图片句柄 {handle} 不存在或已被淘汰——"
-                    "请重新调用 read_media/get_preview_frame 获取"
-                )
-            b64_data, mime = entry
-            try:
-                images.append((base64.b64decode(b64_data), mime))
-            except Exception:
-                return _error(f"图片句柄 {handle} 数据损坏")
+        result_images = _resolve_handles("imageHandles", 1, 4)
+        if isinstance(result_images, dict):
+            return result_images
+        reference_images = _resolve_handles("referenceHandles", 0, 4)
+        if isinstance(reference_images, dict):
+            return reference_images
 
         try:
-            result = await html_replicate.replicate_html(
-                session_id,
-                images,
-                brief.strip(),
-                width=int(width),
-                height=int(height),
-                duration=duration,
-                fps=int(fps),
-                animated=animated,
+            passed, verdict = await visual_judge.judge(
+                requirement.strip(), result_images, reference_images
             )
-        except html_replicate.ReplicateError as e:
-            return _error(str(e))
         except Exception as e:
-            return _error(f"复刻异常: {type(e).__name__}: {e}")
-
-        html_handle = _register_html(result["html"])
-        payload = {
-            "htmlHandle": f"@{html_handle}",
-            "rounds": result["rounds"],
-            "converged": result["converged"],
-            "width": int(width),
-            "height": int(height),
-            "durationSeconds": duration if animated else 0.0,
-            "usage": (
-                f'execute_command timeline.add_html 的 html 参数原样传 "@{html_handle}"，'
-                "网关会替换为真实 HTML；插入后照旧 get_preview_frame 截图终验。"
-                "静态 HTML 落位时被裁剪到内容尺寸，用 transform.positionX/positionY 摆位置。"
-            ),
-        }
-        if not result["converged"]:
-            payload["warning"] = (
-                "已达迭代上限仍未完全收敛——下图是最后一轮渲染，"
-                "若与目标差距明显可调整 brief 后再次调用本工具"
-            )
-        content: list = [
-            {"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}
-        ]
-        for png in result["previews"]:
-            content.append(
-                {
-                    "type": "image",
-                    "data": base64.b64encode(png).decode("ascii"),
-                    "mimeType": "image/png",
-                }
-            )
-        return {"content": content}
+            return _error(f"评委调用失败: {type(e).__name__}: {e}")
+        return _text({"pass": passed, "verdict": verdict})
 
     return create_sdk_mcp_server(
         name="opencut",
@@ -836,7 +743,7 @@ def build_editor_mcp_server(session_id: str):
             get_preview_frame,
             get_preview_sequence,
             read_media,
-            replicate_html_tool,
+            judge_visual_tool,
             # fx_render_tool,  # fx_render 暂时停用（见上方注释块），恢复时取消注释
         ],
     )
