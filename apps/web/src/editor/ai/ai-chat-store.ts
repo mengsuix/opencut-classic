@@ -131,14 +131,15 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		}
 	};
 
-	/** 消费 SSE 流；返回本轮是否收到过 result 事件（false 说明流被中断/异常结束） */
+	/** 消费 SSE 流；返回本轮是否收到过 result / error 事件 */
 	const consumeSSEStream = async (
 		reader: ReadableStreamDefaultReader<Uint8Array>,
-	): Promise<boolean> => {
+	): Promise<{ sawResult: boolean; sawError: boolean }> => {
 		const decoder = new TextDecoder();
 		let buffer = "";
 		let currentEvent = "";
 		let sawResult = false;
+		let sawError = false;
 
 		while (true) {
 			const { done, value } = await reader.read();
@@ -157,6 +158,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 							data: JSON.parse(line.slice(6)),
 						});
 						if (currentEvent === "result") sawResult = true;
+						if (currentEvent === "error") sawError = true;
 					} catch {
 						// 忽略单行解析错误
 					}
@@ -167,7 +169,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			}
 		}
 		commitStreamingText();
-		return sawResult;
+		return { sawResult, sawError };
 	};
 
 	const connectEditorBridge = async ({ sessionId }: { sessionId: string }) => {
@@ -304,6 +306,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			});
 
 			let sawResult = false;
+			let sawError = false;
 			let failed = false;
 			try {
 				abortController = new AbortController();
@@ -313,7 +316,11 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 					signal: abortController.signal,
 				});
 				const reader = res.body?.getReader();
-				if (reader) sawResult = await consumeSSEStream(reader);
+				if (reader) {
+					const streamState = await consumeSSEStream(reader);
+					sawResult = streamState.sawResult;
+					sawError = streamState.sawError;
+				}
 			} catch (error) {
 				failed = true;
 				if (error instanceof DOMException && error.name === "AbortError") {
@@ -327,8 +334,8 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 					});
 				}
 			} finally {
-				// 流已结束但没收到 result：连接中断/被截断，明确告知用户，避免"静默结束"
-				if (!sawResult && !failed && !abortedByUser) {
+				// 流已结束但没收到 result 也没收到 error：连接中断/被截断，明确告知用户，避免"静默结束"
+				if (!sawResult && !sawError && !failed && !abortedByUser) {
 					pushMessage({
 						role: "system",
 						content: "连接中断：未收到完整回复，请重试",

@@ -33,7 +33,7 @@ from claude_agent_sdk._errors import (
     ProcessError,
 )
 
-from . import config
+from . import config, db
 from .editor_bridge import build_editor_mcp_server
 from .system_prompt import EDITOR_SYSTEM_PROMPT
 
@@ -203,8 +203,36 @@ class AgentService:
         """
         state = self._sessions.get(session_id)
         if not state:
-            yield StreamEvent(event="error", data={"error": f"Session 不存在: {session_id}"})
-            return
+            # 内存态缺失（服务重启/热重载后）：从 DB 反查会话元信息，恢复常驻 CLI 上下文
+            row = await db.fetchrow(
+                "SELECT project_id, user_id FROM agent_sessions WHERE session_id = $1",
+                session_id,
+            )
+            if not row:
+                yield StreamEvent(
+                    event="error", data={"error": f"Session 不存在: {session_id}"}
+                )
+                return
+            has_history = (
+                await db.fetchval(
+                    "SELECT 1 FROM agent_messages WHERE session_id = $1 LIMIT 1",
+                    session_id,
+                )
+                is not None
+            )
+            try:
+                await self.create_session(
+                    session_id=session_id,
+                    project_id=row["project_id"],
+                    user_id=row["user_id"],
+                    resume=has_history,
+                )
+                state = self._sessions[session_id]
+            except Exception as e:
+                yield StreamEvent(
+                    event="error", data={"error": f"Session 无法恢复: {e}"}
+                )
+                return
         if not state.is_active:
             try:
                 await self.create_session(
@@ -379,23 +407,70 @@ class AgentService:
     # 消息泵 / 残留清理（防止上一轮结果污染下一轮）
     # ------------------------------------------------------------------
 
+    async def _persist_turn(self, session_id: str, text: str) -> None:
+        """回合回复落库。由消息泵在 ResultMessage（或泵退出兜底）时调用：
+        泵按设计在客户端断流后仍消费完整回合，因此断流回合的历史也不会丢。"""
+        if not text:
+            return
+        try:
+            await db.execute(
+                "INSERT INTO agent_messages (session_id, role, content, created_at) "
+                "VALUES ($1, 'assistant', $2, $3)",
+                session_id,
+                text,
+                time.time(),
+            )
+            await db.execute(
+                "UPDATE agent_sessions SET last_activity = $2 WHERE session_id = $1",
+                session_id,
+                time.time(),
+            )
+        except Exception as e:
+            logger.warning(f"[Agent] [{session_id[:8]}] 回合落库失败: {e}")
+
     async def _message_pump(self, session_id: str) -> None:
         """常驻消费 SDK 消息流并写入会话队列（每个 session 唯一的消费者）。
 
         客户端断流后仍继续消费：本轮剩余消息会堆积在队列里，
         由下一轮开始前的 _discard_pending_messages 统一丢弃。
+        同时负责回合文本落库（ResultMessage 时写入完整回复，
+        泵退出前兜底写入残稿），避免断流/异常回合丢失历史。
         """
         state = self._sessions.get(session_id)
         if not state or not state.client:
             return
+        turn_text: list[str] = []
+        saw_delta = False
         try:
             async for msg in state.client.receive_messages():
+                if isinstance(msg, SDKStreamEvent):
+                    event = msg.event or {}
+                    delta = event.get("delta") or {}
+                    if event.get("type") == "content_block_delta":
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text") or ""
+                            if text:
+                                saw_delta = True
+                                turn_text.append(text)
+                        elif delta.get("type") == "thinking_delta":
+                            saw_delta = True
+                elif isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        # 与 SSE 生成器同口径：有增量文本时跳过完整消息块，避免重复
+                        if isinstance(block, TextBlock) and not saw_delta:
+                            turn_text.append(block.text)
+                elif isinstance(msg, ResultMessage):
+                    await self._persist_turn(session_id, "".join(turn_text))
+                    turn_text = []
+                    saw_delta = False
                 await state.messages.put(msg)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logger.warning(f"[Agent] [{session_id[:8]}] 消息泵退出: {type(e).__name__}: {e}")
         finally:
+            # 泵退出兜底：进程崩溃/会话关闭时写入残稿，保证已产生的回复不丢
+            await self._persist_turn(session_id, "".join(turn_text))
             state.pump_task = None
             try:
                 state.messages.put_nowait(None)  # 唤醒等待中的消费者

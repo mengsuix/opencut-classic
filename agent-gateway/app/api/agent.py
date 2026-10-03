@@ -142,37 +142,20 @@ async def send_message_stream(
     user_id = await resolve_user_id(bearer_token(authorization))
     await _get_owned_session(session_id, user_id)
 
+    # 用户消息先落库：即使回合因断流/异常未完成，重开面板历史也不丢。
+    # 回复文本由 agent_service 的消息泵在回合结束时落库（断流后泵仍消费完整回合）。
+    await db.execute(
+        "INSERT INTO agent_messages (session_id, role, content, created_at) "
+        "VALUES ($1, 'user', $2, $3)",
+        session_id,
+        req.message,
+        time.time(),
+    )
+
     async def event_generator():
-        reply_parts: list[str] = []
-        user_timestamp = time.time()
         stream = agent_service.send_message_stream(session_id, req.message)
         try:
             async for event in stream:
-                if event.event == "text" and "text" in event.data:
-                    reply_parts.append(event.data["text"])
-                elif event.event == "result":
-                    try:
-                        await db.execute(
-                            "INSERT INTO agent_messages (session_id, role, content, created_at) "
-                            "VALUES ($1, 'user', $2, $3)",
-                            session_id,
-                            req.message,
-                            user_timestamp,
-                        )
-                        await db.execute(
-                            "INSERT INTO agent_messages (session_id, role, content, created_at) "
-                            "VALUES ($1, 'assistant', $2, $3)",
-                            session_id,
-                            "".join(reply_parts),
-                            time.time(),
-                        )
-                        await db.execute(
-                            "UPDATE agent_sessions SET last_activity = $2 WHERE session_id = $1",
-                            session_id,
-                            time.time(),
-                        )
-                    except Exception:
-                        pass
                 yield event.to_sse()
         finally:
             # 客户端断流时显式关闭生成器：确保会话锁释放并触发断流收尾（清理残留结果）
