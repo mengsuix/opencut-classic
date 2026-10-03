@@ -109,6 +109,15 @@ def _error(message: str) -> dict:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
 
 
+def _evict_oldest_unpinned(handles: dict, pinned: set, max_n: int) -> None:
+    """FIFO 淘汰最旧的未固定句柄；全部固定时允许超限（参考图是评判循环的锚点，不可淘汰）"""
+    while len(handles) > max_n:
+        victim = next((h for h in handles if h not in pinned), None)
+        if victim is None:
+            return
+        handles.pop(victim)
+
+
 def build_editor_mcp_server(session_id: str):
     """为某个 session 构建 in-process MCP server（工具闭包绑定 session_id）"""
 
@@ -116,6 +125,7 @@ def build_editor_mcp_server(session_id: str):
     # 故回传给模型的图片同时在此登记 img-N 句柄，judge_visual 等工具
     # 凭句柄取图，图片字节不再传输。
     image_handles: dict[str, tuple[str, str]] = {}  # handle -> (base64_data, mime)
+    pinned_handles: set[str] = set()  # judge_visual 参考图句柄，不参与 FIFO 淘汰
     handle_seq = {"img": 0}
     MAX_IMAGE_HANDLES = 20
 
@@ -123,8 +133,10 @@ def build_editor_mcp_server(session_id: str):
         handle_seq["img"] += 1
         handle = f"img-{handle_seq['img']}"
         image_handles[handle] = (base64_data, mime)
-        while len(image_handles) > MAX_IMAGE_HANDLES:
-            image_handles.pop(next(iter(image_handles)))
+        # 新句柄一并保护：否则存量全是固定参考图时，新图会被立即淘汰
+        _evict_oldest_unpinned(
+            image_handles, pinned_handles | {handle}, MAX_IMAGE_HANDLES
+        )
         return handle
 
     async def run(command: str, args: dict | None = None) -> dict:
@@ -658,10 +670,16 @@ def build_editor_mcp_server(session_id: str):
         "HOW TO FEED IMAGES: capture the result with get_preview_frame (on-canvas composite) and read "
         "references with read_media/get_preview_frame first — their JSON results contain imageHandle "
         "fields; pass result handles as imageHandles (1~4) and, when the task references source images, "
-        "those handles as referenceHandles (0~4). "
+        "those handles as referenceHandles (0~4). Reference handles are pinned once used here and never "
+        "expire, so the same reference can anchor many iteration rounds. "
         "REQUIREMENT: write the acceptance criteria verbatim from the user's ask (e.g. '1:1 replicate the "
         "badge in the reference, exact text NEW' or 'same glowing style as the reference but text 限时优惠'). "
-        "The judge scores ONLY against this text — anything not stated is not penalized, so be specific. "
+        "The judge scores ONLY against this text — anything not stated is not penalized, so be specific: "
+        "for 1:1 replication state QUANTIFIED criteria (relative sizes/positions like 'star diameter ≈ 60% "
+        "of capsule height, its halo nearly touching the left rounded cap', colours, verbatim text) — "
+        "holistic phrases like 'same style' are unjudgeable. "
+        "SIDE-BY-SIDE: for a 1:1 replica check with exactly 1 result + 1 reference, set sideBySide=true — "
+        "the two are composited into one same-scale image, avoiding cross-image scale/colour misjudgement. "
         "On pass=false, iterate with the stated reasons (fix the HTML/params, re-capture, re-judge); "
         "report completion only after a pass.",
         {
@@ -679,7 +697,11 @@ def build_editor_mcp_server(session_id: str):
                 "referenceHandles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "0~4 image handles of reference images the result is judged against",
+                    "description": "0~4 image handles of reference images the result is judged against (pinned, never expire)",
+                },
+                "sideBySide": {
+                    "type": "boolean",
+                    "description": "true = composite result and reference into one same-scale side-by-side image before judging; requires exactly 1 imageHandle + 1 referenceHandle; recommended for 1:1 replication checks",
                 },
             },
             "required": ["requirement", "imageHandles"],
@@ -721,10 +743,16 @@ def build_editor_mcp_server(session_id: str):
         reference_images = _resolve_handles("referenceHandles", 0, 4)
         if isinstance(reference_images, dict):
             return reference_images
+        pinned_handles.update(args.get("referenceHandles") or [])
+
+        side_by_side = bool(args.get("sideBySide"))
+        if side_by_side and (len(result_images) != 1 or len(reference_images) != 1):
+            return _error("sideBySide 需要恰好 1 个 imageHandles + 1 个 referenceHandles")
 
         try:
             passed, verdict = await visual_judge.judge(
-                requirement.strip(), result_images, reference_images
+                requirement.strip(), result_images, reference_images,
+                side_by_side=side_by_side,
             )
         except Exception as e:
             return _error(f"评委调用失败: {type(e).__name__}: {e}")

@@ -33,6 +33,8 @@ JUDGE_SYSTEM_PROMPT = """\
   （配色/质感/发光/形状语言/动画气质），内容差异不扣分
 - 效果图中透明区域显示为浅色棋盘格，那是透明标记不是底色问题
 - 效果图可能是多张：同一对象的不同时间点/不同角度，逐一核对
+- 若输入为左右拼接的单张对比图（顶部标注 REFERENCE / RESULT）：左为参考、右为效果图，
+  两者已按同一尺度拼接，直接在图内逐项比对相对尺寸/位置/颜色，不要把两图的呈现差异当作差异
 
 # 输出协议（严格遵守）
 - 第一行：PASS: true 或 PASS: false
@@ -63,6 +65,53 @@ def _shrink_image(data: bytes, mime: str) -> tuple[str, str]:
     return out_mime, base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _compose_side_by_side(
+    result: tuple[bytes, str], reference: tuple[bytes, str]
+) -> tuple[bytes, str]:
+    """效果图与参考图缩放到同一高度、横向拼成单张对比图（顶部英文标注，中间分隔线），
+    消除评委跨图比较时的尺度/光照漂移。返回 (png_bytes, "image/png")"""
+    from PIL import Image, ImageDraw, ImageFont
+
+    def _load(data: bytes) -> "Image.Image":
+        img = Image.open(io.BytesIO(data))
+        return img.convert("RGBA") if img.mode == "P" else img.copy()
+
+    ref, res = _load(reference[0]), _load(result[0])
+    target_h = min(max(ref.height, res.height), MAX_IMAGE_EDGE)
+
+    def _fit(img: "Image.Image") -> "Image.Image":
+        if img.height == target_h:
+            return img
+        w = max(1, round(img.width * target_h / img.height))
+        return img.resize((w, target_h), Image.Resampling.LANCZOS)
+
+    ref, res = _fit(ref), _fit(res)
+
+    pad, label_h, gap = 16, 44, 24
+    canvas = Image.new(
+        "RGBA",
+        (pad * 2 + ref.width + gap + res.width, pad * 2 + label_h + target_h),
+        (128, 128, 128, 255),
+    )
+    canvas.alpha_composite(ref.convert("RGBA"), (pad, pad + label_h))
+    canvas.alpha_composite(res.convert("RGBA"), (pad + ref.width + gap, pad + label_h))
+    draw = ImageDraw.Draw(canvas)
+    try:
+        font = ImageFont.load_default(size=28)  # Pillow >= 10.1
+    except TypeError:
+        font = ImageFont.load_default()
+    draw.text((pad, pad + 6), "REFERENCE", fill=(255, 255, 255, 255), font=font)
+    draw.text(
+        (pad + ref.width + gap, pad + 6), "RESULT", fill=(255, 255, 255, 255), font=font
+    )
+    sep_x = pad + ref.width + gap // 2
+    draw.line([(sep_x, pad), (sep_x, canvas.height - pad)], fill=(255, 255, 255, 255), width=2)
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
+
+
 def _image_block(mime: str, b64_data: str) -> dict:
     """OpenAI/DeepSeek vision 图片块：data URL，detail=high 保留原图细节"""
     return {
@@ -84,20 +133,35 @@ async def judge(
     requirement: str,
     result_images: list[tuple[bytes, str]],
     reference_images: list[tuple[bytes, str]] | None = None,
+    side_by_side: bool = False,
 ) -> tuple[bool, str]:
     """评判效果图是否达标，返回 (pass, verdict_text)。
 
     result_images / reference_images: [(图片字节, mime), ...]
+    side_by_side: True 时要求恰好 1 效果 + 1 参考，拼成同尺度对比图送评委
     """
     content: list[dict] = []
-    for i, (data, mime) in enumerate(reference_images or [], 1):
+    if side_by_side:
+        if len(result_images) != 1 or not reference_images or len(reference_images) != 1:
+            raise ValueError("side_by_side 需要恰好 1 张效果图 + 1 张参考图")
+        data, mime = _compose_side_by_side(result_images[0], reference_images[0])
         shrunk_mime, b64 = _shrink_image(data, mime)
-        content.append({"type": "text", "text": f"参考图 {i}："})
+        content.append(
+            {
+                "type": "text",
+                "text": "对比图（左 REFERENCE 为参考，右 RESULT 为效果图，评判对象为效果图；两图已同尺度拼接）：",
+            }
+        )
         content.append(_image_block(shrunk_mime, b64))
-    for i, (data, mime) in enumerate(result_images, 1):
-        shrunk_mime, b64 = _shrink_image(data, mime)
-        content.append({"type": "text", "text": f"效果图 {i}（评判对象）："})
-        content.append(_image_block(shrunk_mime, b64))
+    else:
+        for i, (data, mime) in enumerate(reference_images or [], 1):
+            shrunk_mime, b64 = _shrink_image(data, mime)
+            content.append({"type": "text", "text": f"参考图 {i}："})
+            content.append(_image_block(shrunk_mime, b64))
+        for i, (data, mime) in enumerate(result_images, 1):
+            shrunk_mime, b64 = _shrink_image(data, mime)
+            content.append({"type": "text", "text": f"效果图 {i}（评判对象）："})
+            content.append(_image_block(shrunk_mime, b64))
     content.append(
         {
             "type": "text",
