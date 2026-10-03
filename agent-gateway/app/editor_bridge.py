@@ -20,8 +20,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from . import auth, config, db, fx_render, visual_judge
-# 注：独立 fx_render 工具仍停用（见下方注释块）；fx_render 模块在此作为
-# timeline.add_html preview 参数的内部 headless 渲染引擎复用。
+# 注：fx_render 是内部渲染模块（HyperFrames 封装），agent 侧暴露的工具名为 add_media。
 
 logger = logging.getLogger("agent-gateway.bridge")
 
@@ -482,18 +481,18 @@ def build_editor_mcp_server(session_id: str):
         }
 
     # ------------------------------------------------------------------
-    # fx_render：独立视频素材工具，与 add_html 平级。add_html 产活特效元素
-    # （文字可编辑、DOM/CSS/GSAP 动画），fx_render 产固定像素素材（透明 WebM 视频 /
+    # add_media：独立渲染素材工具，与 add_html 平级。add_html 产活特效元素
+    # （文字可编辑、DOM/CSS/GSAP 动画），add_media 产固定像素素材（透明 WebM 视频 /
     # PNG 图片），供 Canvas/WebGL/shader/粒子等 DOM 序列化承载不了的视觉。
     # 迭代统一走 frames/image（headless 秒级回图、注册 imageHandle 供评委对比），
-    # 达标后再 video 正式渲染（1~3 分钟）。
+    # 达标后再 video 正式渲染（1~3 分钟）。内部渲染引擎为 fx_render（HyperFrames）。
     # ------------------------------------------------------------------
     @tool(
-        "fx_render",
+        "add_media",
         "Render a self-contained HTML/CSS composition headlessly (HyperFrames, frame-accurate "
         "CSS/WAAPI/GSAP animation) into a MEDIA ASSET. Peer of timeline.add_html — choose by "
         "deliverable: add_html produces a LIVE editable effect element (text editable via data-param, "
-        "DOM/CSS/GSAP animation in the editor, near-zero cost); fx_render produces fixed pixels — a "
+        "DOM/CSS/GSAP animation in the editor, near-zero cost); add_media produces fixed pixels — a "
         "transparent-background VP9-alpha WebM video (or PNG) imported into the media library — for "
         "Canvas/WebGL/shader/particle visuals whose pixels never survive DOM serialization, or when a "
         "rendered video asset is wanted. "
@@ -538,7 +537,7 @@ def build_editor_mcp_server(session_id: str):
             "required": ["html"],
         },
     )
-    async def fx_render_tool(args):
+    async def add_media_tool(args):
         html = args.get("html")
         if not isinstance(html, str) or not html.strip():
             return _error("Missing required argument: html")
@@ -659,7 +658,7 @@ def build_editor_mcp_server(session_id: str):
         "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
         "for custom visuals (HTML effects, replicated styles) before reporting completion to the user — "
         "your own screenshot check is the draft review, this is the final review. "
-        "HOW TO FEED IMAGES: result images come from fx_render frames/image previews (headless "
+        "HOW TO FEED IMAGES: result images come from add_media frames/image previews (headless "
         "render — preferred during iteration, zero project pollution) or get_preview_frame (on-canvas "
         "composite — for the final integration check after inserting); read references with read_media/"
         "get_preview_frame first — their JSON results contain imageHandle fields; pass result handles "
@@ -767,7 +766,7 @@ def build_editor_mcp_server(session_id: str):
             get_preview_sequence,
             read_media,
             judge_visual_tool,
-            fx_render_tool,
+            add_media_tool,
         ],
     )
 

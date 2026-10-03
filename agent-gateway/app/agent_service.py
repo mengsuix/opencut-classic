@@ -49,7 +49,7 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__get_preview_frame",
     "mcp__opencut__get_preview_sequence",
     "mcp__opencut__read_media",
-    # "mcp__opencut__fx_render",  # fx_render 暂时停用（只保留 add_html），恢复时取消注释
+    "mcp__opencut__add_media",
 ]
 
 
