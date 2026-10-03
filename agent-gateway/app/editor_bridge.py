@@ -19,9 +19,9 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import auth, config, db, visual_judge
-# fx_render 暂时停用（工具块见下方注释），恢复时重新加入导入：
-# from . import fx_render
+from . import auth, config, db, fx_render, visual_judge
+# 注：独立 fx_render 工具仍停用（见下方注释块）；fx_render 模块在此作为
+# timeline.add_html preview 参数的内部 headless 渲染引擎复用。
 
 logger = logging.getLogger("agent-gateway.bridge")
 
@@ -52,6 +52,50 @@ _request_seq = 0
 
 class EditorNotConnectedError(RuntimeError):
     pass
+
+
+_ROOT_TAG_RE = re.compile(
+    r"<(?P<tag>[a-zA-Z][\w-]*)"
+    r"(?P<attrs>(?:[^>\"]|\"[^\"]*\")*?\bdata-width\s*=\s*\"\d+\")"
+    r"(?P<rest>(?:[^>\"]|\"[^\"]*\")*)>"
+)
+
+
+def _prepare_html_for_snapshot(html: str, timestamps: list[float] | None) -> str:
+    """把 add_html 约定的 HTML 补齐成 HyperFrames snapshot 可识别的 composition：
+    root（第一个带 data-width 的元素）缺啥补啥——data-composition-id/data-start/
+    data-duration；无 window.__timelines 时补 data-no-timeline 跳过 45s 注册等待。
+    duration 至少覆盖最后一个抽帧点 +0.5s（t==duration 的帧是空白）。
+    另补 <meta charset> 防中文乱码。
+    """
+    match = _ROOT_TAG_RE.search(html)
+    if not match:
+        raise fx_render.FxRenderError(
+            "html 的 root 元素缺少 data-width/data-height（与 add_html 要求一致）"
+        )
+    attrs = match.group("attrs") + match.group("rest")
+    inject = ""
+    if "data-composition-id" not in attrs:
+        inject += ' data-composition-id="main"'
+    if "data-start" not in attrs:
+        inject += ' data-start="0"'
+    if "data-duration" not in attrs:
+        duration = 5.0
+        if timestamps:
+            duration = max(duration, max(timestamps) + 0.5)
+        inject += f' data-duration="{duration:g}"'
+    if "window.__timelines" not in html and "data-no-timeline" not in attrs:
+        inject += " data-no-timeline"
+    if inject:
+        tag_end = match.start() + len(f"<{match.group('tag')}")
+        html = html[:tag_end] + inject + html[tag_end:]
+    if "charset" not in html.lower():
+        head = re.search(r"<head[^>]*>", html, re.IGNORECASE)
+        if head:
+            html = html[: head.end()] + '<meta charset="utf-8">' + html[head.end() :]
+        else:
+            html = '<meta charset="utf-8">' + html
+    return html
 
 
 def _derive_base_url(websocket: WebSocket) -> str:
@@ -190,9 +234,72 @@ def build_editor_mcp_server(session_id: str):
     async def get_user_marks(args):
         return await run("marks.get")
 
+    async def preview_add_html(preview, cmd_args):
+        """timeline.add_html 的 preview 分支：本地 headless 渲染 HTML 回图，不触碰编辑器"""
+        html = cmd_args.get("html")
+        if not isinstance(html, str) or not html.strip():
+            return _error("preview 模式需要 html 原文（不支持 presetId 预览）")
+        timestamps: list[float] | None = None
+        if isinstance(preview, list):
+            if not 1 <= len(preview) <= 4:
+                return _error("preview 时间点数组需 1~4 个（秒）")
+            if not all(
+                isinstance(t, (int, float)) and not isinstance(t, bool) and t >= 0
+                for t in preview
+            ):
+                return _error("preview 时间点必须是非负数值（秒）")
+            timestamps = sorted({round(float(t), 2) for t in preview})
+        try:
+            result = await fx_render.render_fx(
+                session_id,
+                _prepare_html_for_snapshot(html, timestamps),
+                format="frames" if timestamps else "image",
+                timestamps=timestamps,
+            )
+        except fx_render.FxRenderError as e:
+            return _error(f"预览渲染失败: {e}")
+        except Exception as e:
+            return _error(f"预览渲染异常: {type(e).__name__}: {e}")
+        paths = result.get("previewPaths") or []
+        if not paths and result.get("previewPath"):
+            paths = [result["previewPath"]]
+        images: list[dict] = []
+        handles: list[str] = []
+        for path in paths:
+            try:
+                png = Path(path).read_bytes()
+            except OSError as e:
+                logger.warning(f"读取预览图失败: {e}")
+                continue
+            b64 = base64.b64encode(png).decode("ascii")
+            handles.append(_register_image(b64, "image/png"))
+            images.append({"type": "image", "data": b64, "mimeType": "image/png"})
+        if not handles:
+            return _error("渲染成功但预览图生成失败")
+        meta = {
+            "preview": True,
+            "width": result["width"],
+            "height": result["height"],
+            "imageHandles": handles,
+            "next": (
+                "附带图片是本地 headless 渲染的预览（透明区显示为浅色棋盘格），"
+                "未插入时间轴、工程零污染。与参考图对比调 judge_visual"
+                "（imageHandles 传上述句柄，参考图句柄传 referenceHandles，"
+                "单效果图对单参考图传 sideBySide:true）。不达标就改 html 后再带 "
+                "preview 调本命令迭代；达标后用同一 html 去掉 preview 正式插入。"
+                "动画效果的 t=0 可能是入场前空白，截指定时刻用 preview: [秒, ...]。"
+            ),
+        }
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(meta, ensure_ascii=False, indent=2)},
+                *images,
+            ]
+        }
+
     @tool(
         "execute_command",
-        'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected.',
+        'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected. Special gateway-side extension: timeline.add_html accepts an extra "preview" arg in args — true renders the html headlessly and returns a preview image WITHOUT inserting (iterate against judge_visual); a list of timestamps [sec,...] captures those moments (for animated html); omit preview to actually insert.',
         {
             "type": "object",
             "properties": {
@@ -215,6 +322,10 @@ def build_editor_mcp_server(session_id: str):
         cmd_args = args.get("args")
         if not isinstance(cmd_args, dict):
             cmd_args = {}
+        if command == "timeline.add_html":
+            preview = cmd_args.pop("preview", None)
+            if preview:
+                return await preview_add_html(preview, cmd_args)
         return await run(command, cmd_args)
 
     @tool(
@@ -667,20 +778,23 @@ def build_editor_mcp_server(session_id: str):
         "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
         "for custom visuals (HTML effects, replicated styles) before reporting completion to the user — "
         "your own screenshot check is the draft review, this is the final review. "
-        "HOW TO FEED IMAGES: capture the result with get_preview_frame (on-canvas composite) and read "
-        "references with read_media/get_preview_frame first — their JSON results contain imageHandle "
-        "fields; pass result handles as imageHandles (1~4) and, when the task references source images, "
-        "those handles as referenceHandles (0~4). Reference handles are pinned once used here and never "
-        "expire, so the same reference can anchor many iteration rounds. "
-        "REQUIREMENT: write the acceptance criteria verbatim from the user's ask (e.g. '1:1 replicate the "
-        "badge in the reference, exact text NEW' or 'same glowing style as the reference but text 限时优惠'). "
-        "The judge scores ONLY against this text — anything not stated is not penalized, so be specific: "
-        "for 1:1 replication state QUANTIFIED criteria (relative sizes/positions like 'star diameter ≈ 60% "
-        "of capsule height, its halo nearly touching the left rounded cap', colours, verbatim text) — "
-        "holistic phrases like 'same style' are unjudgeable. "
-        "SIDE-BY-SIDE: for a 1:1 replica check with exactly 1 result + 1 reference, set sideBySide=true — "
+        "HOW TO FEED IMAGES: result images come from timeline.add_html preview (headless render — "
+        "preferred during iteration, zero project pollution) or get_preview_frame (on-canvas composite "
+        "— for the final integration check after inserting); read references with read_media/"
+        "get_preview_frame first — their JSON results contain imageHandle fields; pass result handles "
+        "as imageHandles (1~4) and, when the task references source images, those handles as "
+        "referenceHandles (0~4). Reference handles are pinned once used here and never expire, so the "
+        "same reference can anchor many iteration rounds. "
+        "REQUIREMENT: state acceptance criteria at the style/colour/structure/text level (e.g. 'dark "
+        "navy capsule with fully-rounded ends and a light-blue glowing rim; solid 5-pointed star badge "
+        "on the left; verbatim text Business gets handed out'). NEVER write pixel-level numbers — the "
+        "judge by default ignores pixel-level differences (rim thickness, glow intensity, few-px "
+        "offsets) and background differences (a reference frame may carry unrelated video background; "
+        "only the target content itself is compared), unless you explicitly demand pixel-exactness. "
+        "The judge scores ONLY against this text — anything not stated is not penalized. "
+        "SIDE-BY-SIDE: for a replica check with exactly 1 result + 1 reference, set sideBySide=true — "
         "the two are composited into one same-scale image, avoiding cross-image scale/colour misjudgement. "
-        "On pass=false, iterate with the stated reasons (fix the HTML/params, re-capture, re-judge); "
+        "On pass=false, iterate with the stated reasons (fix the HTML, re-render preview, re-judge); "
         "report completion only after a pass.",
         {
             "type": "object",
@@ -692,7 +806,7 @@ def build_editor_mcp_server(session_id: str):
                 "imageHandles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "1~4 image handles (img-N) of the RESULT to be judged, e.g. from get_preview_frame",
+                    "description": "1~4 image handles (img-N) of the RESULT to be judged, e.g. from add_html preview or get_preview_frame",
                 },
                 "referenceHandles": {
                     "type": "array",
