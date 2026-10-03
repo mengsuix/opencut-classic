@@ -29,16 +29,20 @@ function HtmlParamField({
 }) {
 	const editor = useEditor();
 	const current = element.params[paramKey];
-	const initialValue = typeof current === "string" ? current : "";
-	const [value, setValue] = useState(initialValue);
+	const sourceValue = typeof current === "string" ? current : "";
+	const [draft, setDraft] = useState<string | null>(null);
+	const value = draft ?? sourceValue;
 
 	const commit = () => {
+		const next = draft;
+		setDraft(null);
+		if (next === null || next === sourceValue) return;
 		editor.timeline.updateElements({
 			updates: [
 				{
 					trackId,
 					elementId: element.id,
-					patch: { params: { [paramKey]: value } },
+					patch: { params: { [paramKey]: next } },
 				},
 			],
 		});
@@ -47,7 +51,7 @@ function HtmlParamField({
 	return (
 		<Input
 			value={value}
-			onChange={(event) => setValue(event.target.value)}
+			onChange={(event) => setDraft(event.target.value)}
 			onBlur={commit}
 			onKeyDown={(event) => {
 				if (event.key === "Enter") {

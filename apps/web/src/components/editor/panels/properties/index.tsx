@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -97,7 +98,9 @@ export function PropertiesPanel() {
 				</div>
 			</TooltipProvider>
 			<ScrollArea className="flex-1 scrollbar-hidden">
-				{activeTab.content({ trackId: track.id })}
+				<Fragment key={element.id}>
+					{activeTab.content({ trackId: track.id })}
+				</Fragment>
 			</ScrollArea>
 		</div>
 	);
