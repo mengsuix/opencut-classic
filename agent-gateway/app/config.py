@@ -91,10 +91,10 @@ FX_ARTIFACT_TTL_SECONDS = float(os.environ.get("FX_ARTIFACT_TTL_SECONDS", str(7 
 JUDGE_BASE_URL = os.environ.get("JUDGE_BASE_URL", _provider_config["openai_base_url"])
 JUDGE_API_KEY = os.environ.get("JUDGE_API_KEY", AGENT_AUTH_TOKEN)
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", _provider_config["judge_model"])
-# 评委输出只有判定+理由列表，输出预算无需大
-JUDGE_MAX_TOKENS = int(os.environ.get("JUDGE_MAX_TOKENS", "4096"))
+# 不传 max_tokens：走 DeepSeek 思考模式默认上限（默认 64K，effort=max 时 128K），
+# 正常评判合计仅数百~数千 token，默认值足够且避免截断
 # 思考强度：none/low/high/max（思考模式下 temperature 不生效，故不传）
-JUDGE_REASONING_EFFORT = os.environ.get("JUDGE_REASONING_EFFORT", "high")
+JUDGE_REASONING_EFFORT = os.environ.get("JUDGE_REASONING_EFFORT", "max")
 
 MAX_TURNS_PER_SESSION = 1000
 IDLE_SESSION_SECONDS = float(os.environ.get("IDLE_SESSION_SECONDS", str(2 * 3600)))

@@ -113,7 +113,6 @@ async def judge(
     try:
         resp = await client.chat.completions.create(
             model=config.JUDGE_MODEL,
-            max_tokens=config.JUDGE_MAX_TOKENS,
             messages=[
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
                 {"role": "user", "content": content},
