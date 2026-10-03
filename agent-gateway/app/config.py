@@ -36,12 +36,17 @@ _PROVIDER_CONFIGS = {
         "api_key_env": "DEEPSEEK_API_KEY",
         "model": "deepseek-flash[1m]",
         "subagent_model": "deepseek-flash",
+        # 复刻内层循环走 OpenAI 兼容端点（模型名无 [1m] 后缀，那是 Anthropic 端点写法）
+        "openai_base_url": "https://api.deepseek.com",
+        "replicate_model": "deepseek-flash",
     },
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/anthropic",
         "api_key_env": "ZHIPU_API_KEY",
         "model": "glm-5.3-flash[1m]",
         "subagent_model": "glm-5.3-flash[1m]",
+        "openai_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "replicate_model": "glm-5.3-flash",
     },
 }
 
@@ -78,6 +83,20 @@ FX_RENDER_TIMEOUT_SECONDS = float(os.environ.get("FX_RENDER_TIMEOUT_SECONDS", "9
 FX_PUBLIC_BASE_URL = os.environ.get("FX_PUBLIC_BASE_URL", "").rstrip("/")
 # 特效产物（data/fx/<session>/<job>）保留时长，超期由空闲清理循环删除，默认 7 天
 FX_ARTIFACT_TTL_SECONDS = float(os.environ.get("FX_ARTIFACT_TTL_SECONDS", str(7 * 24 * 3600)))
+
+# ---------------------------------------------------------------------------
+# 参考图复刻内层循环（replicate_html 工具，html_replicate.py）
+# 走 provider 的 OpenAI 兼容端点（非 Anthropic 端点），默认复用同一 API key
+# ---------------------------------------------------------------------------
+REPLICATE_BASE_URL = os.environ.get("REPLICATE_BASE_URL", _provider_config["openai_base_url"])
+REPLICATE_API_KEY = os.environ.get("REPLICATE_API_KEY", AGENT_AUTH_TOKEN)
+REPLICATE_MODEL = os.environ.get("REPLICATE_MODEL", _provider_config["replicate_model"])
+# 迭代硬上限（首轮写作 + 修订轮）
+REPLICATE_MAX_ROUNDS = int(os.environ.get("REPLICATE_MAX_ROUNDS", "5"))
+# 单次输出上限：完整 HTML 常见 10~30KB；DeepSeek 思考模式默认 64K、上限 384K
+REPLICATE_MAX_TOKENS = int(os.environ.get("REPLICATE_MAX_TOKENS", "32768"))
+# 思考强度：none/low/high/max（思考模式下 temperature 不生效，故不传）
+REPLICATE_REASONING_EFFORT = os.environ.get("REPLICATE_REASONING_EFFORT", "high")
 
 MAX_TURNS_PER_SESSION = 1000
 IDLE_SESSION_SECONDS = float(os.environ.get("IDLE_SESSION_SECONDS", str(2 * 3600)))

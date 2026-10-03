@@ -5,3 +5,4 @@ asyncpg>=0.29
 aiomysql>=0.2
 pydantic>=2
 Pillow>=10.1
+openai>=1.0
