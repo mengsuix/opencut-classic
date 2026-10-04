@@ -27,6 +27,41 @@ pub enum FrameItemDescriptor {
         #[serde(rename = "effectPassGroups")]
         effect_pass_groups: Vec<Vec<EffectPassDescriptor>>,
     },
+    TransitionBlend(TransitionBlendDescriptor),
+}
+
+/// Pixel-level blend between two source textures driven by a transition
+/// progress value. Used for wipe/iris-style transitions where the incoming
+/// element reveals over the outgoing element along a geometric boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionBlendDescriptor {
+    /// Outgoing element texture (fully visible at progress 0).
+    pub texture_id_from: String,
+    /// Incoming element texture (fully visible at progress 1).
+    pub texture_id_to: String,
+    /// 0..1 transition progress.
+    pub progress: f32,
+    pub kind: TransitionBlendKind,
+    /// Edge softness in canvas-fraction units (0 = hard edge).
+    pub feather: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransitionBlendKind {
+    /// Radial reveal growing from the canvas center.
+    Iris,
+    /// Incoming reveals from the left edge toward the right.
+    WipeLeft,
+    /// Incoming reveals from the right edge toward the left.
+    WipeRight,
+    /// Incoming reveals from the top edge toward the bottom.
+    WipeUp,
+    /// Incoming reveals from the bottom edge toward the top.
+    WipeDown,
+    /// Five-pointed star reveal growing from the canvas center.
+    Star,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

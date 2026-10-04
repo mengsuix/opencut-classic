@@ -1,6 +1,7 @@
 mod blend_mode;
 mod compositor;
 mod frame;
+mod shaders;
 mod texture_pool;
 mod texture_store;
 
@@ -9,4 +10,5 @@ pub use compositor::{Compositor, CompositorError, RenderFrameOptions};
 pub use frame::{
     CanvasClearDescriptor, CanvasTextureDescriptor, EffectPassDescriptor, FrameDescriptor,
     FrameItemDescriptor, LayerDescriptor, LayerMaskDescriptor, QuadTransformDescriptor,
+    TransitionBlendDescriptor, TransitionBlendKind,
 };

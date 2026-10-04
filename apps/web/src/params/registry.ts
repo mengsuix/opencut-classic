@@ -379,6 +379,42 @@ const TRANSITION_TYPE_OPTIONS: Array<{ value: TransitionType; label: string }> =
 				return t("properties.transitionSlideRight");
 			},
 		},
+		{
+			value: "iris",
+			get label() {
+				return t("properties.transitionIris");
+			},
+		},
+		{
+			value: "wipe-left",
+			get label() {
+				return t("properties.transitionWipeLeft");
+			},
+		},
+		{
+			value: "wipe-right",
+			get label() {
+				return t("properties.transitionWipeRight");
+			},
+		},
+		{
+			value: "wipe-up",
+			get label() {
+				return t("properties.transitionWipeUp");
+			},
+		},
+		{
+			value: "wipe-down",
+			get label() {
+				return t("properties.transitionWipeDown");
+			},
+		},
+		{
+			value: "star",
+			get label() {
+				return t("properties.transitionStar");
+			},
+		},
 	];
 
 const transitionParams: ElementParamDefinition[] = [

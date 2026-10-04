@@ -1,5 +1,6 @@
 import type { BlendMode } from "@/rendering";
 import type { EffectPass } from "@/effects/types";
+import type { TransitionBlendKind } from "@/timeline/transition";
 
 export type FrameDescriptor = {
 	width: number;
@@ -23,6 +24,14 @@ export type FrameItemDescriptor =
 	| {
 			type: "sceneEffect";
 			effectPassGroups: EffectPass[][];
+	  }
+	| {
+			type: "transitionBlend";
+			textureIdFrom: string;
+			textureIdTo: string;
+			progress: number;
+			kind: TransitionBlendKind;
+			feather: number;
 	  };
 
 export type QuadTransformDescriptor = {

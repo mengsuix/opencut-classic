@@ -26,7 +26,13 @@ export type TransitionType =
 	| "black"
 	| "zoom"
 	| "slide-left"
-	| "slide-right";
+	| "slide-right"
+	| "iris"
+	| "wipe-left"
+	| "wipe-right"
+	| "wipe-up"
+	| "wipe-down"
+	| "star";
 
 export const TRANSITION_TYPES: readonly TransitionType[] = [
 	"none",
@@ -35,7 +41,49 @@ export const TRANSITION_TYPES: readonly TransitionType[] = [
 	"zoom",
 	"slide-left",
 	"slide-right",
+	"iris",
+	"wipe-left",
+	"wipe-right",
+	"wipe-up",
+	"wipe-down",
+	"star",
 ];
+
+/**
+ * Pixel-level blend transitions handled by the compositor's dual-source
+ * blend pass instead of per-element transform/opacity factors. Serialized
+ * as camelCase to match the rust TransitionBlendKind enum.
+ */
+export type TransitionBlendKind =
+	| "iris"
+	| "wipeLeft"
+	| "wipeRight"
+	| "wipeUp"
+	| "wipeDown"
+	| "star";
+
+const BLEND_TRANSITION_KINDS: Readonly<
+	Record<string, TransitionBlendKind>
+> = {
+	iris: "iris",
+	"wipe-left": "wipeLeft",
+	"wipe-right": "wipeRight",
+	"wipe-up": "wipeUp",
+	"wipe-down": "wipeDown",
+	star: "star",
+};
+
+export function isBlendTransitionType(
+	type: TransitionType,
+): type is TransitionType {
+	return type in BLEND_TRANSITION_KINDS;
+}
+
+export function transitionBlendKindFor(
+	type: TransitionType,
+): TransitionBlendKind | null {
+	return BLEND_TRANSITION_KINDS[type] ?? null;
+}
 
 export interface TransitionConfig {
 	type: TransitionType;
@@ -201,6 +249,46 @@ export function resolveElementTransitionAtTime({
 	}
 
 	return state;
+}
+
+/**
+ * For dual-source blend transitions (iris/wipe/star), returns the shared
+ * blend progress at a timeline time, or null when outside the blend window
+ * or when the transition is not a blend type. The outgoing and incoming
+ * blend windows overlap exactly ([T - duration, T]), so one progress value
+ * drives both roles. Times are in ticks.
+ */
+export function resolveTransitionBlendAtTime({
+	transitionIn,
+	transitionOut,
+	time,
+	timeOffset,
+	duration,
+	ticksPerSecond,
+}: {
+	transitionIn?: TransitionConfig;
+	transitionOut?: TransitionConfig;
+	time: number;
+	timeOffset: number;
+	duration: number;
+	ticksPerSecond: number;
+}): { progress: number; kind: TransitionBlendKind } | null {
+	const config = transitionOut ?? transitionIn;
+	if (!config || !isActiveTransition(config)) {
+		return null;
+	}
+	const kind = transitionBlendKindFor(config.type);
+	if (!kind) {
+		return null;
+	}
+	const durationTicks = config.duration * ticksPerSecond;
+	const seamTime =
+		(transitionOut ? timeOffset + duration : timeOffset) - durationTicks;
+	const progress = (time - seamTime) / durationTicks;
+	if (progress <= 0 || progress >= 1) {
+		return null;
+	}
+	return { progress, kind };
 }
 
 /** Left extension of the visible range for an element with transitionIn. */

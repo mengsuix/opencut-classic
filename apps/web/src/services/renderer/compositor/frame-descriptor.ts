@@ -29,6 +29,16 @@ import type {
 } from "./types";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
 
+/**
+ * Outgoing half of a dual-source blend transition waiting for its incoming
+ * half. Blend pairs arrive bottom-to-top (outgoing element below, incoming
+ * above), so a stack pairs them in order.
+ */
+type PendingTransitionFrom = {
+	itemIndex: number;
+	textureId: string;
+};
+
 export async function buildFrameDescriptor({
 	node,
 	renderer,
@@ -41,6 +51,7 @@ export async function buildFrameDescriptor({
 }> {
 	const items: FrameItemDescriptor[] = [];
 	const textures = new Map<string, TextureUploadDescriptor>();
+	const pendingTransitionFroms: PendingTransitionFrom[] = [];
 
 	await collectNode({
 		node,
@@ -48,6 +59,7 @@ export async function buildFrameDescriptor({
 		path: "root",
 		items,
 		textures,
+		pendingTransitionFroms,
 	});
 
 	incrementCounter({ name: "frameItems", by: items.length });
@@ -72,12 +84,14 @@ async function collectNode({
 	path,
 	items,
 	textures,
+	pendingTransitionFroms,
 }: {
 	node: AnyBaseNode;
 	renderer: CanvasRenderer;
 	path: string;
 	items: FrameItemDescriptor[];
 	textures: Map<string, TextureUploadDescriptor>;
+	pendingTransitionFroms: PendingTransitionFrom[];
 }): Promise<void> {
 	if (node instanceof RootNode) {
 		for (let index = 0; index < node.children.length; index++) {
@@ -87,6 +101,7 @@ async function collectNode({
 				path: `${path}:${index}`,
 				items,
 				textures,
+				pendingTransitionFroms,
 			});
 		}
 		return;
@@ -193,6 +208,7 @@ async function collectNode({
 			path,
 			items,
 			textures,
+			pendingTransitionFroms,
 		});
 		return;
 	}
@@ -214,12 +230,14 @@ async function collectVisualSourceNode({
 	path,
 	items,
 	textures,
+	pendingTransitionFroms,
 }: {
 	node: VideoNode | ImageNode | StickerNode | GraphicNode | HtmlNode;
 	renderer: CanvasRenderer;
 	path: string;
 	items: FrameItemDescriptor[];
 	textures: Map<string, TextureUploadDescriptor>;
+	pendingTransitionFroms: PendingTransitionFrom[];
 }) {
 	if (!node.resolved) {
 		return;
@@ -265,6 +283,30 @@ async function collectVisualSourceNode({
 		transform,
 		textures,
 	});
+
+	const transitionBlend = node.resolved.transitionBlend;
+	if (transitionBlend) {
+		const pending = pendingTransitionFroms.pop();
+		if (pending) {
+			// Incoming half arrived: replace the outgoing layer in place with
+			// one dual-source blend item; this layer itself is consumed.
+			items[pending.itemIndex] = {
+				type: "transitionBlend",
+				textureIdFrom: pending.textureId,
+				textureIdTo: textureId,
+				progress: transitionBlend.progress,
+				kind: transitionBlend.kind,
+				feather: 0,
+			};
+			if (strokeLayer) {
+				items.push(strokeLayer);
+			}
+			return;
+		}
+		// Outgoing half: register and emit the plain layer; it is swapped for
+		// the blend item when the incoming half arrives later in this frame.
+		pendingTransitionFroms.push({ itemIndex: items.length, textureId });
+	}
 
 	items.push({
 		type: "layer",

@@ -17,6 +17,12 @@ const TRANSITION_LABEL_KEYS = {
 	zoom: "properties.transitionZoom",
 	"slide-left": "properties.transitionSlideLeft",
 	"slide-right": "properties.transitionSlideRight",
+	iris: "properties.transitionIris",
+	"wipe-left": "properties.transitionWipeLeft",
+	"wipe-right": "properties.transitionWipeRight",
+	"wipe-up": "properties.transitionWipeUp",
+	"wipe-down": "properties.transitionWipeDown",
+	star: "properties.transitionStar",
 } as const;
 
 export function TransitionsView() {
@@ -119,6 +125,12 @@ function TransitionPreview({ type }: { type: TransitionType }) {
 					type === "zoom" && "scale-110",
 					type === "slide-left" && "-translate-x-2",
 					type === "slide-right" && "translate-x-2",
+					type === "iris" && "[clip-path:circle(45%_at_50%_50%)]",
+					type === "star" && "[clip-path:polygon(50%_10%,61%_38%,90%_40%,67%_58%,76%_88%,50%_70%,24%_88%,33%_58%,10%_40%,39%_38%)]",
+					type === "wipe-left" && "translate-x-2",
+					type === "wipe-right" && "-translate-x-2",
+					type === "wipe-up" && "[clip-path:polygon(0_55%,100%_55%,100%_100%,0_100%)]",
+					type === "wipe-down" && "[clip-path:polygon(0_0,100%_0,100%_45%,0_45%)]",
 				)}
 			/>
 			{type === "fade" && (

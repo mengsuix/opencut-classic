@@ -3,6 +3,7 @@ import {
 	buildTransitionFromParams,
 	computeTrackTransitions,
 	isActiveTransition,
+	resolveTransitionBlendAtTime,
 	resolveTransitionIncoming,
 	resolveTransitionOutgoing,
 } from "../transition";
@@ -226,6 +227,96 @@ describe("computeTrackTransitions", () => {
 		expect(assignments.get("c")?.transitionIn).toEqual({
 			type: "zoom",
 			duration: 1,
+		});
+	});
+});
+
+describe("resolveTransitionBlendAtTime", () => {
+	const base = {
+		time: 0,
+		timeOffset: 0,
+		duration: 120_000,
+		ticksPerSecond: 1000,
+	};
+
+	test("returns null for non-blend transition types", () => {
+		expect(
+			resolveTransitionBlendAtTime({
+				...base,
+				transitionOut: { type: "fade", duration: 1 },
+			}),
+		).toBeNull();
+	});
+
+	test("returns null outside the blend window", () => {
+		const transitionOut = { type: "iris" as const, duration: 1 };
+		// Window is [119_000, 120_000]; before it the outgoing element is
+		// fully visible, after it the incoming element takes over alone.
+		expect(
+			resolveTransitionBlendAtTime({
+				...base,
+				transitionOut,
+				time: 118_999,
+			}),
+		).toBeNull();
+		expect(
+			resolveTransitionBlendAtTime({
+				...base,
+				transitionOut,
+				time: 120_000,
+			}),
+		).toBeNull();
+	});
+
+	test("progress matches across the outgoing and incoming windows", () => {
+		const config = { type: "iris" as const, duration: 1 };
+		const from = resolveTransitionBlendAtTime({
+			...base,
+			transitionOut: config,
+			time: 119_250,
+		});
+		const to = resolveTransitionBlendAtTime({
+			...base,
+			timeOffset: 120_000,
+			transitionIn: config,
+			time: 119_250,
+		});
+		expect(from).toEqual({ progress: 0.25, kind: "iris" });
+		expect(to).toEqual({ progress: 0.25, kind: "iris" });
+	});
+
+	test("maps blend types to compositor kinds", () => {
+		const cases = [
+			["star", "star"],
+			["wipe-left", "wipeLeft"],
+			["wipe-down", "wipeDown"],
+		] as const;
+		for (const [type, kind] of cases) {
+			const result = resolveTransitionBlendAtTime({
+				...base,
+				transitionOut: { type, duration: 1 },
+				time: 119_500,
+			});
+			expect(result?.kind).toBe(kind);
+		}
+	});
+
+	test("blend transition types leave per-element factors idle", () => {
+		expect(
+			resolveTransitionOutgoing({ type: "iris", progress: 0.5 }),
+		).toEqual({
+			opacityFactor: 1,
+			scaleFactor: 1,
+			offsetX: 0,
+			offsetY: 0,
+		});
+		expect(
+			resolveTransitionIncoming({ type: "star", progress: 0.5, canvasWidth: CANVAS_WIDTH }),
+		).toEqual({
+			opacityFactor: 1,
+			scaleFactor: 1,
+			offsetX: 0,
+			offsetY: 0,
 		});
 	});
 });
