@@ -493,7 +493,8 @@ def build_editor_mcp_server(session_id: str):
         "CSS/WAAPI/GSAP animation) into a MEDIA ASSET. Peer of timeline.add_html — choose by "
         "deliverable: add_html produces a LIVE editable effect element (text editable via data-param, "
         "DOM/CSS/GSAP animation in the editor, near-zero cost); add_media produces fixed pixels — a "
-        "transparent-background VP9-alpha WebM video (or PNG) imported into the media library — for "
+        "transparent-background VP9-alpha WebM video (or PNG) imported as a generated effect asset "
+        "(shown in the Effects panel's generated section, hidden from the media library) — for "
         "Canvas/WebGL/shader/particle visuals whose pixels never survive DOM serialization, or when a "
         "rendered video asset is wanted. "
         "ITERATION FLOW: author the HTML, then iterate with format \"frames\" (animated) or \"image\" "
@@ -601,7 +602,7 @@ def build_editor_mcp_server(session_id: str):
         if result["kind"] == "image":
             next_steps = (
                 "确认附带预览图与目标一致后再插入："
-                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第一步：execute_command 执行 media.import（参数 name + url + ephemeral:true，产物进特效面板生成区、不进素材库），记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
                 "{type:'image', mediaId: assetId, startTime, duration}，"
@@ -610,7 +611,7 @@ def build_editor_mcp_server(session_id: str):
             )
         else:
             next_steps = (
-                '第一步：execute_command 执行 media.import（参数 name + url）导入素材库，记录返回的 asset id；'
+                '第一步：execute_command 执行 media.import（参数 name + url + ephemeral:true，产物进特效面板生成区、不进素材库），记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
                 "{type:'video', mediaId: assetId, startTime, duration}"

@@ -943,11 +943,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.add_html": {
 		description:
-						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as fx_render) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — those stay with fx_render. Animated HTML is NOT cropped: use project canvas data-width/data-height and size/position the root explicitly so the fixed box holds every frame. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use fx_render only for Canvas/WebGL/shader/particle visuals whose pixels never touch the DOM. Keep the document small: animated HTML is re-rasterized every preview frame at full document cost — stay under ~1000 DOM elements / ~200KB (measured ~30fps at 1000 elements, ~20fps at 3000); prefer fewer nodes over large backgrounds, split complex visuals into multiple elements, and use static HTML when no animation is needed.",
+						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as fx_render) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — those stay with fx_render. Animated HTML is NOT cropped: use project canvas data-width/data-height and size/position the root explicitly so the fixed box holds every frame. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use fx_render only for Canvas/WebGL/shader/particle visuals whose pixels never touch the DOM. Keep the document small: animated HTML is re-rasterized every preview frame at full document cost — stay under ~1000 DOM elements / ~200KB (measured ~30fps at 1000 elements, ~20fps at 3000); prefer fewer nodes over large backgrounds, split complex visuals into multiple elements, and use static HTML when no animation is needed. Every insertion with new HTML is auto-saved as a reusable effect preset (Effects panel, generated section) — pass a short readable name; inserting via presetId does not create a new preset.",
 		args: {
 			html: "string? (complete self-contained HTML document; required unless presetId is given)",
 			presetId:
 				"string? (saved preset from html.list_presets; replaces html)",
+			name: "string? (short readable label; every new insertion is auto-saved as a reusable effect preset under this name)",
 			startTime: "seconds? (default 0)",
 			duration: "seconds? (default editor default)",
 			trackId: "string? (omit for auto placement)",
@@ -989,6 +990,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				const size = resolveHtmlSize({ html });
 				intrinsicWidth = size.width;
 				intrinsicHeight = size.height;
+				name =
+					typeof args.name === "string" && args.name.length > 0
+						? args.name
+						: name;
 				params = {
 					...((args.params as Record<string, unknown> | undefined) ?? {}),
 				};
@@ -1010,8 +1015,29 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				? { mode: "explicit", trackId: requestedTrackId }
 				: { mode: "auto", trackType: "graphic" };
 			const inserted = insertAndSelect(editor, element, placement);
+			// New HTML (not a presetId reuse) is auto-saved as a reusable preset,
+			// so agent output lands in the Effects panel generated section by default.
+			let savedPresetId: string | null = null;
+			if (!presetId) {
+				const preset = {
+					id: generateUUID(),
+					name,
+					html,
+					params: { ...params } as never,
+					intrinsicWidth,
+					intrinsicHeight,
+				};
+				editor.project.setHtmlPresets({
+					presets: [...editor.project.getHtmlPresets(), preset],
+				});
+				savedPresetId = preset.id;
+			}
 			const warnings = largeAnimatedHtmlWarnings({ html });
-			return warnings.length > 0 ? { ...inserted, warnings } : inserted;
+			return {
+				...inserted,
+				...(savedPresetId ? { presetId: savedPresetId } : {}),
+				...(warnings.length > 0 ? { warnings } : {}),
+			};
 		},
 	},
 
@@ -1701,6 +1727,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			dataBase64: "string?",
 			url: "string? (gateway artifact URL, e.g. from fx_render)",
 			mimeType: "string?",
+			ephemeral:
+				"boolean? (hide from the media panel — agent-generated fx assets are listed in the Effects panel generated section instead)",
 		},
 		run: async ({ editor, args }) => {
 			const name = requireString(args.name, "name");
@@ -1728,6 +1756,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const projectId = editor.project.getActive().metadata.id;
 			const imported: Array<{ id: string; name: string; type: string }> = [];
 			for (const asset of processed) {
+				if (args.ephemeral === true) {
+					asset.ephemeral = true;
+				}
 				const added = await editor.media.addMediaAsset({
 					projectId,
 					asset,

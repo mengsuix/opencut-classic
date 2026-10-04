@@ -466,7 +466,7 @@ function MediaTypePlaceholder({
 	);
 }
 
-function MediaPreview({
+export function MediaPreview({
 	item,
 	variant = "grid",
 }: {

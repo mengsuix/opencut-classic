@@ -1,16 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { Code, Plus, X } from "lucide-react";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { DraggableItem } from "@/components/editor/panels/assets/draggable-item";
+import { MediaPreview } from "@/components/editor/panels/assets/views/assets";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Button } from "@/components/ui/button";
 import { effectsRegistry, EFFECT_TARGET_ELEMENT_TYPES } from "@/effects";
 import { effectPreviewService } from "@/services/renderer/effect-preview";
+import { loadHtmlSource } from "@/services/renderer/nodes/html-node";
 import { useEditor } from "@/editor/use-editor";
 import { useT } from "@/i18n";
-import { buildEffectElement } from "@/timeline/element-utils";
+import { invokeAction } from "@/actions";
+import {
+	buildEffectElement,
+	buildElementFromMedia,
+} from "@/timeline/element-utils";
 import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
+import { mediaTimeFromSeconds, type MediaTime } from "@/wasm";
+import { MASKABLE_ELEMENT_TYPES } from "@/timeline";
 import type { CreateTimelineElement } from "@/timeline";
 import type { HtmlPreset } from "@/project/types";
+import type { MediaAsset } from "@/media/types";
 import type { EffectDefinition } from "@/effects/types";
 
 export function EffectsView() {
@@ -19,19 +31,91 @@ export function EffectsView() {
 
 	return (
 		<PanelView title={t("properties.tabEffects")}>
-			<EffectsGrid effects={effects} />
-			<HtmlPresetsSection />
+			<GeneratedFxSection />
+			<div className="mt-4 flex flex-col gap-2">
+				<span className="text-muted-foreground text-xs">
+					{t("assets.builtinEffects")}
+				</span>
+				<EffectsGrid effects={effects} />
+			</div>
 		</PanelView>
 	);
 }
 
-/** Saved live-HTML effects of this project: click to drop a copy at the playhead. */
-function HtmlPresetsSection() {
+/**
+ * Agent output shelf: HTML presets (auto-saved by timeline.add_html) and
+ * rendered fx media assets (media.import ephemeral=true, hidden from the
+ * media panel). Click the plus button to drop a copy at the playhead.
+ */
+function GeneratedFxSection() {
+	const t = useT();
+	const presets = useEditor((e) => e.project.getHtmlPresets());
+	const mediaAssets = useEditor((e) => e.media.getAssets());
+	const fxMedia = mediaAssets.filter((item) => item.ephemeral);
+
+	return (
+		<div className="flex flex-col gap-2">
+			<span className="text-muted-foreground text-xs">
+				{t("assets.generatedFx")}
+			</span>
+			{presets.length === 0 && fxMedia.length === 0 ? (
+				<p className="text-muted-foreground text-xs">
+					{t("assets.generatedFxEmpty")}
+				</p>
+			) : (
+				<div
+					className="grid gap-2"
+					style={{
+						gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+					}}
+				>
+					{presets.map((preset) => (
+						<HtmlPresetItem key={preset.id} preset={preset} />
+					))}
+					{fxMedia.map((asset) => (
+						<GeneratedMediaItem key={asset.id} asset={asset} />
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function ItemButton({
+	className,
+	title,
+	onClick,
+	children,
+}: {
+	className?: string;
+	title?: string;
+	onClick: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<Button
+			size="icon"
+			className={className}
+			title={title}
+			onClick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				onClick();
+			}}
+		>
+			{children}
+		</Button>
+	);
+}
+
+const ITEM_BUTTON_CLASS =
+	"bg-background hover:bg-background text-foreground absolute size-5 opacity-0 group-hover:opacity-100";
+
+function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 	const t = useT();
 	const editor = useEditor();
-	const presets = useEditor((e) => e.project.getHtmlPresets());
 
-	const insertPreset = (preset: HtmlPreset) => {
+	const insertPreset = () => {
 		editor.timeline.insertElement({
 			placement: { mode: "auto", trackType: "graphic" },
 			element: {
@@ -47,43 +131,151 @@ function HtmlPresetsSection() {
 		});
 	};
 
-	const removePreset = (presetId: string) => {
+	const removePreset = () => {
 		editor.project.setHtmlPresets({
-			presets: presets.filter((preset) => preset.id !== presetId),
+			presets: editor.project
+				.getHtmlPresets()
+				.filter((item) => item.id !== preset.id),
 		});
 	};
 
 	return (
-		<div className="mt-4 flex flex-col gap-2">
-			<span className="text-muted-foreground text-xs">
-				{t("assets.htmlPresets")}
-			</span>
-			{presets.length === 0 ? (
-				<p className="text-muted-foreground text-xs">
-					{t("assets.htmlPresetsEmpty")}
-				</p>
-			) : (
-				<div className="flex flex-col gap-1">
-					{presets.map((preset) => (
-						<div key={preset.id} className="flex items-center gap-1">
-							<button
-								type="button"
-								onClick={() => insertPreset(preset)}
-								className="bg-secondary text-secondary-foreground hover:bg-secondary/80 flex-1 truncate rounded-sm px-2 py-1.5 text-left text-xs"
-							>
-								{preset.name}
-							</button>
-							<button
-								type="button"
-								onClick={() => removePreset(preset.id)}
-								className="text-muted-foreground hover:text-foreground px-1 text-xs"
-							>
-								✕
-							</button>
-						</div>
-					))}
-				</div>
-			)}
+		<div className="group relative w-full">
+			<div className="relative flex h-auto w-full flex-col gap-1">
+				<AspectRatio
+					ratio={16 / 9}
+					className="bg-accent relative overflow-hidden rounded-sm"
+				>
+					<HtmlPresetPreview preset={preset} />
+					<ItemButton
+						className={`${ITEM_BUTTON_CLASS} right-2 bottom-2`}
+						title={t("assets.addToTimelineOrDrag")}
+						onClick={insertPreset}
+					>
+						<Plus />
+					</ItemButton>
+					<ItemButton
+						className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
+						title={t("common.delete")}
+						onClick={removePreset}
+					>
+						<X />
+					</ItemButton>
+				</AspectRatio>
+				<span
+					className="text-muted-foreground w-full truncate text-left text-[0.7rem]"
+					title={preset.name}
+				>
+					{preset.name}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+/** Rasterized first impression of an HTML preset, sharing the renderer cache. */
+function HtmlPresetPreview({ preset }: { preset: HtmlPreset }) {
+	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const [failed, setFailed] = useState(false);
+
+	// Presets are immutable snapshots (html.update never touches them), so the
+	// effect runs once per mounted preset and `failed` needs no reset.
+	useEffect(() => {
+		let cancelled = false;
+		loadHtmlSource({
+			html: preset.html,
+			params: preset.params ?? {},
+			width: preset.intrinsicWidth,
+			height: preset.intrinsicHeight,
+			// Static HTML ignores `seconds`; animated/scripted HTML is shown past
+			// the intro so the thumbnail is not a blank t=0 frame.
+			seconds: 0.5,
+		})
+			.then(({ source, width, height }) => {
+				if (cancelled || !canvasRef.current) return;
+				const scale = Math.min(1, 320 / Math.max(width, height));
+				const w = Math.max(1, Math.round(width * scale));
+				const h = Math.max(1, Math.round(height * scale));
+				const canvas = canvasRef.current;
+				canvas.width = w;
+				canvas.height = h;
+				canvas.getContext("2d")?.drawImage(source, 0, 0, w, h);
+			})
+			.catch(() => {
+				if (!cancelled) setFailed(true);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [preset]);
+
+	if (failed) {
+		return (
+			<div className="text-muted-foreground flex size-full items-center justify-center">
+				<Code className="size-6" />
+			</div>
+		);
+	}
+	return <canvas ref={canvasRef} className="size-full object-contain" />;
+}
+
+function GeneratedMediaItem({ asset }: { asset: MediaAsset }) {
+	const t = useT();
+	const editor = useEditor();
+	const activeProject = useEditor((e) => e.project.getActive());
+
+	const addToTimeline = ({ currentTime }: { currentTime: MediaTime }) => {
+		const duration =
+			asset.duration != null
+				? mediaTimeFromSeconds({ seconds: asset.duration })
+				: DEFAULT_NEW_ELEMENT_DURATION;
+		const element = buildElementFromMedia({
+			mediaId: asset.id,
+			mediaType: asset.type,
+			name: asset.name,
+			duration,
+			startTime: currentTime,
+		});
+		editor.timeline.insertElement({
+			element,
+			placement: { mode: "auto" },
+		});
+	};
+
+	const removeAsset = () => {
+		invokeAction("remove-media-assets", {
+			projectId: activeProject.metadata.id,
+			assetIds: [asset.id],
+		});
+	};
+
+	return (
+		<div className="group relative">
+			<DraggableItem
+				name={asset.name}
+				preview={<MediaPreview item={asset} variant="grid" />}
+				dragData={{
+					id: asset.id,
+					type: "media",
+					mediaType: asset.type,
+					name: asset.name,
+					...(asset.type !== "audio" && {
+						targetElementTypes: [...MASKABLE_ELEMENT_TYPES],
+					}),
+				}}
+				shouldShowPlusOnDrag={false}
+				onAddToTimeline={addToTimeline}
+				variant="card"
+				isRounded
+				containerClassName="w-full"
+			/>
+			<ItemButton
+				className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
+				title={t("common.delete")}
+				onClick={removeAsset}
+			>
+				<X />
+			</ItemButton>
 		</div>
 	);
 }

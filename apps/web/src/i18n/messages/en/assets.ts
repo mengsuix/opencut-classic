@@ -7,9 +7,10 @@ export const assets = {
 	"assets.tabCaptions": "Captions",
 	"assets.tabAdjustment": "Adjustment",
 	"assets.tabSettings": "Settings",
-	"assets.htmlPresets": "HTML effects",
-	"assets.htmlPresetsEmpty":
-		"No saved effects yet. Select an HTML effect on the timeline and use Save as effect to reuse it here.",
+	"assets.generatedFx": "Generated",
+	"assets.generatedFxEmpty":
+		"No generated effects yet. Effects created by the agent will appear here.",
+	"assets.builtinEffects": "Built-in effects",
 	"assets.transitionSelectHint":
 		"Select a video or image clip, then click to apply a transition. It renders between that clip and the next adjacent clip on the same track (no gap between them); play across the junction to see it",
 	"assets.adjustmentCustom": "Custom Adjustment",

@@ -5,7 +5,7 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
 
 # HTML 特效写作规范（add_html / add_media 双路通用）
 
-同一份 HTML 可走两条交付路：`timeline.add_html`（编辑器内活元素，文字经 data-param 可编辑）或 `add_media`（渲染成透明 WebM/PNG 素材入库）。写法和契约完全一致，渲染契约属性（data-composition-id/data-duration 等）由服务端自动补齐，**不用自己写**。
+同一份 HTML 可走两条交付路：`timeline.add_html`（编辑器内活元素，文字经 data-param 可编辑；传 name 起可读名，插入即自动存入特效面板「生成特效」区）或 `add_media`（渲染成透明 WebM/PNG，同样进「生成特效」区、不进素材库）。写法和契约完全一致，渲染契约属性（data-composition-id/data-duration 等）由服务端自动补齐，**不用自己写**。
 
 ## HTML 契约（必须满足）
 
