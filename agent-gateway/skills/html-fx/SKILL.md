@@ -14,7 +14,7 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
   - `add_html` 活特效：声明框就是元素在画布上的像素尺寸——静态会裁掉空白边，动画不裁，所以动画要按特效自身尺寸声明（框装下动画全程、含位移行程），用 transform.positionX/positionY 定位；用画布尺寸会让元素框变成整幅画布
   - `add_media` 渲染素材：产物插入时按画布 contain 缩放，小画布会被放大，所以渲染/评审那一版用项目画布尺寸声明、把同一块特效按目标位置摆进画布坐标
 - 页面背景透明（要底板就在 root 内画一个全尺寸子元素）
-- 脚本允许内联或 HTTPS CDN（如 GSAP：`https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js`）；图片/字体必须 data: 内联
+- 脚本允许内联或 HTTPS CDN（如 GSAP：`https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js`）；图片/字体必须 data: 内联（例外：烘焙转场的 `<video>` 素材源，见下文「视频帧源」节）
 - 所有 id 全文档唯一
 
 ## 动画二选一
@@ -37,6 +37,18 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
 - 一组 stagger 总时长收敛：`元素数 × stagger ≤ 0.5s`，一批到达读作一个节拍
 - 大量同时动画的元素加 `will-change: transform`
 - DOM 测量（`getBoundingClientRect` 等）只能在构建期做一次并存常量，禁在 tween 回调里量
+
+## 视频帧源：剪辑窗口烘焙（转场/混剪，走全部帧不抽帧）
+
+需要把素材的一段真实画面嵌进产物时（典型：烘焙转场——把转场点前后的 A 尾段 + B 首段合成一段转场视频），用 `<video>` 直接引用素材 URL，**不要抽帧嵌 base64**（抽帧会丢运动连贯性出定格感）：
+
+- 素材 URL 从 `media.list` / `get_editor_state` 的 mediaAssets `url` 字段取（签名 URL，渲染机本机 Chrome 可直接访问；带 `crossorigin="anonymous"`，COS 已配 CORS）
+- **Media Fragments 限定窗口**：`src="<url>#t=<start>,<end>"`（素材时间轴秒数）——浏览器只 Range 拉该片段的数据，80 分钟长视频也只拉几 MB，不下载整段
+- **全帧率预解码到缓存**：`<video preload="auto" muted playsinline>`（隐藏 display:none），注册 timeline **之前**异步逐帧 seek（步长 1/fps）把每帧 `drawImage` 到离屏 canvas 数组；帧数 = 窗口时长 × fps（0.9s@30 = 27 帧）。这一步复用"异步准备、就绪后才注册 timeline"的契约（同 fonts.ready）
+- **timeline 内同步合成**：`onUpdate` 里按 progress 从帧缓存 `drawImage` 到主 canvas（A 帧全幅垫底，按几何窗口/混合算法裁剪叠 B 帧）——全程同步、无外部时钟、双向 seek 安全
+- 帧缓存内存 ≈ 帧数 × 宽×高×4B（27 帧×2 段 720p ≈ 200MB）：**窗口控制在 ≤1.5s**，超了拆两段渲染
+- 产物是**实底**完整画面（非透明特效）：渲染/评审版用项目画布尺寸声明，特效内容按画布坐标摆；插入后盖住底层窗口，窗口结束帧与底层同源同时刻即无缝——**时间线不用 split**，窗口内音频也连续
+- A/B 双源：两个 `<video>` 各引各的窗口（同素材两段 `#t=`，或 split 两侧两个素材各一个 URL）
 
 ## 迭代纪律
 

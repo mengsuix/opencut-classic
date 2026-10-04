@@ -935,6 +935,7 @@ function buildEditorState(editor: EditorCore) {
 			width: asset.width,
 			height: asset.height,
 			fps: asset.fps,
+			url: asset.url,
 		})),
 		missingMedia: collectMissingMediaRefs(editor),
 	};
@@ -2224,7 +2225,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"media.list": {
-		description: "List imported media assets.",
+		description:
+			"List imported media assets. The url field is the playable source URL of the asset (signed/time-limited) — usable as a <video> src in add_media HTML for clip-window baking (see html-fx skill: video frame sources).",
 		run: ({ editor }) => ({
 			assets: editor.media.getAssets().map((asset) => ({
 				id: asset.id,
@@ -2234,6 +2236,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				width: asset.width,
 				height: asset.height,
 				fps: asset.fps,
+				url: asset.url,
 			})),
 		}),
 	},

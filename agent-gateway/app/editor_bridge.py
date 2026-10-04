@@ -516,7 +516,16 @@ def build_editor_mcp_server(session_id: str):
         "Formats: \"frames\" — key frames at default 0.2/0.5/0.8 of the duration or explicit "
         "\"timestamps\" (max 12; avoid t=0 and t==duration, both can be blank), more than 4 frames "
         "return as ONE contact sheet; \"image\" — static PNG at t=0; \"video\" (default) — animated "
-        "transparent-background WebM (plain video element compositing, no blend mode needed).",
+        "transparent-background WebM (plain video element compositing, no blend mode needed). "
+        "VIDEO FRAME SOURCES: to bake real footage into the asset (e.g. a transition clip spanning "
+        "the cut point), embed <video crossorigin=\"anonymous\" preload=\"auto\" muted playsinline "
+        "src=\"<asset url>#t=<start>,<end>\"> using the url field from media.list/get_editor_state "
+        "mediaAssets (Media Fragments window; the browser range-fetches only that segment — no full "
+        "download even for long sources). Pre-decode ALL frames of the window into an offscreen-canvas "
+        "cache BEFORE registering window.__timelines[\"main\"], then composite from the cache "
+        "synchronously inside the timeline (see the html-fx skill's 视频帧源 section) — never sample "
+        "frames sparsely, that stutters motion. The rendered clip is opaque full-frame: it covers the "
+        "timeline window it lands on, so no split is needed at the cut point.",
         {
             "type": "object",
             "properties": {
