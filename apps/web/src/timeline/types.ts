@@ -163,6 +163,10 @@ export interface GraphicElement extends BaseTimelineElement {
 export interface HtmlElement extends BaseTimelineElement {
 	type: "html";
 	html: string;
+	/** The effect preset this element was inserted from (htmlPresets id).
+	 *  Provenance only — the html above stays an independent snapshot, but
+	 *  removing the preset cascades to these elements. */
+	presetId?: string;
 	/** Rasterized source size, stored at insert time. */
 	intrinsicWidth?: number;
 	intrinsicHeight?: number;

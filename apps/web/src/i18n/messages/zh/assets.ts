@@ -11,6 +11,9 @@ export const assets = {
 	"assets.generatedFxEmpty":
 		"还没有生成的特效。让 Agent 制作特效后，成果会出现在这里。",
 	"assets.builtinEffects": "内置特效",
+	"assets.removeFxUsedTitle": "删除特效？",
+	"assets.removeFxUsedDescription":
+		"「{name}」在时间线上有 {count} 个实例，将一并删除。",
 	"assets.transitionSelectHint":
 		"选中视频或图片片段后点击应用；转场作用于该片段与同轨道紧邻的下一个片段之间（中间不能有空隙），播放跨过两段交界处即可看到效果",
 	"assets.adjustmentCustom": "自定义调节",

@@ -8,6 +8,8 @@ import {
 	type TrackType,
 } from "@/timeline";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
+import { buildRemoveHtmlPresetCommand } from "@/commands";
+import { collectHtmlPresetInstances } from "@/timeline/element-utils";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { buildScene } from "@/services/renderer/scene-builder";
 import {
@@ -998,10 +1000,16 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					...((args.params as Record<string, unknown> | undefined) ?? {}),
 				};
 			}
+			// New HTML (not a presetId reuse) is auto-saved as a reusable preset, so
+			// agent output lands in the Effects panel generated section by default.
+			// The element records the preset as its origin, so removing the preset
+			// can cascade to these instances.
+			const savedPresetId = presetId ?? generateUUID();
 			const element = {
 				type: "html",
 				name,
 				html,
+				presetId: savedPresetId,
 				intrinsicWidth,
 				intrinsicHeight,
 				startTime: toTicks(Number(args.startTime ?? 0)),
@@ -1015,27 +1023,25 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				? { mode: "explicit", trackId: requestedTrackId }
 				: { mode: "auto", trackType: "graphic" };
 			const inserted = insertAndSelect(editor, element, placement);
-			// New HTML (not a presetId reuse) is auto-saved as a reusable preset,
-			// so agent output lands in the Effects panel generated section by default.
-			let savedPresetId: string | null = null;
 			if (!presetId) {
-				const preset = {
-					id: generateUUID(),
-					name,
-					html,
-					params: { ...params } as never,
-					intrinsicWidth,
-					intrinsicHeight,
-				};
 				editor.project.setHtmlPresets({
-					presets: [...editor.project.getHtmlPresets(), preset],
+					presets: [
+						...editor.project.getHtmlPresets(),
+						{
+							id: savedPresetId,
+							name,
+							html,
+							params: { ...params } as never,
+							intrinsicWidth,
+							intrinsicHeight,
+						},
+					],
 				});
-				savedPresetId = preset.id;
 			}
 			const warnings = largeAnimatedHtmlWarnings({ html });
 			return {
 				...inserted,
-				...(savedPresetId ? { presetId: savedPresetId } : {}),
+				...(presetId ? {} : { presetId: savedPresetId }),
 				...(warnings.length > 0 ? { warnings } : {}),
 			};
 		},
@@ -1097,18 +1103,31 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"html.remove_preset": {
-		description: "Remove a saved HTML effect from this project's effects shelf.",
-		args: { presetId: "string" },
+		description:
+			"Remove a saved HTML effect from this project's effects shelf. Elements inserted from the preset stay independent snapshots, but the removal cascades to them by default only when explicitly allowed: if instances exist on the timeline and cascade is not true, the call fails and reports the instance count (ask the user, then retry with cascade: true to delete preset and instances together as one undo).",
+		args: {
+			presetId: "string",
+			cascade:
+				"boolean? (also delete timeline elements inserted from this preset; required when such instances exist)",
+		},
 		run: ({ editor, args }) => {
 			const presetId = requireString(args.presetId, "presetId");
 			const presets = editor.project.getHtmlPresets();
-			if (!presets.some((preset) => preset.id === presetId)) {
+			const preset = presets.find((item) => item.id === presetId);
+			if (!preset) {
 				throw new Error(`Unknown presetId: ${presetId}`);
 			}
-			editor.project.setHtmlPresets({
-				presets: presets.filter((preset) => preset.id !== presetId),
+			const { command, instances } = buildRemoveHtmlPresetCommand({
+				tracks: editor.scenes.getActiveScene().tracks,
+				presetId,
 			});
-			return { removed: true };
+			if (instances.length > 0 && args.cascade !== true) {
+				throw new Error(
+					`Effect preset "${preset.name}" is used by ${instances.length} element(s) on the timeline. Pass cascade: true to delete them together (single undo).`,
+				);
+			}
+			editor.command.execute({ command });
+			return { removed: true, removedElements: instances.length };
 		},
 	},
 

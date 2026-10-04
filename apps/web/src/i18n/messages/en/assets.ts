@@ -11,6 +11,9 @@ export const assets = {
 	"assets.generatedFxEmpty":
 		"No generated effects yet. Effects created by the agent will appear here.",
 	"assets.builtinEffects": "Built-in effects",
+	"assets.removeFxUsedTitle": "Delete effect?",
+	"assets.removeFxUsedDescription":
+		"\"{name}\" has {count} instance(s) on the timeline; they will be deleted together.",
 	"assets.transitionSelectHint":
 		"Select a video or image clip, then click to apply a transition. It renders between that clip and the next adjacent clip on the same track (no gap between them); play across the junction to see it",
 	"assets.adjustmentCustom": "Custom Adjustment",

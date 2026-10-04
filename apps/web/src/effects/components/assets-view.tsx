@@ -6,6 +6,16 @@ import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { DraggableItem } from "@/components/editor/panels/assets/draggable-item";
 import { MediaPreview } from "@/components/editor/panels/assets/views/assets";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { effectsRegistry, EFFECT_TARGET_ELEMENT_TYPES } from "@/effects";
 import { effectPreviewService } from "@/services/renderer/effect-preview";
@@ -13,6 +23,8 @@ import { loadHtmlSource } from "@/services/renderer/nodes/html-node";
 import { useEditor } from "@/editor/use-editor";
 import { useT } from "@/i18n";
 import { invokeAction } from "@/actions";
+import { buildRemoveHtmlPresetCommand } from "@/commands";
+import { collectHtmlPresetInstances } from "@/timeline/element-utils";
 import {
 	buildEffectElement,
 	buildElementFromMedia,
@@ -114,6 +126,9 @@ const ITEM_BUTTON_CLASS =
 function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 	const t = useT();
 	const editor = useEditor();
+	const [usedInstanceCount, setUsedInstanceCount] = useState<number | null>(
+		null,
+	);
 
 	const insertPreset = () => {
 		editor.timeline.insertElement({
@@ -122,6 +137,7 @@ function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 				type: "html",
 				name: preset.name,
 				html: preset.html,
+				presetId: preset.id,
 				params: { ...preset.params },
 				intrinsicWidth: preset.intrinsicWidth,
 				intrinsicHeight: preset.intrinsicHeight,
@@ -131,45 +147,90 @@ function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 		});
 	};
 
-	const removePreset = () => {
-		editor.project.setHtmlPresets({
-			presets: editor.project
-				.getHtmlPresets()
-				.filter((item) => item.id !== preset.id),
+	const removePresetWithInstances = () => {
+		const { command } = buildRemoveHtmlPresetCommand({
+			tracks: editor.scenes.getActiveScene().tracks,
+			presetId: preset.id,
 		});
+		editor.command.execute({ command });
+	};
+
+	const handleRemoveClick = () => {
+		const instances = collectHtmlPresetInstances({
+			tracks: editor.scenes.getActiveScene().tracks,
+			presetId: preset.id,
+		});
+		if (instances.length === 0) {
+			removePresetWithInstances();
+			return;
+		}
+		setUsedInstanceCount(instances.length);
 	};
 
 	return (
-		<div className="group relative w-full">
-			<div className="relative flex h-auto w-full flex-col gap-1">
-				<AspectRatio
-					ratio={16 / 9}
-					className="bg-accent relative overflow-hidden rounded-sm"
-				>
-					<HtmlPresetPreview preset={preset} />
-					<ItemButton
-						className={`${ITEM_BUTTON_CLASS} right-2 bottom-2`}
-						title={t("assets.addToTimelineOrDrag")}
-						onClick={insertPreset}
+		<>
+			<div className="group relative w-full">
+				<div className="relative flex h-auto w-full flex-col gap-1">
+					<AspectRatio
+						ratio={16 / 9}
+						className="bg-accent relative overflow-hidden rounded-sm"
 					>
-						<Plus />
-					</ItemButton>
-					<ItemButton
-						className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
-						title={t("common.delete")}
-						onClick={removePreset}
+						<HtmlPresetPreview preset={preset} />
+						<ItemButton
+							className={`${ITEM_BUTTON_CLASS} right-2 bottom-2`}
+							title={t("assets.addToTimelineOrDrag")}
+							onClick={insertPreset}
+						>
+							<Plus />
+						</ItemButton>
+						<ItemButton
+							className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
+							title={t("common.delete")}
+							onClick={handleRemoveClick}
+						>
+							<X />
+						</ItemButton>
+					</AspectRatio>
+					<span
+						className="text-muted-foreground w-full truncate text-left text-[0.7rem]"
+						title={preset.name}
 					>
-						<X />
-					</ItemButton>
-				</AspectRatio>
-				<span
-					className="text-muted-foreground w-full truncate text-left text-[0.7rem]"
-					title={preset.name}
-				>
-					{preset.name}
-				</span>
+						{preset.name}
+					</span>
+				</div>
 			</div>
-		</div>
+			<AlertDialog
+				open={usedInstanceCount !== null}
+				onOpenChange={(open) => {
+					if (!open) setUsedInstanceCount(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{t("assets.removeFxUsedTitle")}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{t("assets.removeFxUsedDescription", {
+								name: preset.name,
+								count: usedInstanceCount ?? 0,
+							})}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								setUsedInstanceCount(null);
+								removePresetWithInstances();
+							}}
+						>
+							{t("common.delete")}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }
 

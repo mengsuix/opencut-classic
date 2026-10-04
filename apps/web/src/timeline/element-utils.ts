@@ -364,6 +364,25 @@ export function buildLibraryAudioElement({
 	return element;
 }
 
+/** Timeline elements inserted from a given HTML effect preset. */
+export function collectHtmlPresetInstances({
+	tracks,
+	presetId,
+}: {
+	tracks: SceneTracks;
+	presetId: string;
+}): { trackId: string; elementId: string }[] {
+	const result: { trackId: string; elementId: string }[] = [];
+	for (const track of [tracks.main, ...tracks.overlay, ...tracks.audio]) {
+		for (const element of track.elements) {
+			if (element.type === "html" && element.presetId === presetId) {
+				result.push({ trackId: track.id, elementId: element.id });
+			}
+		}
+	}
+	return result;
+}
+
 export function getElementsAtTime({
 	tracks,
 	time,
