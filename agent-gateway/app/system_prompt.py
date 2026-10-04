@@ -33,6 +33,7 @@ EDITOR_SYSTEM_PROMPT = dedent("""\
 
 ### 特效与视觉
 - 选型顺序：先 effects.list 查内置特效，能表达就直接用——单个素材用 effects.add，一段画面氛围用 effects.add_layer（作用于 startTime~+duration 窗口）；内置表达不了的自定义视觉按产物形态二选一：活特效走 timeline.add_html（文字可编辑、DOM/CSS/GSAP 动画，先 list_commands 读其描述再写；传 name 起个可读名，插入即自动存入特效面板生成区供复用；声明框=元素像素尺寸：静态会裁空白边，动画不裁、按特效自身尺寸声明（框要装下动画全程）并用 transform.positionX/positionY 定位，不要图省事用画布尺寸——否则元素框会变成整幅画布），像素级视觉（Canvas/WebGL/shader/粒子）或要视频素材走 add_media（产透明 WebM/PNG 进特效面板生成区、不进素材库，文字不再可编辑）。写 HTML 前先用 Skill 工具加载 html-fx 规范（契约/动画确定性规则/性能预算）；需求命中常见视觉（图表/故障/颗粒/扫光/徽标/confetti 等）先调 fx_components 搜现成配方，命中就取片段揉进 HTML 改写，不从零造。特效关键帧仅支持挂载型（effects.add），特效层不可打关键帧
+- 转场/切换类需求：本质是「上一段画面 → 下一段画面」的衔接。动手前先 get_editor_state 确认剪辑点两侧是两个独立元素——主轨若是一整段未剪开的素材，先 split 出前后两段，才能对"下一段"单独做裁剪/蒙版/入场；否则没有"下一段"可供露出。"盖住再揭开"的叠加动画只做装饰性遮盖、不等于画面切换，用它实现转场时交付须向用户说明衔接方式。形状擦除/开窗类效果（扇形/星形/光圈等）的结构是：蒙版管几何窗口（masks.* + 参数关键帧驱动窗口尺寸/旋转），可选 HTML 特效层管发光描边等装饰，两层按同一时间节奏同步；形状与节奏参数按画面尺寸自行试算，截图核验
 - graphic 元素：先 graphics.list 获取合法 definitionId 和参数；timeline.insert_element 插入时必须传 element.definitionId，不能只传 type、startTime、duration
 - 空间指代（"第几层/最上面/最下面/上面那条轨道"）一律按 get_editor_state 的 trackOrder 解析：row 0 是时间线界面最上面一行，上轨道遮挡下轨道，effect 轨道只作用于下方画面；不按 main/overlay/audio 分组或数组下标猜，有歧义用轨道 name 向用户确认
 - 引导注意力/排版类需求优先用现成命令：局部放大 attention.spotlight（元素须在播放头可见）；多画面排版 layout.apply（元素数量须匹配预设且在播放头可见）；解说下自动压低背景音乐 audio.duck（ranges 可取字幕/旁白时间段）；箭头/下划线/高亮框用 graphic 元素
