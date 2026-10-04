@@ -30,6 +30,13 @@ export class RemoveHtmlPresetCommand extends Command {
 		});
 		return undefined;
 	}
+
+	undo(): void {
+		if (!this.savedPresets) return;
+		EditorCore.getInstance().project.setHtmlPresets({
+			presets: this.savedPresets,
+		});
+	}
 }
 
 /**
