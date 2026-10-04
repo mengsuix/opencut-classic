@@ -17,9 +17,9 @@ import { t } from "@/i18n";
 
 export const TAB_KEYS = [
 	"media",
+	"effects",
 	"sounds",
 	"text",
-	"effects",
 	"transitions",
 	"captions",
 	"adjustment",

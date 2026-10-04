@@ -1,5 +1,5 @@
 export const assets = {
-	"assets.tabMedia": "Media",
+	"assets.tabMedia": "Assets",
 	"assets.tabSounds": "Sounds",
 	"assets.tabText": "Text",
 	"assets.tabEffects": "Effects",

@@ -985,6 +985,11 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				intrinsicHeight = preset.intrinsicHeight;
 				params = {
 					...preset.params,
+					// opacity is transient timeline state, not part of the effect
+					// design: a preset saved while its element was faded out would
+					// otherwise insert invisible copies. Explicit caller params
+					// still win.
+					opacity: 1,
 					...((args.params as Record<string, unknown> | undefined) ?? {}),
 				};
 			} else {
@@ -1031,7 +1036,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 							id: savedPresetId,
 							name,
 							html,
-							params: { ...params } as never,
+							// Snapshots must not freeze transient opacity into the
+							// template (see the presetId branch above).
+							params: { ...params, opacity: 1 } as never,
 							intrinsicWidth,
 							intrinsicHeight,
 						},
@@ -1085,7 +1092,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 						? args.name
 						: ((element.name as string | undefined) ?? "HTML 特效"),
 				html,
-				params: (element.params ?? {}) as never,
+				// Snapshots must not freeze transient opacity into the template:
+				// saving an element while it is faded out would otherwise yield a
+				// preset that inserts invisible copies.
+				params: { ...(element.params ?? {}), opacity: 1 } as never,
 				intrinsicWidth:
 					typeof element.intrinsicWidth === "number"
 						? element.intrinsicWidth

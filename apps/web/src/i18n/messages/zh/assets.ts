@@ -1,5 +1,5 @@
 export const assets = {
-	"assets.tabMedia": "媒体",
+	"assets.tabMedia": "素材",
 	"assets.tabSounds": "音效",
 	"assets.tabText": "文本",
 	"assets.tabEffects": "特效",

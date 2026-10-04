@@ -36,6 +36,7 @@ import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
 import { mediaTimeFromSeconds, type MediaTime } from "@/wasm";
 import { MASKABLE_ELEMENT_TYPES } from "@/timeline";
 import type { CreateTimelineElement } from "@/timeline";
+import type { ParamValues } from "@/params";
 import type { HtmlPreset } from "@/project/types";
 import type { MediaAsset } from "@/media/types";
 import type { EffectDefinition } from "@/effects/types";
@@ -134,6 +135,9 @@ function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 	);
 
 	const insertPreset = () => {
+		// opacity is transient timeline state, not part of the effect design
+		// (see timeline.add_html).
+		const params: ParamValues = { ...preset.params, opacity: 1 };
 		editor.timeline.insertElement({
 			placement: { mode: "auto", trackType: "graphic" },
 			element: {
@@ -141,7 +145,7 @@ function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 				name: preset.name,
 				html: preset.html,
 				presetId: preset.id,
-				params: { ...preset.params },
+				params,
 				intrinsicWidth: preset.intrinsicWidth,
 				intrinsicHeight: preset.intrinsicHeight,
 				startTime: editor.playback.getCurrentTime(),
@@ -175,7 +179,7 @@ function HtmlPresetItem({ preset }: { preset: HtmlPreset }) {
 			<div className="group relative w-full">
 				<div className="relative flex h-auto w-full flex-col gap-1">
 					<AspectRatio
-						ratio={16 / 9}
+						ratio={1}
 						className="bg-accent relative overflow-hidden rounded-sm"
 					>
 						<HtmlPresetPreview preset={preset} />
@@ -345,6 +349,7 @@ function GeneratedMediaItem({ asset }: { asset: MediaAsset }) {
 					}}
 					shouldShowPlusOnDrag={false}
 					onAddToTimeline={addToTimeline}
+					aspectRatio={1}
 					variant="card"
 					isRounded
 					containerClassName="w-full"
