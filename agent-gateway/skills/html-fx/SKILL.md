@@ -10,7 +10,9 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
 ## HTML 契约（必须满足）
 
 - 完整自包含 HTML 文档：`<meta charset="utf-8">`（否则中文乱码），无外部样式表/图片/字体文件
-- root 元素（body 内第一个容器）带 `data-width="<px>"` 和 `data-height="<px>"`，即特效的设计像素尺寸（如胶囊 520×139，全屏标题用项目画布 1280×720）
+- root 元素（body 内第一个容器）带 `data-width="<px>"` 和 `data-height="<px>"`，即特效的设计像素尺寸（如胶囊 520×139；只有真的铺满画面的特效才用项目画布 1280×720）
+  - `add_html` 活特效：声明框就是元素在画布上的像素尺寸——静态会裁掉空白边，动画不裁，所以动画要按特效自身尺寸声明（框装下动画全程、含位移行程），用 transform.positionX/positionY 定位；用画布尺寸会让元素框变成整幅画布
+  - `add_media` 渲染素材：产物插入时按画布 contain 缩放，小画布会被放大，所以渲染/评审那一版用项目画布尺寸声明、把同一块特效按目标位置摆进画布坐标
 - 页面背景透明（要底板就在 root 内画一个全尺寸子元素）
 - 脚本允许内联或 HTTPS CDN（如 GSAP：`https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js`）；图片/字体必须 data: 内联
 - 所有 id 全文档唯一
