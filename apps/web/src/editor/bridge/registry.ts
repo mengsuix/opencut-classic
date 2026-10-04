@@ -47,6 +47,7 @@ import type {
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
+import type { ParamValues } from "@/params";
 import { getBuiltInElementParams } from "@/params/registry";
 import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
@@ -240,6 +241,82 @@ function findTrackAndElement(
 		trackType: track.type,
 		element: element as unknown as Record<string, unknown>,
 	};
+}
+
+/**
+ * Snapshot an element's params into a preset-safe ParamValues object:
+ * non-primitive values are dropped, and opacity is pinned to 1 because it is
+ * transient timeline state that must never be frozen into a template.
+ */
+function toPresetParams(value: unknown): ParamValues {
+	const params: ParamValues = {};
+	if (typeof value === "object" && value !== null) {
+		for (const [key, item] of Object.entries(value)) {
+			if (
+				typeof item === "number" ||
+				typeof item === "string" ||
+				typeof item === "boolean"
+			) {
+				params[key] = item;
+			}
+		}
+	}
+	params.opacity = 1;
+	return params;
+}
+
+/**
+ * Keeps the effects shelf in sync when a live HTML element is edited: if the
+ * element was inserted from a saved preset, refresh that preset's snapshot so
+ * inserting it again yields the latest version. Presets are not part of the
+ * undo stack (same as the auto-save in timeline.add_html).
+ */
+function syncOriginPreset({
+	editor,
+	trackId,
+	elementId,
+}: {
+	editor: EditorCore;
+	trackId: string;
+	elementId: string;
+}): boolean {
+	const found = findTrackAndElement(editor, trackId, elementId);
+	if (!found) {
+		return false;
+	}
+	const { element } = found;
+	const presetId =
+		typeof element.presetId === "string" ? element.presetId : null;
+	if (!presetId) {
+		return false;
+	}
+	const presets = editor.project.getHtmlPresets();
+	const preset = presets.find((item) => item.id === presetId);
+	if (!preset) {
+		return false;
+	}
+	const html = typeof element.html === "string" ? element.html : preset.html;
+	const size = resolveHtmlSize({ html });
+	editor.project.setHtmlPresets({
+		presets: presets.map((item) =>
+			item.id === presetId
+				? {
+						...item,
+						html,
+						params: toPresetParams(element.params),
+						intrinsicWidth:
+							typeof element.intrinsicWidth === "number"
+								? element.intrinsicWidth
+								: size.width,
+						intrinsicHeight:
+							typeof element.intrinsicHeight === "number"
+								? element.intrinsicHeight
+								: size.height,
+					}
+				: item,
+		),
+	});
+	return true;
 }
 
 function sanitizeJson<T>(value: T): T {
@@ -1143,12 +1220,14 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"html.update": {
 		description:
-			"Update a live HTML effect element: replace its HTML source (html) and/or set values for its data-param slots (params). Omit html to only change variable values.",
+			"Update a live HTML effect element: replace its HTML source (html) and/or set values for its data-param slots (params). Omit html to only change variable values. When the element was inserted from a saved effect preset, the preset on the effects shelf is refreshed to match by default, so the reusable entry keeps showing the latest version — pass updatePreset: false to edit the element only.",
 		args: {
 			trackId: "string",
 			elementId: "string",
 			html: "string? (replacement complete HTML document)",
 			params: "object? (values for data-param slots)",
+			updatePreset:
+				"boolean? (default true: also refresh the saved preset this element was inserted from, when one exists)",
 		},
 		run: ({ editor, args }) => {
 			const trackId = requireString(args.trackId, "trackId");
@@ -1169,7 +1248,13 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			editor.timeline.updateElements({
 				updates: [{ trackId, elementId, patch }],
 			});
-			return { updated: true };
+			const presetUpdated =
+				args.updatePreset !== false &&
+				syncOriginPreset({ editor, trackId, elementId });
+			return {
+				updated: true,
+				...(presetUpdated ? { presetUpdated: true } : {}),
+			};
 		},
 	},
 
