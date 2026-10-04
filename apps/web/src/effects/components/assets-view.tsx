@@ -24,7 +24,10 @@ import { useEditor } from "@/editor/use-editor";
 import { useT } from "@/i18n";
 import { invokeAction } from "@/actions";
 import { buildRemoveHtmlPresetCommand } from "@/commands";
-import { collectHtmlPresetInstances } from "@/timeline/element-utils";
+import {
+	collectHtmlPresetInstances,
+	collectMediaInstances,
+} from "@/timeline/element-utils";
 import {
 	buildEffectElement,
 	buildElementFromMedia,
@@ -284,6 +287,9 @@ function GeneratedMediaItem({ asset }: { asset: MediaAsset }) {
 	const t = useT();
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
+	const [usedInstanceCount, setUsedInstanceCount] = useState<number | null>(
+		null,
+	);
 
 	const addToTimeline = ({ currentTime }: { currentTime: MediaTime }) => {
 		const duration =
@@ -310,34 +316,79 @@ function GeneratedMediaItem({ asset }: { asset: MediaAsset }) {
 		});
 	};
 
+	const handleRemoveClick = () => {
+		const instances = collectMediaInstances({
+			tracks: editor.scenes.getActiveScene().tracks,
+			mediaId: asset.id,
+		});
+		if (instances.length === 0) {
+			removeAsset();
+			return;
+		}
+		setUsedInstanceCount(instances.length);
+	};
+
 	return (
-		<div className="group relative">
-			<DraggableItem
-				name={asset.name}
-				preview={<MediaPreview item={asset} variant="grid" />}
-				dragData={{
-					id: asset.id,
-					type: "media",
-					mediaType: asset.type,
-					name: asset.name,
-					...(asset.type !== "audio" && {
-						targetElementTypes: [...MASKABLE_ELEMENT_TYPES],
-					}),
+		<>
+			<div className="group relative">
+				<DraggableItem
+					name={asset.name}
+					preview={<MediaPreview item={asset} variant="grid" />}
+					dragData={{
+						id: asset.id,
+						type: "media",
+						mediaType: asset.type,
+						name: asset.name,
+						...(asset.type !== "audio" && {
+							targetElementTypes: [...MASKABLE_ELEMENT_TYPES],
+						}),
+					}}
+					shouldShowPlusOnDrag={false}
+					onAddToTimeline={addToTimeline}
+					variant="card"
+					isRounded
+					containerClassName="w-full"
+				/>
+				<ItemButton
+					className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
+					title={t("common.delete")}
+					onClick={handleRemoveClick}
+				>
+					<X />
+				</ItemButton>
+			</div>
+			<AlertDialog
+				open={usedInstanceCount !== null}
+				onOpenChange={(open) => {
+					if (!open) setUsedInstanceCount(null);
 				}}
-				shouldShowPlusOnDrag={false}
-				onAddToTimeline={addToTimeline}
-				variant="card"
-				isRounded
-				containerClassName="w-full"
-			/>
-			<ItemButton
-				className={`${ITEM_BUTTON_CLASS} top-2 right-2`}
-				title={t("common.delete")}
-				onClick={removeAsset}
 			>
-				<X />
-			</ItemButton>
-		</div>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{t("assets.removeFxUsedTitle")}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{t("assets.removeFxUsedDescription", {
+								name: asset.name,
+								count: usedInstanceCount ?? 0,
+							})}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								setUsedInstanceCount(null);
+								removeAsset();
+							}}
+						>
+							{t("common.delete")}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }
 
