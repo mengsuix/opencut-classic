@@ -26,7 +26,7 @@ from ..auth import bearer_token, resolve_user_id
 router = APIRouter()
 
 # 文件名内嵌创建时间戳便于 TTL 清理（同 fx 产物 JOB_ID_RE 模式）
-MEDIA_FILE_NAME_RE = re.compile(r"^m-\d+-[0-9a-f]{8}\.(webm|mp4)$")
+MEDIA_FILE_NAME_RE = re.compile(r"^m-(\d+)-[0-9a-f]{8}\.(?:webm|mp4)$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 CONTENT_TYPE_EXTS = {
     "video/webm": ".webm",

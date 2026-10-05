@@ -79,6 +79,9 @@ AGENT_ENV = {
 # ---------------------------------------------------------------------------
 FX_HYPERFRAMES_VERSION = os.environ.get("FX_HYPERFRAMES_VERSION", "0.8.46")
 FX_RENDER_TIMEOUT_SECONDS = float(os.environ.get("FX_RENDER_TIMEOUT_SECONDS", "900"))
+# 视频帧覆盖度门槛：窗口段首尾边界帧提取会有少量损失（实测 1s@30fps 提取 28 帧
+# = 93.3%），渲染器默认 95% 会中止出片；放宽到 80%——真正提取失败（近 0%）仍会被拦
+FX_VIDEO_COVERAGE_THRESHOLD = os.environ.get("FX_VIDEO_COVERAGE_THRESHOLD", "0.8")
 # 产物下载用的对外地址；留空则从编辑器 WebSocket 连接的 Host 头推导（反代需透传 Host）
 FX_PUBLIC_BASE_URL = os.environ.get("FX_PUBLIC_BASE_URL", "").rstrip("/")
 # 特效产物（data/fx/<session>/<job>）保留时长，超期由空闲清理循环删除，默认 7 天

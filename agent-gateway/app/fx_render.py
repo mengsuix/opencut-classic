@@ -14,6 +14,7 @@
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 import time
@@ -129,6 +130,40 @@ GSAP_CDN_SCRIPT_RE = re.compile(
 _GSAP_CDN_URL = "https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"
 
 
+# 渲染机 FFmpeg 媒体提取有安全策略（assertPublicHttpsUrl）：只允许 https + 公网
+# 地址，本地/内网的 http URL 在正式 render 时被拒收（VIDEO_SOURCE_UNRENDERABLE/
+# source_rejected；snapshot 走浏览器截图不受影响，所以 frames 看着正常、render
+# 必失败）。故渲染前把网关 media URL 本地化成 work_dir 内的相对路径文件
+# （官方支持的本地媒体路径，实测可渲染）。
+MEDIA_URL_RE = re.compile(
+    r"https?://[^\s\"')]+/api/agent/media/(m-\d+-[0-9a-f]{8}\.(?:webm|mp4))"
+)
+
+
+def _localize_media_sources(html: str, work_dir: Path) -> str:
+    names = MEDIA_URL_RE.findall(html)
+    if not names:
+        return html
+    media_dir = config.AGENT_DATA_DIR / "media"
+    local_names: set[str] = set()
+    for name in set(names):
+        source = media_dir / name
+        if not source.is_file():
+            continue
+        dest_dir = work_dir / "media"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / name
+        if not dest.is_file():
+            shutil.copy2(source, dest)
+        local_names.add(name)
+
+    def _sub(match: re.Match) -> str:
+        name = match.group(1)
+        return f"media/{name}" if name in local_names else match.group(0)
+
+    return MEDIA_URL_RE.sub(_sub, html)
+
+
 async def _inline_gsap_cdn(html: str) -> str:
     if not GSAP_CDN_SCRIPT_RE.search(html):
         return html
@@ -205,6 +240,7 @@ async def render_fx(
     job_id = f"fx-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     work_dir = config.AGENT_DATA_DIR / "fx" / session_id / job_id
     work_dir.mkdir(parents=True, exist_ok=True)
+    html = _localize_media_sources(html, work_dir)
     (work_dir / "index.html").write_text(html, encoding="utf-8")
 
     if format == "video":
@@ -385,6 +421,10 @@ async def _run_snapshot(work_dir: Path, at: str = "0") -> str:
             cwd=str(work_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env={
+                **os.environ,
+                "HF_VIDEO_COVERAGE_THRESHOLD": config.FX_VIDEO_COVERAGE_THRESHOLD,
+            },
         )
     except FileNotFoundError as e:
         raise FxRenderError(f"无法启动 npx（渲染机需要 Node.js 环境）: {e}") from e
@@ -470,6 +510,10 @@ async def _run_render(work_dir: Path) -> str:
             cwd=str(work_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env={
+                **os.environ,
+                "HF_VIDEO_COVERAGE_THRESHOLD": config.FX_VIDEO_COVERAGE_THRESHOLD,
+            },
         )
     except FileNotFoundError as e:
         raise FxRenderError(f"无法启动 npx（渲染机需要 Node.js 环境）: {e}") from e
