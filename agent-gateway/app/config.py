@@ -85,6 +85,17 @@ FX_PUBLIC_BASE_URL = os.environ.get("FX_PUBLIC_BASE_URL", "").rstrip("/")
 FX_ARTIFACT_TTL_SECONDS = float(os.environ.get("FX_ARTIFACT_TTL_SECONDS", str(7 * 24 * 3600)))
 
 # ---------------------------------------------------------------------------
+# 素材窗口段（media.supply_window 上传，data/media/）保留时长，默认 24 小时
+# ---------------------------------------------------------------------------
+MEDIA_ARTIFACT_TTL_SECONDS = float(
+    os.environ.get("MEDIA_ARTIFACT_TTL_SECONDS", str(24 * 3600))
+)
+# 上传响应里给渲染机 <video src> 用的内部 base URL。渲染机（npx hyperframes 的
+# headless Chrome）与 gateway 同机时用默认 loopback；若生产把渲染拆到独立
+# 容器/机器，设置为 gateway 在该网络内可达的地址（如 http://gateway:8787）。
+MEDIA_INTERNAL_BASE_URL = os.environ.get("MEDIA_INTERNAL_BASE_URL", "").rstrip("/")
+
+# ---------------------------------------------------------------------------
 # 独立视觉评委（judge_visual 工具，visual_judge.py）
 # 走 provider 的 OpenAI 兼容端点（非 Anthropic 端点），默认复用同一 API key
 # ---------------------------------------------------------------------------

@@ -15,6 +15,8 @@ from . import config, db, fx_render
 from .agent_service import agent_service
 from .api.agent import router as agent_router
 from .api.fx import router as fx_router
+from .api.media import router as media_router
+from .api.media import cleanup_media_artifacts
 from .editor_bridge import editor_websocket_endpoint
 
 logging.basicConfig(
@@ -43,6 +45,14 @@ async def _idle_cleanup_loop() -> None:
                 logger.info(f"过期特效产物清理完成: {removed_fx} 个")
         except Exception as e:
             logger.error(f"特效产物清理失败: {e}")
+        try:
+            removed_media = await asyncio.to_thread(
+                cleanup_media_artifacts, config.MEDIA_ARTIFACT_TTL_SECONDS
+            )
+            if removed_media:
+                logger.info(f"过期素材窗口段清理完成: {removed_media} 个")
+        except Exception as e:
+            logger.error(f"素材窗口段清理失败: {e}")
 
 
 @asynccontextmanager
@@ -77,6 +87,7 @@ app.add_middleware(
 
 app.include_router(agent_router, prefix="/api/agent")
 app.include_router(fx_router, prefix="/api/agent")
+app.include_router(media_router, prefix="/api/agent")
 app.websocket("/ws/editor")(editor_websocket_endpoint)
 
 

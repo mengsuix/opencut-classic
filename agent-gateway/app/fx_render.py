@@ -119,6 +119,49 @@ def _prepare_html(html: str, timestamps: list[float] | None) -> str:
     return html
 
 
+# agent 生成的 HTML 基本都用 jsdelivr 的 GSAP CDN。渲染机每次冷启动都跨外网下载
+# （实测 3.3s/72KB，网络波动会撞 HyperFrames 10s 导航超时导致渲染失败），
+# 故渲染前替换为本地缓存的内联脚本；缓存失败则保留 CDN 引用（降级不影响正确性）。
+GSAP_CDN_SCRIPT_RE = re.compile(
+    r'<script[^>]*\bsrc="https://cdn\.jsdelivr\.net/npm/gsap@3[^"]*"[^>]*>\s*</script>',
+    re.IGNORECASE,
+)
+_GSAP_CDN_URL = "https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"
+
+
+async def _inline_gsap_cdn(html: str) -> str:
+    if not GSAP_CDN_SCRIPT_RE.search(html):
+        return html
+    cache = config.AGENT_DATA_DIR / "vendor" / "gsap.min.js"
+    if not cache.is_file():
+        try:
+            await asyncio.to_thread(_download_file, _GSAP_CDN_URL, cache)
+        except Exception as e:
+            logger.warning(f"GSAP 本地缓存失败，保留 CDN 引用: {type(e).__name__}: {e}")
+            return html
+    try:
+        script = cache.read_text(encoding="utf-8")
+    except OSError as e:
+        logger.warning(f"GSAP 缓存读取失败，保留 CDN 引用: {e}")
+        return html
+    inline = f"<script>{script}</script>"
+    return GSAP_CDN_SCRIPT_RE.sub(lambda _: inline, html)
+
+
+def _download_file(url: str, dest: Path) -> None:
+    import urllib.request
+
+    # 显式禁用代理：macOS 系统代理常为 SOCKS，urllib 会把它当 HTTP 代理导致
+    # SSL WRONG_VERSION_NUMBER；CDN 直连即可（实测 <1s）。环境必须走代理时
+    # 下载失败，上层降级为保留 CDN 引用，不影响正确性。
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".tmp")
+    with opener.open(url, timeout=20) as resp:
+        tmp.write_bytes(resp.read())
+    tmp.replace(dest)
+
+
 def _parse_composition(html: str) -> tuple[int, int, float]:
     values: dict[str, float] = {}
     for key, pattern in _ATTR_RES.items():
@@ -154,6 +197,7 @@ async def render_fx(
     if len(html.encode("utf-8")) > MAX_HTML_BYTES:
         raise FxRenderError(f"html 超过 {MAX_HTML_BYTES // 1024}KB 上限")
     html = _prepare_html(html, timestamps if format == "frames" else None)
+    html = await _inline_gsap_cdn(html)
     width, height, duration = _parse_composition(html)
     if format == "frames":
         at_list = _validate_timestamps(timestamps, duration)

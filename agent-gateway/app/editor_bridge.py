@@ -28,6 +28,9 @@ DEFAULT_TIMEOUT_SECONDS = 120
 # 与前端 preview.capture_sequence 的 MAX_SEQUENCE_FRAMES 保持一致。
 # 拼图面积决定 image token 成本，超过 24 帧后成本增长快而"看结构"的收益很低。
 MAX_SEQUENCE_FRAMES = 24
+# supply_media_window 窗口时长硬上限（秒）。SKILL 指导 ≤1.5s 控制烘焙帧缓存内存，
+# 硬上限只防 agent 误传整段素材；与前端 registry.ts 的 MAX_SUPPLY_WINDOW_SECONDS 一致。
+MAX_SUPPLY_WINDOW_SECONDS = 5
 COMMAND_TIMEOUTS: dict[str, float] = {
     "subtitles.transcribe": 900,
     "media.import": 600,
@@ -36,6 +39,8 @@ COMMAND_TIMEOUTS: dict[str, float] = {
     "preview.capture_sequence": 300,
     # 视频素材离线抽帧，长 GOP 的 4K 素材多次 seek 解码可能较慢
     "media.read": 300,
+    # 浏览器转码窗口段 + 上传，4K 源解码转码较慢
+    "media.supply_window": 300,
 }
 
 # session_id -> 浏览器编辑器 WS
@@ -480,6 +485,77 @@ def build_editor_mcp_server(session_id: str):
             ]
         }
 
+    @tool(
+        "supply_media_window",
+        "Transcode a time window of a VIDEO asset (in the editor's browser) into a small WebM, "
+        "upload it to the gateway, and return a URL that the render machine (add_media HTML "
+        "<video src>) can fetch. This is the ONLY way the render machine can get real footage of "
+        "the original video for clip-window baking (transitions/cuts) — the mediaAssets url fields "
+        "are browser-local blob URLs the render machine cannot access, so ALWAYS go through this "
+        "tool. The window is pre-cut, so the returned URL needs NO #t= fragment; it plays exactly "
+        "the requested window. Audio is dropped (timeline audio keeps playing from the original "
+        "clip). Use start/end in the ASSET's own timeline (convert from timeline coordinates via "
+        "the element's timeRange + its media source offset). Keep the window ≤1.5s (both halves "
+        "of a transition each) to bound the frame cache memory in the baking HTML.",
+        {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Video asset id (from media.list / get_editor_state mediaAssets)",
+                },
+                "start": {
+                    "type": "number",
+                    "description": "Window start in seconds, in the asset's own timeline",
+                },
+                "end": {
+                    "type": "number",
+                    "description": "Window end in seconds; must be greater than start",
+                },
+                "maxWidth": {
+                    "type": "number",
+                    "description": "Output width cap in px (default 1280, allowed 320~1920)",
+                },
+            },
+            "required": ["id", "start", "end"],
+        },
+    )
+    async def supply_media_window(args):
+        asset_id = args.get("id")
+        if not isinstance(asset_id, str) or not asset_id:
+            return _error("Missing required argument: id")
+        payload = {"id": asset_id}
+        for key in ("start", "end"):
+            value = args.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                return _error(f"Missing required argument: {key}")
+            payload[key] = value
+        if not payload["end"] > payload["start"]:
+            return _error("end must be greater than start")
+        if payload["end"] - payload["start"] > MAX_SUPPLY_WINDOW_SECONDS:
+            return _error(
+                f"Window too long (max {MAX_SUPPLY_WINDOW_SECONDS}s); "
+                "keep it ≤1.5s per transition half"
+            )
+        max_width = args.get("maxWidth")
+        if isinstance(max_width, (int, float)) and not isinstance(max_width, bool):
+            if max_width < 320 or max_width > 1920:
+                return _error(f"maxWidth must be between 320 and 1920 (got {max_width})")
+            payload["maxWidth"] = max_width
+        try:
+            result = await call_editor(session_id, "media.supply_window", payload)
+        except Exception as e:
+            return _error(str(e))
+        return _text(
+            json.dumps(
+                {
+                    k: (result or {}).get(k)
+                    for k in ("id", "url", "duration", "width", "uploadedBytes")
+                },
+                ensure_ascii=False,
+            )
+        )
+
     # ------------------------------------------------------------------
     # add_media：独立渲染素材工具，与 add_html 平级。add_html 产活特效元素
     # （文字可编辑、DOM/CSS/GSAP 动画），add_media 产固定像素素材（透明 WebM 视频 /
@@ -518,14 +594,15 @@ def build_editor_mcp_server(session_id: str):
         "return as ONE contact sheet; \"image\" — static PNG at t=0; \"video\" (default) — animated "
         "transparent-background WebM (plain video element compositing, no blend mode needed). "
         "VIDEO FRAME SOURCES: to bake real footage into the asset (e.g. a transition clip spanning "
-        "the cut point), embed <video crossorigin=\"anonymous\" preload=\"auto\" muted playsinline "
-        "src=\"<asset url>#t=<start>,<end>\"> using the url field from media.list/get_editor_state "
-        "mediaAssets (Media Fragments window; the browser range-fetches only that segment — no full "
-        "download even for long sources). Pre-decode ALL frames of the window into an offscreen-canvas "
-        "cache BEFORE registering window.__timelines[\"main\"], then composite from the cache "
-        "synchronously inside the timeline (see the html-fx skill's 视频帧源 section) — never sample "
-        "frames sparsely, that stutters motion. The rendered clip is opaque full-frame: it covers the "
-        "timeline window it lands on, so no split is needed at the cut point.",
+        "the cut point), first call supply_media_window for each footage window (A tail + B head) to "
+        "get render-machine-accessible URLs, then embed them as DECLARATIVE <video src=\"<supplied "
+        "url>\" data-start data-duration muted playsinline> (the window is pre-cut, no #t= needed). "
+        "HyperFrames owns media playback — NEVER add crossorigin, never call play/pause/seek, and "
+        "never pre-decode frames into an offscreen canvas yourself; the render machine extracts "
+        "real frames and composites them. Wrap each video in a non-timed wrapper for motion "
+        "(lint rejects a timed video inside a timed ancestor; see the html-fx skill's 视频帧源 "
+        "section for the tested crossfade recipe). The rendered clip is opaque full-frame: it "
+        "covers the timeline window it lands on, so no split is needed at the cut point.",
         {
             "type": "object",
             "properties": {
@@ -815,6 +892,7 @@ def build_editor_mcp_server(session_id: str):
             get_preview_frame,
             get_preview_sequence,
             read_media,
+            supply_media_window,
             judge_visual_tool,
             add_media_tool,
             fx_components_tool,

@@ -14,7 +14,7 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
   - `add_html` 活特效：声明框就是元素在画布上的像素尺寸——静态会裁掉空白边，动画不裁，所以动画要按特效自身尺寸声明（框装下动画全程、含位移行程），用 transform.positionX/positionY 定位；用画布尺寸会让元素框变成整幅画布
   - `add_media` 渲染素材：产物插入时按画布 contain 缩放，小画布会被放大，所以渲染/评审那一版用项目画布尺寸声明、把同一块特效按目标位置摆进画布坐标
 - 页面背景透明（要底板就在 root 内画一个全尺寸子元素）
-- 脚本允许内联或 HTTPS CDN（如 GSAP：`https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js`）；图片/字体必须 data: 内联（例外：烘焙转场的 `<video>` 素材源，见下文「视频帧源」节）
+- 脚本允许内联或 HTTPS CDN（如 GSAP：`https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js`，渲染前服务端会自动替换为本地内联版，不必担心网络）；图片/字体必须 data: 内联（例外：烘焙转场的 `<video>` 素材源，见下文「视频帧源」节）
 - 所有 id 全文档唯一
 
 ## 动画二选一
@@ -40,15 +40,39 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
 
 ## 视频帧源：剪辑窗口烘焙（转场/混剪，走全部帧不抽帧）
 
-需要把素材的一段真实画面嵌进产物时（典型：烘焙转场——把转场点前后的 A 尾段 + B 首段合成一段转场视频），用 `<video>` 直接引用素材 URL，**不要抽帧嵌 base64**（抽帧会丢运动连贯性出定格感）：
+需要把素材的一段真实画面嵌进产物时（典型：烘焙转场——把转场点前后的 A 尾段 + B 首段合成一段转场视频），用**声明式 `<video>` 交给框架托管播放**，**不要抽帧嵌 base64**（丢运动连贯性出定格感），**也不要自己脚本 seek/预解码 canvas**（框架托管媒体：渲染时逐帧提取合成，脚本 seek 会被 StaticGuard 判违规且实际出黑屏）：
 
-- 素材 URL 从 `media.list` / `get_editor_state` 的 mediaAssets `url` 字段取（签名 URL，渲染机本机 Chrome 可直接访问；带 `crossorigin="anonymous"`，COS 已配 CORS）
-- **Media Fragments 限定窗口**：`src="<url>#t=<start>,<end>"`（素材时间轴秒数）——浏览器只 Range 拉该片段的数据，80 分钟长视频也只拉几 MB，不下载整段
-- **全帧率预解码到缓存**：`<video preload="auto" muted playsinline>`（隐藏 display:none），注册 timeline **之前**异步逐帧 seek（步长 1/fps）把每帧 `drawImage` 到离屏 canvas 数组；帧数 = 窗口时长 × fps（0.9s@30 = 27 帧）。这一步复用"异步准备、就绪后才注册 timeline"的契约（同 fonts.ready）
-- **timeline 内同步合成**：`onUpdate` 里按 progress 从帧缓存 `drawImage` 到主 canvas（A 帧全幅垫底，按几何窗口/混合算法裁剪叠 B 帧）——全程同步、无外部时钟、双向 seek 安全
-- 帧缓存内存 ≈ 帧数 × 宽×高×4B（27 帧×2 段 720p ≈ 200MB）：**窗口控制在 ≤1.5s**，超了拆两段渲染
+- **素材窗口段 URL 只能从 `supply_media_window` 拿**（mediaAssets 的 `url` 字段是浏览器本地 blob URL，渲染机无法访问，不要用）：`supply_media_window({ id, start, end, maxWidth? })` 在编辑器浏览器里把素材窗口转码成小 WebM 上传到 gateway，返回渲染机可直接拉取的 URL（窗口已切好，**不要在 URL 上加 #t=**；start/end 是素材自身时间轴秒数，从时间线坐标经元素 timeRange 换算）
+- **两个窗口分别调**：A 素材尾段 + B 素材首段各调一次（窗口各 ≤1.5s；80 分钟长视频也只转码这几秒，不下载整段）
+- **声明式 video（框架媒体契约）**：
+  ```html
+  <video src="<窗口段 url>" data-start="0.5" data-duration="1" muted playsinline
+         style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+  ```
+  - 必须 `muted` + `playsinline`；**绝不加 `crossorigin`**（lint 直接 error 且预览黑屏）；不要加 `preload`
+  - 时间：`data-start`（合成时间轴秒）+ `data-duration`；`data-media-start` 是源内偏移（窗口段已切好，通常不用）
+  - **禁止** `play()/pause()/currentTime = ...`——框架 owns 播放，脚本碰它会被 StaticGuard 判违规
+  - **禁止**「等 loadedmetadata → 逐帧 seek → drawImage 到 canvas 缓存」方案——渲染机由 FFmpeg 逐帧提取真实帧直接合成，页面脚本无需要也不允许参与
+- **几何过渡动画**：把 video 放进**不带 `data-start` 的 wrapper**，动画做在 wrapper 上（绝不把 `video data-start` 嵌在带 `data-start` 的祖先里——lint `video_nested_in_timed_element`，实际会错帧消失）：
+  ```html
+  <div id="wa" style="position:absolute;inset:0;will-change:transform">
+    <video src="<A url>" data-start="0" data-duration="1" muted playsinline
+           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+  </div>
+  <div id="wb" style="position:absolute;inset:0;will-change:transform">
+    <video src="<B url>" data-start="0.5" data-duration="1" muted playsinline
+           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+  </div>
+  <script>
+  window.__timelines["main"] = gsap.timeline({ paused: true })
+    .fromTo("#wa", { scale: 1, x: 0, opacity: 1 }, { scale: 0.55, x: -320, opacity: 0.35, duration: 0.5 }, 0.5)
+    .fromTo("#wb", { x: 1280 }, { x: 0, duration: 0.7, ease: "power2.out" }, 0.5);
+  </script>
+  ```
+  （已实测：A 缩小退场 + B 滑入的重叠转场逐帧正确）
+- 层级由 CSS 顺序 / z-index 决定（`data-track-index` 只是 Studio 显示轨道，不控制前后层级）
 - 产物是**实底**完整画面（非透明特效）：渲染/评审版用项目画布尺寸声明，特效内容按画布坐标摆；插入后盖住底层窗口，窗口结束帧与底层同源同时刻即无缝——**时间线不用 split**，窗口内音频也连续
-- A/B 双源：两个 `<video>` 各引各的窗口（同素材两段 `#t=`，或 split 两侧两个素材各一个 URL）
+- A/B 双源：`supply_media_window` 各调一次（同素材两个相邻窗口，或 split 两侧两个素材各一个窗口）
 
 ## 迭代纪律
 

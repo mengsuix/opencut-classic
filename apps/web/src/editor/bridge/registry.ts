@@ -32,7 +32,18 @@ import { generateUUID } from "@/utils/id";
 import { ANIMATION_PROPERTY_PATHS, type AnimationInterpolation } from "@/animation/types";
 import type { RetimeConfig } from "@/timeline/types";
 import { extractTimelineAudio } from "@/media/mediabunny";
-import { Input, ALL_FORMATS, BlobSource, VideoSampleSink } from "mediabunny";
+import {
+	ALL_FORMATS,
+	BlobSource,
+	Conversion,
+	Input,
+	Output,
+	StreamTarget,
+	VideoSampleSink,
+	WebMOutputFormat,
+	canEncodeVideo,
+	type VideoCodec,
+} from "mediabunny";
 import { decodeAudioToFloat32 } from "@/media/audio";
 import { processMediaAssets } from "@/media/processing";
 import { transcriptionService } from "@/services/transcription/service";
@@ -609,6 +620,10 @@ const SEQUENCE_SIGNATURE_SIZE = 16;
 const SEQUENCE_DEDUPE_THRESHOLD = 2.0;
 const MAX_SEQUENCE_FRAMES = 24;
 
+// media.supply_window：窗口时长硬上限（秒）。SKILL 指导 ≤1.5s 控制烘焙内存，
+// 硬上限只防误用（agent 误传整段素材）。
+const MAX_SUPPLY_WINDOW_SECONDS = 5;
+
 /**
  * 16×16 grayscale signature used to spot near-identical frames. Luma only
  * (not a structural hash) so small content changes — a new line of code, a
@@ -935,7 +950,6 @@ function buildEditorState(editor: EditorCore) {
 			width: asset.width,
 			height: asset.height,
 			fps: asset.fps,
-			url: asset.url,
 		})),
 		missingMedia: collectMissingMediaRefs(editor),
 	};
@@ -2226,7 +2240,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"media.list": {
 		description:
-			"List imported media assets. The url field is the playable source URL of the asset (signed/time-limited) — usable as a <video> src in add_media HTML for clip-window baking (see html-fx skill: video frame sources).",
+			"List imported media assets. To get render-machine-accessible footage of a video for clip-window baking (transitions), use media.supply_window instead.",
 		run: ({ editor }) => ({
 			assets: editor.media.getAssets().map((asset) => ({
 				id: asset.id,
@@ -2236,7 +2250,6 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				width: asset.width,
 				height: asset.height,
 				fps: asset.fps,
-				url: asset.url,
 			})),
 		}),
 	},
@@ -2385,6 +2398,138 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			} finally {
 				input.dispose();
 			}
+		},
+	},
+
+	"media.supply_window": {
+		description:
+			"Transcode a time window of a VIDEO asset into a small WebM and upload it to the agent gateway, returning a URL the render machine (add_media HTML <video src>) can fetch. This is the ONLY way the render machine can get real footage of the original video for clip-window baking (e.g. transitions) — the media.list url fields are browser-local blob URLs the render machine cannot access. The window is pre-cut on the browser side, so the returned URL needs no #t= fragment. Audio is dropped (timeline audio keeps playing from the original clip).",
+		args: {
+			id: "string (asset id from media.list / get_editor_state mediaAssets)",
+			start: "seconds (window start in the ASSET's own timeline)",
+			end: "seconds (window end; keep the window ≤1.5s for baking memory)",
+			maxWidth: "number? (px, clamp output width; default 1280, allowed 320~1920)",
+		},
+		run: async ({ editor, args }) => {
+			const id = requireString(args.id, "id");
+			const start = requireNumber(args.start, "start");
+			const end = requireNumber(args.end, "end");
+			if (!(end > start)) {
+				throw new Error("end must be greater than start");
+			}
+			const maxWidth = Math.round(
+				clampNumberArg({
+					value: args.maxWidth,
+					fallback: 1280,
+					min: 320,
+					max: 1920,
+				}),
+			);
+			const asset = editor.media.getAssets().find((item) => item.id === id);
+			if (!asset) {
+				throw new Error(`Media asset not found: ${id}`);
+			}
+			if (asset.type !== "video") {
+				throw new Error(`Media asset ${id} is not a video`);
+			}
+			const duration = asset.duration ?? 0;
+			if (!Number.isFinite(duration) || duration <= 0) {
+				throw new Error(`Video asset ${id} has no duration metadata`);
+			}
+			if (start < 0 || end > duration) {
+				throw new Error(
+					`Window [${start}, ${end}] is outside the asset duration ${duration}`,
+				);
+			}
+			if (end - start > MAX_SUPPLY_WINDOW_SECONDS) {
+				throw new Error(
+					`Window too long: ${end - start}s (max ${MAX_SUPPLY_WINDOW_SECONDS}s)`,
+				);
+			}
+
+			const input = new Input({
+				source: new BlobSource(asset.file),
+				formats: ALL_FORMATS,
+			});
+			let blob: Blob;
+			try {
+				const codec: VideoCodec = (await canEncodeVideo("vp9"))
+					? "vp9"
+					: "vp8";
+				// StreamTarget 的块带文件内偏移（position），muxer 会乱序/回填写入
+				// （如回填 EBML 头）。必须按 position 组装，不能按到达顺序拼接，
+				// 否则头部块被追加到文件尾，产物对解码器就是损坏的。
+				let totalBytes = 0;
+				const parts: Array<{ position: number; data: Uint8Array<ArrayBuffer> }> =
+					[];
+				const output = new Output({
+					format: new WebMOutputFormat(),
+					target: new StreamTarget(
+						new WritableStream({
+							write(chunk) {
+								// 拷贝：mediabunny 可能复用底层 ArrayBuffer
+								const data = chunk.data.slice();
+								parts.push({ position: chunk.position, data });
+								totalBytes = Math.max(
+									totalBytes,
+									chunk.position + data.byteLength,
+								);
+							},
+						}),
+					),
+				});
+				const conversion = await Conversion.init({
+					input,
+					output,
+					trim: { start, end },
+					video: {
+						codec,
+						width: Math.min(maxWidth, asset.width ?? maxWidth),
+						keyFrameInterval: 0.5,
+					},
+					audio: { discard: true },
+					showWarnings: false,
+				});
+				if (!conversion.isValid) {
+					const reasons = conversion.discardedTracks
+						.map((t) => `${t.track.type}: ${t.reason}`)
+						.join("; ");
+					throw new Error(`Conversion invalid: ${reasons || "unknown"}`);
+				}
+				await conversion.execute();
+				const file = new Uint8Array(totalBytes);
+				for (const part of parts) {
+					file.set(part.data, part.position);
+				}
+				blob = new Blob([file], { type: "video/webm" });
+			} finally {
+				input.dispose();
+			}
+
+			const gatewayOrigin = GATEWAY_URL ? new URL(GATEWAY_URL).origin : null;
+			if (!gatewayOrigin) {
+				throw new Error("Agent gateway not configured");
+			}
+			const token = await getGatewayToken();
+			const res = await fetch(`${gatewayOrigin}/api/agent/media`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "video/webm",
+					...(token ? { Authorization: `Bearer ${token}` } : {}),
+				},
+				body: blob,
+			});
+			if (!res.ok) {
+				throw new Error(`Upload failed (${res.status})`);
+			}
+			const data = (await res.json()) as { url: string; fileName: string };
+			return {
+				id,
+				url: data.url,
+				duration: end - start,
+				width: Math.min(maxWidth, asset.width ?? maxWidth),
+				uploadedBytes: blob.size,
+			};
 		},
 	},
 
