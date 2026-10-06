@@ -449,6 +449,11 @@ export class VideoCache {
 		}
 	}
 
+	/** 该素材的解码 sink 是否已初始化（容器已解析、解码器已建立）。 */
+	hasSink({ mediaId }: { mediaId: string }): boolean {
+		return this.sinks.has(mediaId);
+	}
+
 	getStats() {
 		return {
 			totalSinks: this.sinks.size,

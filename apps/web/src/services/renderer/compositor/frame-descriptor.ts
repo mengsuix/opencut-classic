@@ -261,12 +261,20 @@ async function collectVisualSourceNode({
 			: (node.resolved as ResolvedVisualSourceNodeState).sourceHeight;
 
 	const textureId = `${path}:source`;
+	// 视频帧画在 pool 化复用的 canvas 上（同对象跨帧复用），对象 identity 无法
+	// 区分帧内容；用源时间戳做内容哈希，帧变化时强制重新上传。静态源（图片等）
+	// 不带哈希，保持 identity 快路径。
+	const sourceTimestamp = (node.resolved as { sourceTimestamp?: number })
+		.sourceTimestamp;
 	textures.set(textureId, {
 		kind: "external",
 		id: textureId,
 		source,
 		width: sourceWidth,
 		height: sourceHeight,
+		...(typeof sourceTimestamp === "number"
+			? { contentHash: `video:${sourceTimestamp.toFixed(4)}` }
+			: {}),
 	});
 
 	const transform = computeVisualTransform({

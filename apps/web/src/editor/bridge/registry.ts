@@ -12,6 +12,8 @@ import { buildRemoveHtmlPresetCommand } from "@/commands";
 import { collectHtmlPresetInstances } from "@/timeline/element-utils";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { buildScene } from "@/services/renderer/scene-builder";
+import type { AnyBaseNode } from "@/services/renderer/nodes/base-node";
+import { videoCache } from "@/services/video-cache/service";
 import {
 	isAnimatedHtml,
 	isScriptedHtml,
@@ -996,6 +998,44 @@ function largeAnimatedHtmlWarnings({ html }: { html: string }): string[] {
 	return [
 		`Large animated HTML (~${Math.round(html.length / 1024)}KB, ~${approxElements} elements): it is re-rasterized every preview frame at full document cost, and past ~1000 elements preview drops below 30fps (measured ~20fps at 3000 elements). Prefer fewer DOM nodes/CSS rules, split it into multiple smaller html elements, or drop the animation if a static visual suffices.`,
 	];
+}
+
+/** 收集渲染树里所有视频源素材的 mediaId（video / blur-background 等带 mediaId 的节点）。 */
+function collectVideoMediaIds(
+	node: AnyBaseNode,
+	out: Set<string> = new Set(),
+): Set<string> {
+	const mediaId = (node.params as { mediaId?: unknown } | undefined)?.mediaId;
+	if (typeof mediaId === "string") {
+		out.add(mediaId);
+	}
+	for (const child of node.children) {
+		collectVideoMediaIds(child, out);
+	}
+	return out;
+}
+
+/**
+ * 预热尚未初始化的视频 sink。首次访问某素材时 videoCache 要解析容器、建立
+ * 解码器并解出首帧，这段窗口里的渲染请求可能拿不到帧（首次截图缺视频层、
+ * 呈现黑底），或被更新的请求取代而返回旧帧。先渲染一次把这些 sink 拉起来
+ * （结果丢弃），随后正式渲染即能命中帧。全部已初始化时不预热（零额外开销）。
+ */
+async function prewarmVideoSinks({
+	renderer,
+	node,
+	time,
+}: {
+	renderer: CanvasRenderer;
+	node: AnyBaseNode;
+	time: number;
+}): Promise<void> {
+	for (const mediaId of collectVideoMediaIds(node)) {
+		if (!videoCache.hasSink({ mediaId })) {
+			await renderer.render({ node, time });
+			return;
+		}
+	}
 }
 
 export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
@@ -2582,6 +2622,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const canvas = document.createElement("canvas");
 			canvas.width = canvasSize.width;
 			canvas.height = canvasSize.height;
+			await prewarmVideoSinks({ renderer, node: renderTree, time: renderTime });
 			await renderer.renderToCanvas({
 				node: renderTree,
 				time: renderTime,
@@ -2712,6 +2753,14 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				1,
 				Math.round((cellWidth * canvasSize.height) / canvasSize.width),
 			);
+
+			if (times.length > 0) {
+				await prewarmVideoSinks({
+					renderer,
+					node: renderTree,
+					time: Math.min(toTicks(times[0]), lastFrameTime),
+				});
+			}
 
 			const sampled: SequenceSampledFrame[] = [];
 			for (const time of times) {

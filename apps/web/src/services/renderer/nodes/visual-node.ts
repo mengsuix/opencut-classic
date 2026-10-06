@@ -48,6 +48,13 @@ export interface ResolvedVisualSourceNodeState extends ResolvedVisualNodeState {
 	source: CanvasImageSource;
 	sourceWidth: number;
 	sourceHeight: number;
+	/**
+	 * Decoded video frame's source-media timestamp (seconds). Video frames are
+	 * drawn into pooled canvases that get reused across frames, so texture
+	 * caching cannot rely on source object identity alone — this timestamp is
+	 * the frame's content identifier. Absent for static sources (images).
+	 */
+	sourceTimestamp?: number;
 }
 
 export abstract class VisualNode<

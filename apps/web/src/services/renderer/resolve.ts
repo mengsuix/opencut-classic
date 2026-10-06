@@ -340,6 +340,9 @@ async function resolveVideoNode({
 		source: frame.canvas,
 		sourceWidth: frame.canvas.width,
 		sourceHeight: frame.canvas.height,
+		// 帧时间戳作为纹理内容标识：pool 化的 canvas 会跨帧复用（对象 identity
+		// 不可靠），合成器据此判断是否需要重新上传。
+		sourceTimestamp: frame.timestamp,
 	};
 }
 
