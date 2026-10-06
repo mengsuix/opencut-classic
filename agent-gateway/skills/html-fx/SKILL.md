@@ -42,7 +42,7 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
 
 需要把素材的一段真实画面嵌进产物时（典型：烘焙转场——把转场点前后的 A 尾段 + B 首段合成一段转场视频），用**声明式 `<video>` 交给框架托管播放**，**不要抽帧嵌 base64**（丢运动连贯性出定格感），**也不要自己脚本 seek/预解码 canvas**（框架托管媒体：渲染时逐帧提取合成，脚本 seek 会被 StaticGuard 判违规且实际出黑屏）：
 
-- **素材窗口段 URL 只能从 `supply_media_window` 拿**（mediaAssets 的 `url` 字段是浏览器本地 blob URL，渲染机无法访问，不要用）：`supply_media_window({ id, start, end, maxWidth? })` 在编辑器浏览器里把素材窗口转码成小 WebM 上传到 gateway，返回渲染机可直接拉取的 URL（窗口已切好，**不要在 URL 上加 #t=**；start/end 是素材自身时间轴秒数，从时间线坐标经元素 timeRange 换算）
+- **素材窗口段 URL 只能从 `supply_media_window` 拿**（mediaAssets 的 `url` 字段是浏览器本地 blob URL，渲染机无法访问，不要用）：`supply_media_window({ id, start, end, maxWidth? })` 在编辑器浏览器里把素材窗口转码成小 WebM 上传到 gateway，返回渲染机可直接拉取的 URL（窗口已切好，**不要在 URL 上加 #t=**；start/end 是素材自身时间轴秒数，从时间线坐标经元素 timeRange 换算；**窗口段自带原音轨 Opus**）
 - **两个窗口分别调**：A 素材尾段 + B 素材首段各调一次（窗口各 ≤1.5s；80 分钟长视频也只转码这几秒，不下载整段）
 - **声明式 video（框架媒体契约）**：
   ```html
@@ -71,7 +71,7 @@ description: 写 add_html / add_media 的 HTML 特效前的必读规范——HTM
   ```
   （已实测：A 缩小退场 + B 滑入的重叠转场逐帧正确）
 - 层级由 CSS 顺序 / z-index 决定（`data-track-index` 只是 Studio 显示轨道，不控制前后层级）
-- 产物是**实底**完整画面（非透明特效）：渲染/评审版用项目画布尺寸声明，特效内容按画布坐标摆；插入后盖住底层窗口，窗口结束帧与底层同源同时刻即无缝——**时间线不用 split**，窗口内音频也连续
+- 产物是**实底**完整画面（非透明特效）：渲染/评审版用项目画布尺寸声明，特效内容按画布坐标摆；**落位用"替换插入"结构**——把底层片段在窗口两端 split、删除被覆盖的中段、把烘焙片段插到同一轨道该位置（成为序列的一部分），**不要叠在另一条轨道上盖住底层**（跨轨对齐一移动就碎）。窗口段自带原音轨（Opus）：HTML 里 video 保持 `muted`，另加 `<audio src="<同一窗口段 url>" data-start="0" data-duration="<窗口时长>">`，出片音频与两侧无缝
 - A/B 双源：`supply_media_window` 各调一次（同素材两个相邻窗口，或 split 两侧两个素材各一个窗口）
 
 ## 迭代纪律

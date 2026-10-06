@@ -42,6 +42,7 @@ import {
 	VideoSampleSink,
 	WebMOutputFormat,
 	canEncodeVideo,
+	type AudioCodec,
 	type VideoCodec,
 } from "mediabunny";
 import { decodeAudioToFloat32 } from "@/media/audio";
@@ -2403,7 +2404,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"media.supply_window": {
 		description:
-			"Transcode a time window of a VIDEO asset into a small WebM and upload it to the agent gateway, returning a URL the render machine (add_media HTML <video src>) can fetch. This is the ONLY way the render machine can get real footage of the original video for clip-window baking (e.g. transitions) — the media.list url fields are browser-local blob URLs the render machine cannot access. The window is pre-cut on the browser side, so the returned URL needs no #t= fragment. Audio is dropped (timeline audio keeps playing from the original clip).",
+			"Transcode a time window of a VIDEO asset into a small WebM and upload it to the agent gateway, returning a URL the render machine (add_media HTML <video src>) can fetch. This is the ONLY way the render machine can get real footage of the original video for clip-window baking (e.g. transitions) — the media.list url fields are browser-local blob URLs the render machine cannot access. The window is pre-cut on the browser side, so the returned URL needs no #t= fragment. The original audio track IS kept (Opus) — a baked clip replacing a timeline segment must carry the window's audio itself (in add_media HTML: mute the <video> and add a separate <audio> element with the same src).",
 		args: {
 			id: "string (asset id from media.list / get_editor_state mediaAssets)",
 			start: "seconds (window start in the ASSET's own timeline)",
@@ -2478,6 +2479,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 						}),
 					),
 				});
+				// 直接探测输入文件有没有音轨（不依赖 asset.hasAudio：存量素材元数据
+				// 里没有该字段）。有音轨就保留（Opus）——烘焙片段替换时间线片段时
+				// 必须自带窗口音频，结构改成"剪掉中段插入"后不再有底下原片段替它出声
+				const hasAudioTrack = (await input.getPrimaryAudioTrack()) !== null;
 				const conversion = await Conversion.init({
 					input,
 					output,
@@ -2487,7 +2492,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 						width: Math.min(maxWidth, asset.width ?? maxWidth),
 						keyFrameInterval: 0.5,
 					},
-					audio: { discard: true },
+					...(hasAudioTrack ? { audio: { codec: "opus" as AudioCodec } } : {}),
 					showWarnings: false,
 				});
 				if (!conversion.isValid) {

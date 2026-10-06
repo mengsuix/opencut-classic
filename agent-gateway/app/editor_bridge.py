@@ -493,10 +493,13 @@ def build_editor_mcp_server(session_id: str):
         "the original video for clip-window baking (transitions/cuts) — the mediaAssets url fields "
         "are browser-local blob URLs the render machine cannot access, so ALWAYS go through this "
         "tool. The window is pre-cut, so the returned URL needs NO #t= fragment; it plays exactly "
-        "the requested window. Audio is dropped (timeline audio keeps playing from the original "
-        "clip). Use start/end in the ASSET's own timeline (convert from timeline coordinates via "
+        "the requested window, original audio track included (Opus). Use start/end in the ASSET's "
+        "own timeline (convert from timeline coordinates via "
         "the element's timeRange + its media source offset). Keep the window ≤1.5s (both halves "
-        "of a transition each) to bound the frame cache memory in the baking HTML.",
+        "of a transition each) to bound the frame cache memory in the baking HTML. The window "
+        "carries the original audio track (Opus) — when the baked clip REPLACES a timeline "
+        "segment (split out the covered range, insert the clip in its place), wire the audio in "
+        "the add_media HTML as a separate <audio> element with the same src (mute the <video>).",
         {
             "type": "object",
             "properties": {
