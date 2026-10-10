@@ -151,7 +151,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "editor_status",
-        "Check whether an OpenCut editor page is connected to this bridge and which project is open.",
+        "检查是否有 OpenCut 编辑器页面连接到本桥接，以及当前打开的是哪个项目。",
         {},
     )
     async def editor_status(args):
@@ -164,7 +164,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "list_commands",
-        "List all editor commands available via execute_command, with argument hints. All time values are in seconds.",
+        "列出 execute_command 可用的全部编辑器命令及参数提示。所有时间值单位是秒。",
         {},
     )
     async def list_commands(args):
@@ -172,7 +172,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_editor_state",
-        'Get the current editor state: project settings, scenes, tracks and elements (times in seconds), selection, playback position, undo/redo availability, and media assets. trackOrder lists every track in on-screen order (row 0 = the topmost row in the timeline UI); upper tracks render on top of the ones below them, and effect tracks only affect the picture below them. When the user refers to "the first/top/bottom track" or a layer number (第一层/最上面/最下面), map it through trackOrder rather than the main/overlay/audio grouping order.',
+        '获取当前编辑器状态：项目设置、场景、轨道与元素（时间单位为秒）、选中情况、播放头位置、撤销/重做可用性、素材列表。trackOrder 按界面显示顺序列出全部轨道（row 0 = 时间线界面最上面一行）；上方轨道渲染时压在下方轨道之上，effect 轨道只作用于其下方画面。用户说"第一条/最上面/最下面那条轨道"或"第几层"时，按 trackOrder 解析，不按 main/overlay/audio 的分组顺序猜。',
         {},
     )
     async def get_editor_state(args):
@@ -180,7 +180,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_selection",
-        'Get the current editor selection in detail: selected timeline elements (refs, track type, element type, name, timing in seconds, text content), selected keyframes and mask points. When the user refers to "the selected part/clip/选中的部分", call this first to resolve what it refers to. Commands that accept an "elements" array also accept the string "$selection" to target the current selection directly.',
+        '获取当前编辑器选区的详细信息：选中的时间线元素（引用、轨道类型、元素类型、名称、秒级时间、文本内容）、选中的关键帧与蒙版点。用户说"选中的部分/这段"时，先调本工具确认指代。接受 "elements" 数组的命令也可传字符串 "$selection"，直接作用于当前选中。',
         {},
     )
     async def get_selection(args):
@@ -188,7 +188,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_user_marks",
-        "Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a label id like \"C1\", \"C2\", … shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at; pass one as get_preview_frame's rect to get a native-resolution close-up of that region — the right way to see small details like icons or text clearly), timeRanges = time ranges the user marked on the timeline (each with a label id like \"T1\", \"T2\", … shown on the band; seconds). The user can mark several of each and points at one by its label (e.g. \"C1\"); both are empty arrays when nothing is marked. Clear them with execute_command marks.clear after use.",
+        "获取用户用于指代位置的可视化标注：canvasRects = 用户在预览画面上框选的矩形（每个带 \"C1\"、\"C2\" 等标注 id，直接显示在框上；坐标是 0~1 画布比例、左上角原点——与 masks.set_canvas_rect 同一坐标系，可直接作它的 rect 参数；内含框选时刻的播放头秒数；把它传给 get_preview_frame 的 rect 可拿该区域的原生分辨率特写——看清图标、文字等小细节的正确方式）；timeRanges = 用户在时间轴上拖选的时间范围（每个带 \"T1\"、\"T2\" 等标注 id，显示在色带上；单位秒）。每种都可标多个，用户用标注 id 指代（如 \"C1\"）；无标注时两者都是空数组。用完调 execute_command marks.clear 清除。",
         {},
     )
     async def get_user_marks(args):
@@ -196,17 +196,17 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "execute_command",
-        'Execute an editor command in the open OpenCut editor. Use list_commands to discover commands. All time arguments are in seconds. Every command runs through the editor\'s command system, so changes are applied to the live preview immediately and are undoable. For commands that accept an "elements" array, you may pass the string "$selection" to target the user\'s current selection (fails if nothing is selected); use the get_selection tool to see what is selected.',
+        '在打开的 OpenCut 编辑器中执行一条编辑器命令。用 list_commands 发现可用命令。所有时间参数单位是秒。每条命令都走编辑器的命令系统，修改实时应用到预览且可撤销。接受 "elements" 数组的命令可传字符串 "$selection" 作用于用户当前选中（无选中时失败）；用 get_selection 工具查看当前选中。',
         {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "Command name, e.g. timeline.split_elements",
+                    "description": "命令名，如 timeline.split_elements",
                 },
                 "args": {
                     "type": "object",
-                    "description": "Command arguments; see list_commands for hints",
+                    "description": "命令参数；参数提示见 list_commands",
                 },
             },
             "required": ["command"],
@@ -215,7 +215,7 @@ def build_editor_mcp_server(session_id: str):
     async def execute_command(args):
         command = args.get("command")
         if not isinstance(command, str) or not command:
-            return _error("Missing required argument: command")
+            return _error("缺少必填参数: command")
         cmd_args = args.get("args")
         if not isinstance(cmd_args, dict):
             cmd_args = {}
@@ -223,17 +223,17 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_preview_frame",
-        "Capture a frame of the current preview as a downscaled image (long edge 1280). Optionally render at a specific time (seconds) instead of the current playhead position. Use this for visual feedback after making edits. To inspect fine details (small icons, text, a user-framed region), pass rect — a canvas-fraction rect 0~1, e.g. a canvasRects entry from get_user_marks — and the output is cropped to that region at native resolution instead of downscaled. When the target is a small sub-element inside the region (icon, star, badge, small text), first capture the whole region, then tighten rect onto that element itself so it fills the frame — a sub-element only a few dozen native pixels wide is not shape-recognizable inside a larger crop; never guess its shape from a blurred bright spot.",
+        "截取当前预览画面的一帧，返回降采样图（长边 1280）。可选传 time（秒）渲染指定时刻而不是当前播放头位置。用于修改后的视觉核验。要看清细节（小图标、文字、用户框选的区域）时传 rect——0~1 画布比例矩形，如 get_user_marks 的 canvasRects 条目——输出改为按该区域原生分辨率裁剪，不再降采样。目标是区域内的小子元素（图标、星形、徽标、小字）时，先截整个区域，再把 rect 收紧到该元素本身让它充满画面——只有几十原生像素宽的子元素在更大的裁剪图里无法辨认形状；禁止对着模糊亮点猜形状。",
         {
             "type": "object",
             "properties": {
                 "time": {
                     "type": "number",
-                    "description": "Time in seconds; defaults to current playhead",
+                    "description": "时间（秒）；缺省取当前播放头",
                 },
                 "rect": {
                     "type": "object",
-                    "description": "Optional {left, top, right, bottom} in canvas fractions 0~1 (same coordinates as get_user_marks canvasRects); crops the capture to that region at native resolution",
+                    "description": "可选 {left, top, right, bottom}，0~1 画布比例（与 get_user_marks canvasRects 同一坐标系）；把截图裁剪到该区域并按原生分辨率输出",
                 },
             },
         },
@@ -276,30 +276,30 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_preview_sequence",
-        "Sample several frames across a time range in ONE call and return a single contact sheet image: a grid of frames, each labelled with its timestamp. Near-identical consecutive frames are dropped automatically, so static stretches collapse into one frame. Use this to understand a clip's structure cheaply (what happens in this video, where are the scene changes), then call get_preview_frame when one moment needs full detail. Long clips need a wider spacing: pick count so that (end - start) / count is a sensible step, and tell the user how sparse the coverage is.",
+        "一次调用在一个时间范围内抽样多帧，返回单张拼图：网格排列、每帧标注时间点。近同的相邻帧自动丢弃，静态段落压缩成一帧。用于低成本理解素材结构（这段视频发生了什么、场景切换在哪），需要看某一时刻的完整细节再调 get_preview_frame。长素材要拉大间隔：按 (end - start) / count 选一个合理步长，并向用户说明采样有多稀疏。",
         {
             "type": "object",
             "properties": {
                 "start": {
                     "type": "number",
-                    "description": "Range start in seconds (default 0)",
+                    "description": "范围起点（秒，默认 0）",
                 },
                 "end": {
                     "type": "number",
-                    "description": "Range end in seconds (default project duration)",
+                    "description": "范围终点（秒，默认项目时长）",
                 },
                 "count": {
                     "type": "number",
-                    "description": "Frames to sample before dedupe (default 9). Must be between 1 and 24 — larger values are rejected, not clamped; narrow start/end for finer detail instead.",
+                    "description": "去重前抽样帧数（默认 9）。必须在 1~24 之间——超限会被拒绝而非截断；要更细就缩小 start/end 而不是加 count。",
                 },
                 "timestamps": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "Explicit sample times in seconds (max 24 entries); overrides start/end/count",
+                    "description": "显式指定抽样时间点（秒，最多 24 个）；传入后覆盖 start/end/count",
                 },
                 "cellWidth": {
                     "type": "number",
-                    "description": "Pixel width of each contact-sheet cell, default 320, allowed 120~640 (rejected outside that range, not clamped). For pixel-level detail, use get_preview_frame with rect instead.",
+                    "description": "拼图每格像素宽，默认 320，允许 120~640（超出拒绝而非截断）。像素级细节请改用 get_preview_frame 加 rect。",
                 },
             },
         },
@@ -314,17 +314,16 @@ def build_editor_mcp_server(session_id: str):
         if isinstance(cell_width, (int, float)) and not isinstance(cell_width, bool):
             if cell_width < 120 or cell_width > 640:
                 return _error(
-                    f"cellWidth must be between 120 and 640 (got {cell_width}). "
-                    "For pixel-level detail, call get_preview_frame with rect instead."
+                    f"cellWidth 必须在 120~640 之间（收到 {cell_width}）。"
+                    "像素级细节请改用 get_preview_frame 加 rect。"
                 )
             payload["cellWidth"] = cell_width
         count = args.get("count")
         if isinstance(count, (int, float)) and not isinstance(count, bool):
             if count < 1 or count > MAX_SEQUENCE_FRAMES:
                 return _error(
-                    f"count must be between 1 and {MAX_SEQUENCE_FRAMES} "
-                    f"(got {count}). For finer detail, narrow start/end "
-                    "instead of raising count."
+                    f"count 必须在 1~{MAX_SEQUENCE_FRAMES} 之间（收到 {count}）。"
+                    "要更细就缩小 start/end，而不是加 count。"
                 )
             payload["count"] = count
         stamps = args.get("timestamps")
@@ -336,8 +335,7 @@ def build_editor_mcp_server(session_id: str):
             ]
             if len(cleaned) > MAX_SEQUENCE_FRAMES:
                 return _error(
-                    f"timestamps may contain at most {MAX_SEQUENCE_FRAMES} "
-                    f"entries (got {len(cleaned)})."
+                    f"timestamps 最多 {MAX_SEQUENCE_FRAMES} 个（收到 {len(cleaned)} 个）。"
                 )
             payload["timestamps"] = cleaned
         try:
@@ -366,45 +364,43 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "read_media",
-        "Read the VISUAL content of an imported media asset by asset id — WITHOUT touching the timeline. "
-        "Images return the picture itself; videos return one contact sheet of frames sampled across a "
-        "time range (default the whole clip), each labelled with its timestamp, near-identical frames "
-        "dropped by default — same sampling semantics as get_preview_sequence, narrow start/end for "
-        "finer detail; audio has no visual content and returns metadata only. Asset ids come from "
-        "media.list, get_editor_state mediaAssets, or the \"我引用的素材\" block at the start of a user "
-        "message. ALWAYS use this to view a library asset — never insert it onto the timeline just to "
-        "look at it.",
+        "按素材 id 读取已导入素材的视觉内容——不碰时间线。"
+        "图片返回图片本身；视频返回一张拼图（在指定时间范围抽帧，默认整段），"
+        "每帧标注时间点，默认丢弃近同帧——采样语义与 get_preview_sequence 相同，"
+        "要更细就缩小 start/end；音频无视觉内容，只返回元数据。素材 id 来自 "
+        "media.list、get_editor_state 的 mediaAssets，或用户消息开头的 \"我引用的素材\" "
+        "列表。查看素材库素材一律用本工具——绝不为了看一眼就把它插上时间线。",
         {
             "type": "object",
             "properties": {
                 "id": {
                     "type": "string",
-                    "description": "Media asset id",
+                    "description": "素材 id",
                 },
                 "start": {
                     "type": "number",
-                    "description": "Video only: range start in seconds (default 0)",
+                    "description": "仅视频：范围起点（秒，默认 0）",
                 },
                 "end": {
                     "type": "number",
-                    "description": "Video only: range end in seconds (default asset duration)",
+                    "description": "仅视频：范围终点（秒，默认素材时长）",
                 },
                 "count": {
                     "type": "number",
-                    "description": "Video only: frames to sample before dedupe (default 9, max 24 — rejected outside that range)",
+                    "description": "仅视频：去重前抽样帧数（默认 9，最多 24——超限拒绝）",
                 },
                 "timestamps": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": "Video only: explicit sample times in seconds (max 24 entries); overrides start/end/count",
+                    "description": "仅视频：显式指定抽样时间点（秒，最多 24 个）；传入后覆盖 start/end/count",
                 },
                 "dedupe": {
                     "type": "boolean",
-                    "description": "Video only: drop near-identical frames (default true)",
+                    "description": "仅视频：丢弃近同帧（默认 true）",
                 },
                 "cellWidth": {
                     "type": "number",
-                    "description": "Video only: px width per cell, default 320, allowed 120~640 (rejected outside that range)",
+                    "description": "仅视频：拼图每格像素宽，默认 320，允许 120~640（超出拒绝）",
                 },
             },
             "required": ["id"],
@@ -413,7 +409,7 @@ def build_editor_mcp_server(session_id: str):
     async def read_media(args):
         asset_id = args.get("id")
         if not isinstance(asset_id, str) or not asset_id:
-            return _error("Missing required argument: id")
+            return _error("缺少必填参数: id")
         payload = {"id": asset_id}
         for key in ("start", "end"):
             value = args.get(key)
@@ -423,7 +419,7 @@ def build_editor_mcp_server(session_id: str):
         if isinstance(count, (int, float)) and not isinstance(count, bool):
             if count < 1 or count > MAX_SEQUENCE_FRAMES:
                 return _error(
-                    f"count must be between 1 and {MAX_SEQUENCE_FRAMES} (got {count})"
+                    f"count 必须在 1~{MAX_SEQUENCE_FRAMES} 之间（收到 {count}）"
                 )
             payload["count"] = count
         stamps = args.get("timestamps")
@@ -435,8 +431,7 @@ def build_editor_mcp_server(session_id: str):
             ]
             if len(cleaned) > MAX_SEQUENCE_FRAMES:
                 return _error(
-                    f"timestamps may contain at most {MAX_SEQUENCE_FRAMES} "
-                    f"entries (got {len(cleaned)})."
+                    f"timestamps 最多 {MAX_SEQUENCE_FRAMES} 个（收到 {len(cleaned)} 个）。"
                 )
             payload["timestamps"] = cleaned
         dedupe = args.get("dedupe")
@@ -446,7 +441,7 @@ def build_editor_mcp_server(session_id: str):
         if isinstance(cell_width, (int, float)) and not isinstance(cell_width, bool):
             if cell_width < 120 or cell_width > 640:
                 return _error(
-                    f"cellWidth must be between 120 and 640 (got {cell_width})"
+                    f"cellWidth 必须在 120~640 之间（收到 {cell_width}）"
                 )
             payload["cellWidth"] = cell_width
         try:
@@ -487,37 +482,34 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "supply_media_window",
-        "Transcode a time window of a VIDEO asset (in the editor's browser) into a small WebM, "
-        "upload it to the gateway, and return a URL that the render machine (add_media HTML "
-        "<video src>) can fetch. This is the ONLY way the render machine can get real footage of "
-        "the original video for clip-window baking (transitions/cuts) — the mediaAssets url fields "
-        "are browser-local blob URLs the render machine cannot access, so ALWAYS go through this "
-        "tool. The window is pre-cut, so the returned URL needs NO #t= fragment; it plays exactly "
-        "the requested window, original audio track included (Opus). Use start/end in the ASSET's "
-        "own timeline (convert from timeline coordinates via "
-        "the element's timeRange + its media source offset). Keep the window ≤1.5s (both halves "
-        "of a transition each) to bound the frame cache memory in the baking HTML. The window "
-        "carries the original audio track (Opus) — when the baked clip REPLACES a timeline "
-        "segment (split out the covered range, insert the clip in its place), wire the audio in "
-        "the add_media HTML as a separate <audio> element with the same src (mute the <video>).",
+        "把视频素材的一个时间窗口（在编辑器浏览器内）转码成小 WebM 上传到 gateway，"
+        "返回渲染机（add_media HTML 里的 <video src>）可拉取的 URL。这是渲染机拿到"
+        "原视频真实画面的唯一途径（剪辑窗口烘焙：转场/剪切）——mediaAssets 的 url 字段"
+        "是浏览器本地 blob URL，渲染机访问不了，必须走本工具。窗口已预先切好，返回的 "
+        "URL 不需要 #t= 片段；它恰好播放请求的窗口，含原音轨（Opus）。start/end 用素材"
+        "自身时间轴的秒数（从时间线坐标经元素的 timeRange + 素材源偏移换算）。窗口保持 "
+        "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。窗口段自带原音轨"
+        "（Opus）——当烘焙片段是替换时间线区段时（split 出被覆盖范围、把片段插回原位），"
+        "在 add_media HTML 里用同一 src 单独挂一个 <audio> 元素接线音频（<video> 保持 "
+        "muted）。",
         {
             "type": "object",
             "properties": {
                 "id": {
                     "type": "string",
-                    "description": "Video asset id (from media.list / get_editor_state mediaAssets)",
+                    "description": "视频素材 id（来自 media.list / get_editor_state 的 mediaAssets）",
                 },
                 "start": {
                     "type": "number",
-                    "description": "Window start in seconds, in the asset's own timeline",
+                    "description": "窗口起点（秒，素材自身时间轴）",
                 },
                 "end": {
                     "type": "number",
-                    "description": "Window end in seconds; must be greater than start",
+                    "description": "窗口终点（秒）；必须大于 start",
                 },
                 "maxWidth": {
                     "type": "number",
-                    "description": "Output width cap in px (default 1280, allowed 320~1920)",
+                    "description": "输出宽度上限（像素，默认 1280，允许 320~1920）",
                 },
             },
             "required": ["id", "start", "end"],
@@ -526,24 +518,24 @@ def build_editor_mcp_server(session_id: str):
     async def supply_media_window(args):
         asset_id = args.get("id")
         if not isinstance(asset_id, str) or not asset_id:
-            return _error("Missing required argument: id")
+            return _error("缺少必填参数: id")
         payload = {"id": asset_id}
         for key in ("start", "end"):
             value = args.get(key)
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                return _error(f"Missing required argument: {key}")
+                return _error(f"缺少必填参数: {key}")
             payload[key] = value
         if not payload["end"] > payload["start"]:
-            return _error("end must be greater than start")
+            return _error("end 必须大于 start")
         if payload["end"] - payload["start"] > MAX_SUPPLY_WINDOW_SECONDS:
             return _error(
-                f"Window too long (max {MAX_SUPPLY_WINDOW_SECONDS}s); "
-                "keep it ≤1.5s per transition half"
+                f"窗口过长（上限 {MAX_SUPPLY_WINDOW_SECONDS}s）；"
+                "转场每半段保持 ≤1.5s"
             )
         max_width = args.get("maxWidth")
         if isinstance(max_width, (int, float)) and not isinstance(max_width, bool):
             if max_width < 320 or max_width > 1920:
-                return _error(f"maxWidth must be between 320 and 1920 (got {max_width})")
+                return _error(f"maxWidth 必须在 320~1920 之间（收到 {max_width}）")
             payload["maxWidth"] = max_width
         try:
             result = await call_editor(session_id, "media.supply_window", payload)
@@ -568,60 +560,53 @@ def build_editor_mcp_server(session_id: str):
     # ------------------------------------------------------------------
     @tool(
         "add_media",
-        "Render a self-contained HTML/CSS composition headlessly (HyperFrames, frame-accurate "
-        "CSS/WAAPI/GSAP animation) into a MEDIA ASSET. Peer of timeline.add_html — choose by "
-        "deliverable: add_html produces a LIVE editable effect element (text editable via data-param, "
-        "DOM/CSS/GSAP animation in the editor, near-zero cost); add_media produces fixed pixels — a "
-        "transparent-background VP9-alpha WebM video (or PNG) imported as a generated effect asset "
-        "(shown in the Effects panel's generated section, hidden from the media library) — for "
-        "Canvas/WebGL/shader/particle visuals whose pixels never survive DOM serialization, or when a "
-        "rendered video asset is wanted. "
-        "ITERATION FLOW: author the HTML, then iterate with format \"frames\" (animated) or \"image\" "
-        "(static) — seconds per round, headless, transparent background, zero project pollution; "
-        "preview images come back with imageHandle fields that feed judge_visual directly. Only after "
-        "the frames/image pass judgement, render format \"video\" (1-3 minutes) and follow the "
-        "returned next steps to import. "
-        "HTML: a COMPLETE self-contained document with a root element carrying data-width=\"<px>\" "
-        "data-height=\"<px>\" (the render viewport) and a transparent page background; <meta "
-        "charset=\"utf-8\"> for Chinese text. HyperFrames contract attributes "
-        "(data-composition-id/data-start/data-duration/data-no-timeline) are AUTO-FILLED when missing — "
-        "add data-duration=\"<seconds>\" yourself for animated content (default 5s). Animation: CSS "
-        "@keyframes (finite iterations, animation-fill-mode:both) or ONE paused GSAP timeline "
-        "registered as window.__timelines[\"main\"] (same contract as add_html; no repeat:-1, no "
-        "Math.random/Date.now). Set data-width/data-height to the PROJECT canvas size (see "
-        "get_editor_state) and position content where it should appear on screen — the rendered asset "
-        "drops onto the timeline 1:1; a small canvas (e.g. a 520x152 badge) gets contain-scaled up on "
-        "insert. "
-        "Formats: \"frames\" — key frames at default 0.2/0.5/0.8 of the duration or explicit "
-        "\"timestamps\" (max 12; avoid t=0 and t==duration, both can be blank), more than 4 frames "
-        "return as ONE contact sheet; \"image\" — static PNG at t=0; \"video\" (default) — animated "
-        "transparent-background WebM (plain video element compositing, no blend mode needed). "
-        "VIDEO FRAME SOURCES: to bake real footage into the asset (e.g. a transition clip spanning "
-        "the cut point), first call supply_media_window for each footage window (A tail + B head) to "
-        "get render-machine-accessible URLs, then embed them as DECLARATIVE <video src=\"<supplied "
-        "url>\" data-start data-duration muted playsinline> (the window is pre-cut, no #t= needed). "
-        "HyperFrames owns media playback — NEVER add crossorigin, never call play/pause/seek, and "
-        "never pre-decode frames into an offscreen canvas yourself; the render machine extracts "
-        "real frames and composites them. Wrap each video in a non-timed wrapper for motion "
-        "(lint rejects a timed video inside a timed ancestor; see the html-fx skill's 视频帧源 "
-        "section for the tested crossfade recipe). The rendered clip is opaque full-frame: it "
-        "covers the timeline window it lands on, so no split is needed at the cut point.",
+        "把自包含 HTML/CSS 合成无头渲染（HyperFrames，帧精确的 CSS/WAAPI/GSAP 动画）成"
+        "媒体素材。与 timeline.add_html 平级——按产物形态选型：add_html 产活特效元素"
+        "（文字经 data-param 可编辑、编辑器内 DOM/CSS/GSAP 动画、成本近零）；add_media "
+        "产固定像素——透明背景 VP9-alpha WebM 视频（或 PNG），作为生成特效素材导入"
+        "（显示在特效面板的生成区，不进素材库）——用于 Canvas/WebGL/shader/粒子等 "
+        "DOM 序列化留不住像素的视觉，或需要渲染好的视频素材时。"
+        "迭代流程：先写 HTML，再用 format \"frames\"（动画）或 \"image\"（静态）迭代——"
+        "每轮秒级、无头、透明背景、零工程污染；预览图带回 imageHandle 字段，可直接喂给 "
+        "judge_visual。frames/image 通过评审后才渲染 format \"video\"（1~3 分钟），并按"
+        "返回的 next 步骤导入。"
+        "HTML：一份完整自包含文档，root 元素带 data-width=\"<px>\" data-height=\"<px>\""
+        "（渲染视口），页面背景透明；有中文文字加 <meta charset=\"utf-8\">。HyperFrames "
+        "契约属性（data-composition-id/data-start/data-duration/data-no-timeline）缺失时"
+        "自动补齐——动画内容自己加 data-duration=\"<秒>\"（默认 5s）。动画：CSS "
+        "@keyframes（有限循环次数 + animation-fill-mode:both）或一条 paused GSAP "
+        "timeline 注册为 window.__timelines[\"main\"]（契约同 add_html；禁 repeat:-1、"
+        "禁 Math.random/Date.now）。data-width/data-height 设为项目画布尺寸（见 "
+        "get_editor_state），内容摆在它应出现在画面的位置——渲染产物 1:1 落到时间线；"
+        "小画布（如 520x152 徽标）插入时会被 contain 放大。"
+        "格式：\"frames\"——默认取时长 0.2/0.5/0.8 处的关键帧，或显式 \"timestamps\""
+        "（最多 12 个；避开 t=0 与 t==duration，两者可能是空白帧），超过 4 帧拼成一张"
+        "联系表返回；\"image\"——t=0 的静态 PNG；\"video\"（默认）——动画透明背景 "
+        "WebM（普通 video 元素合成，无需混合模式）。"
+        "视频帧源：要把真实画面烘进产物（如跨剪切点的转场片段），先对每个素材窗口"
+        "（A 尾段 + B 首段）调 supply_media_window 拿渲染机可访问的 URL，再以声明式 "
+        "<video src=\"<供给 url>\" data-start data-duration muted playsinline> 嵌入"
+        "（窗口已切好，不需要 #t=）。HyperFrames 托管媒体播放——绝不加 crossorigin、"
+        "绝不调 play/pause/seek、也绝不自己把帧预解码进离屏 canvas；渲染机提取真实帧"
+        "并合成。每个 video 包一层不带时间的 wrapper 做运动（lint 拒绝带时间的 video "
+        "嵌在带时间的祖先里；已实测的交叉淡化配方见 html-fx skill 的「视频帧源」一节）。"
+        "渲染出的片段是不透明满幅画面：它盖住所落的时间线窗口，所以剪切点处无需 split。",
         {
             "type": "object",
             "properties": {
                 "html": {
                     "type": "string",
-                    "description": "Complete self-contained HTML document; root carries data-width/data-height; contract attributes auto-filled",
+                    "description": "完整自包含 HTML 文档；root 带 data-width/data-height；契约属性自动补齐",
                 },
                 "format": {
                     "type": "string",
                     "enum": ["video", "image", "frames"],
-                    "description": '"video": final animated asset (transparent WebM with alpha); "image": static transparent PNG asset; "frames": key-frame previews for iteration (use first, then "video"). Default "video".',
+                    "description": '"video"：最终动画素材（带 alpha 的透明 WebM）；"image"：静态透明 PNG 素材；"frames"：迭代用关键帧预览（先用它，再 "video"）。默认 "video"。',
                 },
                 "timestamps": {
                     "type": "array",
                     "items": {"type": "number"},
-                    "description": 'Only for format "frames": seconds to capture (within 0..data-duration, max 12). Default 0.2/0.5/0.8 of the duration. Pass 1-4 timestamps to inspect details frame by frame; pass 6-12 to get one contact sheet showing the motion over time.',
+                    "description": '仅 format "frames"：抽帧时间点（秒，0..data-duration 内，最多 12 个）。默认时长的 0.2/0.5/0.8 处。传 1~4 个逐帧看细节；传 6~12 个得一张呈现运动过程的联系表。',
                 },
             },
             "required": ["html"],
@@ -630,7 +615,7 @@ def build_editor_mcp_server(session_id: str):
     async def add_media_tool(args):
         html = args.get("html")
         if not isinstance(html, str) or not html.strip():
-            return _error("Missing required argument: html")
+            return _error("缺少必填参数: html")
         format = args.get("format", "video")
         try:
             result = await fx_render.render_fx(
@@ -744,25 +729,23 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "fx_components",
-        "Search and fetch ready-made HTML effect components (236 self-contained HTML+CSS+JS "
-        "snippets with declared variables: charts, glitch, film grain, shimmer sweep, confetti, "
-        "terminal/code windows, badges, tickers...). BEFORE hand-building any named visual, search "
-        "by keyword — if one matches, fetch it by name and merge the snippet into the HTML you are "
-        "writing instead of starting from scratch. Works for both timeline.add_html and add_media "
-        "(the merged HTML stays one self-contained document). Bake variable values into the markup; "
-        "map text variables to data-param slots when the user should keep editing them; wire any "
-        "animation into the window.__timelines[\"main\"] contract yourself. Pass query to search "
-        "(returns ranked candidates with metadata) OR name to fetch the full snippet source.",
+        "搜索并取用现成 HTML 特效组件（236 个自包含 HTML+CSS+JS 片段，带变量声明："
+        "图表、故障、胶片颗粒、扫光、confetti、终端/代码窗口、徽标、跑马灯……）。"
+        "手写任何点名视觉之前先按关键词搜索——命中就按名取片段、揉进你正在写的 HTML，"
+        "不从零造。timeline.add_html 与 add_media 均适用（合并后仍是一份自包含文档）。"
+        "变量值直接写死在 markup 里；文本类变量在用户需要继续编辑时映射成 data-param 槽位；"
+        "片段里的动画由你自行接入 window.__timelines[\"main\"] 契约。传 query 搜索"
+        "（返回带元数据的排序候选）或传 name 取片段完整原文。",
         {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search keywords (matched against name/tags/title/description), space-separated",
+                    "description": "搜索关键词（匹配 name/tags/title/description；库内元数据为英文，用英文词命中率更高），空格分隔",
                 },
                 "name": {
                     "type": "string",
-                    "description": "Exact component name to fetch the full snippet source",
+                    "description": "组件精确名称，取片段完整原文",
                 },
             },
         },
@@ -784,48 +767,42 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "judge_visual",
-        "Independent visual judge: a separate LLM call that checks whether result image(s) meet the "
-        "requirement you state, and answers pass/fail with per-item reasons. Use it as the acceptance gate "
-        "for custom visuals (HTML effects, replicated styles) before reporting completion to the user — "
-        "your own screenshot check is the draft review, this is the final review. "
-        "HOW TO FEED IMAGES: result images come from add_media frames/image previews (headless "
-        "render — preferred during iteration, zero project pollution) or get_preview_frame (on-canvas "
-        "composite — for the final integration check after inserting); read references with read_media/"
-        "get_preview_frame first — their JSON results contain imageHandle fields; pass result handles "
-        "as imageHandles (1~4) and, when the task references source images, those handles as "
-        "referenceHandles (0~4). Reference handles are pinned once used here and never expire, so the "
-        "same reference can anchor many iteration rounds. "
-        "REQUIREMENT: state acceptance criteria at the style/colour/structure/text level (e.g. 'dark "
-        "navy capsule with fully-rounded ends and a light-blue glowing rim; solid 5-pointed star badge "
-        "on the left; verbatim text Business gets handed out'). NEVER write pixel-level numbers — the "
-        "judge by default ignores pixel-level differences (rim thickness, glow intensity, few-px "
-        "offsets) and background differences (a reference frame may carry unrelated video background; "
-        "only the target content itself is compared), unless you explicitly demand pixel-exactness. "
-        "The judge scores ONLY against this text — anything not stated is not penalized. "
-        "SIDE-BY-SIDE: for a replica check with exactly 1 result + 1 reference, set sideBySide=true — "
-        "the two are composited into one same-scale image, avoiding cross-image scale/colour misjudgement. "
-        "On pass=false, iterate with the stated reasons (fix the HTML, re-render preview, re-judge); "
-        "report completion only after a pass.",
+        "独立视觉评委：一次独立的 LLM 调用，检查效果图是否满足你写的 requirement，"
+        "返回 pass/fail 与逐条理由。用作自定义视觉（HTML 特效、复刻样式）向用户汇报完成前的"
+        "验收门禁——你自己的截图检查是初审，它是终审。"
+        "图片来源：效果图来自 add_media 的 frames/image 预览（无头渲染——迭代期首选，"
+        "零工程污染）或 get_preview_frame（画布合成图——插入后的最终合成核验）；参考图先用 "
+        "read_media/get_preview_frame 读取——它们的 JSON 结果里有 imageHandle 字段；效果图"
+        "句柄传 imageHandles（1~4 个），任务涉及源图时其句柄传 referenceHandles（0~4 个）。"
+        "参考图句柄一经在此使用即固定、永不淘汰，同一张参考图可锚定多轮迭代。"
+        "REQUIREMENT 写法：验收标准写在样式/颜色/结构/文字内容层面（如「藏青胶囊、全圆端、"
+        "浅蓝发光描边；左侧实心五角星徽标；文字逐字 Business gets handed out」）。"
+        "绝不写像素级数值——评委默认忽略像素级差异（描边粗细、发光强度、几像素偏移）与背景"
+        "差异（参考帧可能带无关视频背景；只比对目标内容本体），除非你明确要求像素级一致。"
+        "评委只按这段文字判——没写的不扣分。"
+        "SIDE-BY-SIDE：恰好 1 效果图 + 1 参考图的复刻核对，设 sideBySide=true——两图拼成"
+        "同尺度单图再评，避免跨图尺度/色差误判。pass=false 时按给出的理由迭代（改 HTML、"
+        "重渲预览、重新评审）；通过后才可汇报完成。",
         {
             "type": "object",
             "properties": {
                 "requirement": {
                     "type": "string",
-                    "description": "Acceptance criteria: what the result must satisfy, including how reference images should be used (exact replica vs style reference)",
+                    "description": "验收标准：结果必须满足什么，包括参考图的使用方式（精确复刻还是风格借鉴）",
                 },
                 "imageHandles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "1~4 image handles (img-N) of the RESULT to be judged, e.g. from add_html preview or get_preview_frame",
+                    "description": "1~4 个被评效果图的句柄（img-N），如来自 add_media 预览或 get_preview_frame",
                 },
                 "referenceHandles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "0~4 image handles of reference images the result is judged against (pinned, never expire)",
+                    "description": "0~4 个参考图句柄，效果图对照它们评判（固定、永不淘汰）",
                 },
                 "sideBySide": {
                     "type": "boolean",
-                    "description": "true = composite result and reference into one same-scale side-by-side image before judging; requires exactly 1 imageHandle + 1 referenceHandle; recommended for 1:1 replication checks",
+                    "description": "true = 评判前把效果图与参考图拼成一张同尺度对比图；要求恰好 1 个 imageHandle + 1 个 referenceHandle；1:1 复刻核对推荐开启",
                 },
             },
             "required": ["requirement", "imageHandles"],
@@ -834,7 +811,7 @@ def build_editor_mcp_server(session_id: str):
     async def judge_visual_tool(args):
         requirement = args.get("requirement")
         if not isinstance(requirement, str) or not requirement.strip():
-            return _error("Missing required argument: requirement")
+            return _error("缺少必填参数: requirement")
 
         def _resolve_handles(key: str, lo: int, hi: int) -> list[tuple[bytes, str]] | dict:
             handles = args.get(key)
