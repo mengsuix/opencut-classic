@@ -1116,6 +1116,9 @@ function buildEditorState(editor: EditorCore) {
 			width: asset.width,
 			height: asset.height,
 			fps: asset.fps,
+			...(typeof asset.hasAudio === "boolean"
+				? { hasAudio: asset.hasAudio }
+				: {}),
 		})),
 		missingMedia: collectMissingMediaRefs(editor),
 	};
@@ -2580,6 +2583,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				width: asset.width,
 				height: asset.height,
 				fps: asset.fps,
+				...(typeof asset.hasAudio === "boolean"
+					? { hasAudio: asset.hasAudio }
+					: {}),
 			})),
 		}),
 	},
@@ -2609,6 +2615,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				name: asset.name,
 				type: asset.type,
 				duration: asset.duration ?? null,
+				...(typeof asset.hasAudio === "boolean"
+					? { hasAudio: asset.hasAudio }
+					: {}),
 			};
 
 			if (asset.type === "audio") {
@@ -2733,7 +2742,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"media.supply_window": {
 		description:
-			"Transcode a time window of a VIDEO asset into a small WebM and upload it to the agent gateway, returning a URL the render machine (add_media HTML <video src>) can fetch. This is the ONLY way the render machine can get real footage of the original video for clip-window baking (e.g. transitions) — the media.list url fields are browser-local blob URLs the render machine cannot access. The window is pre-cut on the browser side, so the returned URL needs no #t= fragment. The original audio track IS kept (Opus) — a baked clip replacing a timeline segment must carry the window's audio itself (in add_media HTML: mute the <video> and add a separate <audio> element with the same src).",
+			"Transcode a time window of a VIDEO asset into a small WebM and upload it to the agent gateway, returning a URL the render machine (add_media HTML <video src>) can fetch. This is the ONLY way the render machine can get real footage of the original video for clip-window baking (e.g. transitions) — the media.list url fields are browser-local blob URLs the render machine cannot access. The window is pre-cut on the browser side, so the returned URL needs no #t= fragment. Audio is conditional: when the source asset itself has an audio track, the window keeps it (Opus) and the response's hasAudio is true — only then should a baked clip replacing a timeline segment carry the window's audio (in add_media HTML: mute the <video> and add a separate <audio> element with the same src). When hasAudio is false the source is silent; do NOT add an <audio> element (the render machine rejects audio elements whose file has no audio stream).",
 		args: {
 			id: "string (asset id from media.list / get_editor_state mediaAssets)",
 			start: "seconds (window start in the ASSET's own timeline)",
@@ -2782,6 +2791,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				formats: ALL_FORMATS,
 			});
 			let blob: Blob;
+			let hasAudioTrack = false;
 			try {
 				const codec: VideoCodec = (await canEncodeVideo("vp9"))
 					? "vp9"
@@ -2811,7 +2821,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				// 直接探测输入文件有没有音轨（不依赖 asset.hasAudio：存量素材元数据
 				// 里没有该字段）。有音轨就保留（Opus）——烘焙片段替换时间线片段时
 				// 必须自带窗口音频，结构改成"剪掉中段插入"后不再有底下原片段替它出声
-				const hasAudioTrack = (await input.getPrimaryAudioTrack()) !== null;
+				hasAudioTrack = (await input.getPrimaryAudioTrack()) !== null;
 				const conversion = await Conversion.init({
 					input,
 					output,
@@ -2863,6 +2873,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				duration: end - start,
 				width: Math.min(maxWidth, asset.width ?? maxWidth),
 				uploadedBytes: blob.size,
+				hasAudio: hasAudioTrack,
 			};
 		},
 	},
