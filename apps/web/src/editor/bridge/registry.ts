@@ -1,12 +1,19 @@
 import type { EditorCore } from "@/core";
-import { mediaTimeFromSeconds, mediaTimeToSeconds, type MediaTime } from "@/wasm";
+import {
+	mediaTimeFromSeconds,
+	mediaTimeToSeconds,
+	roundMediaTime,
+	type MediaTime,
+} from "@/wasm";
 import { DEFAULTS } from "@/timeline/defaults";
 import { VOLUME_DB_MIN } from "@/timeline/audio-constants";
 import {
 	buildEffectElement,
+	isRetimableElement,
 	type CreateTimelineElement,
 	type TrackType,
 } from "@/timeline";
+import { getTimelineDurationForSourceSpan } from "@/retime";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { buildRemoveHtmlPresetCommand } from "@/commands";
 import { collectHtmlPresetInstances } from "@/timeline/element-utils";
@@ -31,7 +38,16 @@ import {
 	type ElementBounds,
 } from "@/preview/element-bounds";
 import { generateUUID } from "@/utils/id";
-import { ANIMATION_PROPERTY_PATHS, type AnimationInterpolation } from "@/animation/types";
+import {
+	ANIMATION_PROPERTY_PATHS,
+	type AnimationChannel,
+	type AnimationInterpolation,
+	type ChannelData,
+} from "@/animation/types";
+import {
+	isCompositeChannelData,
+	isLeafChannelData,
+} from "@/animation/channel-data";
 import type { RetimeConfig } from "@/timeline/types";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import {
@@ -193,13 +209,62 @@ function resolveElementRefs(
 	return requireElementRefs(value);
 }
 
+/**
+ * 关键帧时间对外契约：bridge 对 agent 统一暴露「时间线绝对秒」。
+ * 内部存储是元素局部 ticks（相对元素 startTime，TICKS_PER_SECOND 速率），
+ * 读侧在这里转成绝对秒，写侧由 requireLocalKeyframeTicks 转回局部 ticks。
+ */
+function serializeAnimationsForBridge(
+	animations: unknown,
+	elementStartTime: MediaTime,
+): unknown {
+	if (typeof animations !== "object" || animations === null) {
+		return animations;
+	}
+	const convertChannelData = (data: unknown): unknown => {
+		if (isLeafChannelData(data as ChannelData | undefined)) {
+			const channel = data as AnimationChannel;
+			return {
+				...channel,
+				keys: channel.keys.map((key) => ({
+					...key,
+					time: toSeconds((key.time + elementStartTime) as MediaTime),
+				})),
+			};
+		}
+		if (isCompositeChannelData(data as ChannelData | undefined)) {
+			return Object.fromEntries(
+				Object.entries(data as Record<string, unknown>).map(
+					([componentKey, channel]) => [
+						componentKey,
+						convertChannelData(channel),
+					],
+				),
+			);
+		}
+		return data;
+	};
+	return Object.fromEntries(
+		Object.entries(animations as Record<string, unknown>).map(
+			([propertyPath, data]) => [propertyPath, convertChannelData(data)],
+		),
+	);
+}
+
 function serializeElement(element: Record<string, unknown>) {
+	const startTime = element.startTime as MediaTime;
 	return {
 		...element,
-		startTime: toSeconds(element.startTime as MediaTime),
+		startTime: toSeconds(startTime),
 		duration: toSeconds(element.duration as MediaTime),
 		trimStart: toSeconds(element.trimStart as MediaTime),
 		trimEnd: toSeconds(element.trimEnd as MediaTime),
+		...(typeof element.sourceDuration === "number"
+			? { sourceDuration: toSeconds(element.sourceDuration as MediaTime) }
+			: {}),
+		...(element.animations != null
+			? { animations: serializeAnimationsForBridge(element.animations, startTime) }
+			: {}),
 	};
 }
 
@@ -255,6 +320,104 @@ function findTrackAndElement(
 		trackType: track.type,
 		element: element as unknown as Record<string, unknown>,
 	};
+}
+
+function findElementById(
+	editor: EditorCore,
+	elementId: string,
+): { trackId: string; element: Record<string, unknown> } {
+	const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+	if (!tracks) {
+		throw new Error("No active scene");
+	}
+	const allTracks = [tracks.main, ...tracks.overlay, ...tracks.audio] as Array<{
+		id: string;
+		elements: Array<{ id: string }>;
+	}>;
+	for (const track of allTracks) {
+		const element = track.elements.find((item) => item.id === elementId);
+		if (element) {
+			return {
+				trackId: track.id,
+				element: element as unknown as Record<string, unknown>,
+			};
+		}
+	}
+	throw new Error(`Element not found: ${elementId}`);
+}
+
+/**
+ * 关键帧写入契约：agent 传时间线绝对秒，这里转成元素局部 ticks 交给
+ * commands 层。越界直接报错（带合法区间）——绝不能再静默 clamp，
+ * 否则多个超界 key 会被 upsert 同位覆盖语义叠合成一个（实测事故）。
+ * ±1 tick 容差仅用于吸收秒↔ticks 往返的浮点取整误差。
+ */
+function requireLocalKeyframeTicks({
+	editor,
+	trackId,
+	elementId,
+	seconds,
+}: {
+	editor: EditorCore;
+	trackId: string;
+	elementId: string;
+	seconds: number;
+}): MediaTime {
+	const element = findElement(editor, trackId, elementId);
+	const startTicks = element.startTime as MediaTime;
+	const durationTicks = element.duration as MediaTime;
+	const localTicks = (toTicks(seconds) - startTicks) as MediaTime;
+	if (localTicks < -1 || localTicks > durationTicks + 1) {
+		throw new Error(
+			`keyframe time ${seconds}s is outside the element's timeline range ` +
+				`[${toSeconds(startTicks)}s, ${toSeconds((startTicks + durationTicks) as MediaTime)}s]. ` +
+				"Times are absolute timeline seconds.",
+		);
+	}
+	return Math.min(Math.max(localTicks, 0), durationTicks) as MediaTime;
+}
+
+// ---------------------------------------------------------------------------
+// 关键帧影响报告：写命令可能改变关键帧集合（split 分段、duration 变化触发
+// clamp 等），返回值必须让调用方看见副作用，而不是靠回读 state 猜。
+// ---------------------------------------------------------------------------
+function collectKeyframeIdsInto(animations: unknown, into: Set<string>): void {
+	if (typeof animations !== "object" || animations === null) {
+		return;
+	}
+	for (const data of Object.values(animations as Record<string, unknown>)) {
+		if (isLeafChannelData(data as ChannelData | undefined)) {
+			for (const key of (data as AnimationChannel).keys) {
+				into.add(key.id);
+			}
+		} else if (isCompositeChannelData(data as ChannelData | undefined)) {
+			for (const channel of Object.values(data as Record<string, unknown>)) {
+				if (isLeafChannelData(channel as ChannelData | undefined)) {
+					for (const key of (channel as AnimationChannel).keys) {
+						into.add(key.id);
+					}
+				}
+			}
+		}
+	}
+}
+
+function keyframeIdsOf(element: Record<string, unknown> | undefined): Set<string> {
+	const ids = new Set<string>();
+	if (element) {
+		collectKeyframeIdsInto(element.animations, ids);
+	}
+	return ids;
+}
+
+function diffKeyframeReport(before: Set<string>, after: Set<string>) {
+	let kept = 0;
+	for (const id of before) {
+		if (after.has(id)) {
+			kept++;
+		}
+	}
+	return { kept, dropped: before.size - kept, added: after.size - kept };
 }
 
 /**
@@ -1480,6 +1643,11 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			if (!raw || typeof raw.type !== "string") {
 				throw new Error("Missing or invalid argument: element");
 			}
+			if (raw.animations != null) {
+				throw new Error(
+					"insert_element does not accept animations — insert the element first, then add keyframes via keyframes.upsert (absolute timeline seconds).",
+				);
+			}
 			const converted = convertTimePatch(raw);
 			const element = normalizeGraphicElementInput(
 				converted,
@@ -1500,7 +1668,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.update_elements": {
 		description:
-			'Patch elements. Visual props go in patch.params as flat keys, e.g. { params: { "transform.positionX": 120, "transform.positionY": 680, "opacity": 0.5 } }; time fields (startTime/duration/trimStart/trimEnd, seconds) at patch root. Unknown root fields are rejected.',
+			'Patch elements. Visual props go in patch.params as flat keys, e.g. { params: { "transform.positionX": 120, "transform.positionY": 680, "opacity": 0.5, "muted": true } }; time fields (startTime/duration/trimStart/trimEnd, seconds) and state flags (hidden, isSourceAudioEnabled) at patch root. Unknown root fields are rejected. Note: patching duration drops keyframes beyond the new duration — the response reports keyframe impact when that happens.',
 		args: {
 			updates: "[{ trackId, elementId, patch }]",
 			pushHistory: "boolean? (default true)",
@@ -1520,8 +1688,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			if (!updates || updates.length === 0) {
 				throw new Error("Missing or invalid argument: updates");
 			}
+			const beforeIdsByElement = new Map<string, Set<string>>();
 			for (const update of updates) {
-				findElement(editor, update.trackId, update.elementId);
+				const element = findElement(editor, update.trackId, update.elementId);
+				beforeIdsByElement.set(update.elementId, keyframeIdsOf(element));
 				requireExistingMediaId({
 					editor,
 					mediaId: (update.patch as Record<string, unknown>).mediaId,
@@ -1533,11 +1703,24 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					? { pushHistory: args.pushHistory }
 					: {}),
 			});
+			const keyframeImpact = updates
+				.map((update) => {
+					const before = beforeIdsByElement.get(update.elementId) ?? new Set();
+					const after = keyframeIdsOf(
+						findElement(editor, update.trackId, update.elementId),
+					);
+					const report = diffKeyframeReport(before, after);
+					return report.dropped > 0 || report.added > 0
+						? { elementId: update.elementId, ...report }
+						: null;
+				})
+				.filter((entry) => entry !== null);
 			const touchedMissing = collectMissingMediaRefs(editor).filter((ref) =>
 				updates.some((update) => update.elementId === ref.elementId),
 			);
 			return {
 				updated: updates.length,
+				...(keyframeImpact.length > 0 ? { keyframeImpact } : {}),
 				...(touchedMissing.length > 0
 					? { warning: MISSING_MEDIA_WARNING, missingMedia: touchedMissing }
 					: {}),
@@ -1547,50 +1730,196 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.split_elements": {
 		description:
-			"Split elements at a time (seconds). Returns the right-side element refs.",
+			"Split elements at a time (seconds, absolute on the timeline). Animations are divided between the two halves (boundary keyframes are inserted at the cut). Returns the right-side element refs plus keyframe impact (kept/dropped/added).",
 		args: {
 			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
 			splitTime: "seconds",
 			retainSide: "'both' | 'left' | 'right'? (default both)",
 		},
-		run: ({ editor, args }) => ({
-			rightSide: editor.timeline.splitElements({
-				elements: resolveElementRefs(editor, args.elements),
+		run: ({ editor, args }) => {
+			const targets = resolveElementRefs(editor, args.elements);
+			const beforeIds = new Set<string>();
+			for (const ref of targets) {
+				for (const id of keyframeIdsOf(
+					findElement(editor, ref.trackId, ref.elementId),
+				)) {
+					beforeIds.add(id);
+				}
+			}
+			const rightSide = editor.timeline.splitElements({
+				elements: targets,
 				splitTime: toTicks(requireNumber(args.splitTime, "splitTime")),
 				...(typeof args.retainSide === "string"
 					? { retainSide: args.retainSide as "both" | "left" | "right" }
 					: {}),
-			}),
-		}),
+			});
+			const afterIds = new Set<string>();
+			const collectAfter = (ref: BridgeElementRef) => {
+				const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
+				if (found) {
+					for (const id of keyframeIdsOf(found.element)) {
+						afterIds.add(id);
+					}
+				}
+			};
+			for (const ref of targets) {
+				collectAfter(ref);
+			}
+			for (const ref of rightSide) {
+				collectAfter(ref);
+			}
+			return {
+				rightSide,
+				keyframes: diffKeyframeReport(beforeIds, afterIds),
+			};
+		},
+	},
+
+	"timeline.replace_range": {
+		description:
+			"Atomically replace a range inside one element with a new media clip (e.g. drop a baked transition over a cut): splits at both bounds, removes the middle, inserts the new media in the gap — ONE undo step, and animations on the kept halves are preserved automatically (keyframes inside the replaced window are discarded and reported). Prefer this over hand-orchestrating split_elements + delete_elements + insert_element. startTime/endTime in seconds, absolute on the timeline; both must lie strictly inside the element. The inserted clip is bare (no inherited animations/effects/masks), spans the whole range, and starts at the media's own beginning.",
+		args: {
+			trackId: "string",
+			elementId: "string",
+			startTime: "seconds (timeline, range start)",
+			endTime: "seconds (timeline, range end)",
+			mediaId: "string (asset id from mediaAssets)",
+			name: "string? (inserted clip name)",
+		},
+		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
+			const element = findElement(editor, trackId, elementId);
+			const rangeStart = requireNumber(args.startTime, "startTime");
+			const rangeEnd = requireNumber(args.endTime, "endTime");
+			const elementStart = toSeconds(element.startTime as MediaTime);
+			const elementEnd = elementStart + toSeconds(element.duration as MediaTime);
+			if (!(rangeStart > elementStart && rangeEnd < elementEnd && rangeStart < rangeEnd)) {
+				throw new Error(
+					`Range [${rangeStart}s, ${rangeEnd}s] must lie strictly inside the element's timeline range (${elementStart}s, ${elementEnd}s).`,
+				);
+			}
+			const mediaId = requireString(args.mediaId, "mediaId");
+			requireExistingMediaId({ editor, mediaId });
+			const asset = editor.media
+				.getAssets()
+				.find((item) => item.id === mediaId);
+			const beforeIds = keyframeIdsOf(element);
+			const { inserted, right } = editor.timeline.replaceRange({
+				trackId,
+				elementId,
+				rangeStart: toTicks(rangeStart),
+				rangeEnd: toTicks(rangeEnd),
+				mediaId,
+				...(typeof args.name === "string" ? { name: args.name } : {}),
+				...(typeof asset?.duration === "number"
+					? { sourceDuration: toTicks(asset.duration) }
+					: {}),
+			});
+			if (!inserted) {
+				throw new Error("replace_range failed: element not found on track");
+			}
+			const afterIds = new Set<string>();
+			for (const ref of [
+				{ trackId, elementId },
+				...(right ? [right] : []),
+			]) {
+				const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
+				if (found) {
+					for (const id of keyframeIdsOf(found.element)) {
+						afterIds.add(id);
+					}
+				}
+			}
+			return {
+				inserted,
+				right,
+				keyframes: diffKeyframeReport(beforeIds, afterIds),
+			};
+		},
 	},
 
 	"timeline.trim_element": {
 		description:
-			"Trim an element's source range and/or move/resize it (seconds).",
+			"Trim an element's source range and/or move/resize it. trimStart/trimEnd are on the SOURCE axis (seconds into the asset); startTime/duration are on the timeline (seconds). All four optional (omitted = keep current). For media elements, when trimStart/trimEnd change and duration is omitted, duration is recomputed from the source window automatically; an explicit duration contradicting the source window is rejected with the expected value. Returns keyframe impact (kept/dropped/added) — keyframes outside the new duration are dropped by the editor.",
 		args: {
 			elementId: "string",
-			trimStart: "seconds?",
-			trimEnd: "seconds?",
-			startTime: "seconds?",
-			duration: "seconds?",
+			trimStart: "seconds? (source axis)",
+			trimEnd: "seconds? (source axis)",
+			startTime: "seconds? (timeline)",
+			duration: "seconds? (timeline)",
 			pushHistory: "boolean?",
 		},
 		run: ({ editor, args }) => {
+			const elementId = requireString(args.elementId, "elementId");
+			const { element } = findElementById(editor, elementId);
+			const hasTrimStart = typeof args.trimStart === "number";
+			const hasTrimEnd = typeof args.trimEnd === "number";
+			const hasStartTime = typeof args.startTime === "number";
+			const hasDuration = typeof args.duration === "number";
+			if (!hasTrimStart && !hasTrimEnd && !hasStartTime && !hasDuration) {
+				throw new Error(
+					"Nothing to update: pass at least one of trimStart/trimEnd/startTime/duration",
+				);
+			}
+			const trimStart = hasTrimStart
+				? toTicks(args.trimStart as number)
+				: (element.trimStart as MediaTime);
+			const trimEnd = hasTrimEnd
+				? toTicks(args.trimEnd as number)
+				: (element.trimEnd as MediaTime);
+			let duration = hasDuration
+				? toTicks(args.duration as number)
+				: undefined;
+
+			// source 窗口 ↔ 时间线时长不变量（仅可变速媒体元素；图片等无 source 轴）
+			const mediaElement = element as unknown as {
+				sourceDuration?: MediaTime;
+				retime?: RetimeConfig;
+			};
+			if (
+				isRetimableElement(element as never) &&
+				typeof mediaElement.sourceDuration === "number" &&
+				(hasTrimStart || hasTrimEnd || hasDuration)
+			) {
+				const sourceSpan = Math.max(
+					0,
+					mediaElement.sourceDuration - trimStart - trimEnd,
+				);
+				const expectedDuration = roundMediaTime({
+					time: getTimelineDurationForSourceSpan({
+						sourceSpan,
+						retime: mediaElement.retime,
+					}),
+				});
+				if (duration === undefined) {
+					duration = expectedDuration;
+				} else if (Math.abs(duration - expectedDuration) > 2) {
+					throw new Error(
+						`duration ${toSeconds(duration)}s contradicts the trim window: ` +
+							`source span ${toSeconds(sourceSpan as MediaTime)}s maps to ` +
+							`${toSeconds(expectedDuration)}s on the timeline. ` +
+							`Pass duration ${toSeconds(expectedDuration)} or omit it.`,
+					);
+				}
+			}
+
+			const beforeIds = keyframeIdsOf(element);
 			editor.timeline.updateElementTrim({
-				elementId: requireString(args.elementId, "elementId"),
-				trimStart: toTicks(requireNumber(args.trimStart, "trimStart")),
-				trimEnd: toTicks(requireNumber(args.trimEnd, "trimEnd")),
-				...(typeof args.startTime === "number"
-					? { startTime: toTicks(args.startTime) }
-					: {}),
-				...(typeof args.duration === "number"
-					? { duration: toTicks(args.duration) }
-					: {}),
+				elementId,
+				trimStart,
+				trimEnd,
+				...(hasStartTime ? { startTime: toTicks(args.startTime as number) } : {}),
+				...(duration !== undefined ? { duration } : {}),
 				...(typeof args.pushHistory === "boolean"
 					? { pushHistory: args.pushHistory }
 					: {}),
 			});
-			return { trimmed: true };
+			const afterIds = keyframeIdsOf(findElementById(editor, elementId).element);
+			return {
+				trimmed: true,
+				keyframes: diffKeyframeReport(beforeIds, afterIds),
+			};
 		},
 	},
 
@@ -1672,76 +2001,36 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		},
 	},
 
-	"timeline.toggle_muted": {
-		description: "Toggle mute on audio-capable elements.",
-		args: {
-			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
-		},
-		run: ({ editor, args }) => {
-			editor.timeline.toggleElementsMuted({
-				elements: resolveElementRefs(editor, args.elements),
-			});
-			return { toggled: true };
-		},
-	},
-
-	"timeline.toggle_visibility": {
-		description: "Toggle visibility on hideable elements.",
-		args: {
-			elements: '[{ trackId, elementId }] | "$selection" (current selection)',
-		},
-		run: ({ editor, args }) => {
-			editor.timeline.toggleElementsVisibility({
-				elements: resolveElementRefs(editor, args.elements),
-			});
-			return { toggled: true };
-		},
-	},
-
-	"timeline.toggle_track_mute": {
-		description: "Toggle mute on a whole track.",
-		args: { trackId: "string" },
-		run: ({ editor, args }) => {
-			editor.timeline.toggleTrackMute({
-				trackId: requireString(args.trackId, "trackId"),
-			});
-			return { toggled: true };
-		},
-	},
-
-	"timeline.toggle_source_audio_separation": {
+	"timeline.update_track": {
 		description:
-			"Toggle source audio separation on an audio-capable element (e.g. vocals/instrumental).",
-		args: { trackId: "string", elementId: "string" },
-		run: ({ editor, args }) => {
-			editor.timeline.toggleSourceAudioSeparation({
-				trackId: requireString(args.trackId, "trackId"),
-				elementId: requireString(args.elementId, "elementId"),
-			});
-			return { toggled: true };
+			"Set track properties (set semantics — idempotent, no need to read current state first). muted: whole-track audio (video/audio tracks); hidden: whole-track visibility (non-audio tracks); linkedStyle: text tracks only — while linked, text style edits (font, size, color, background) and transform edits on one element apply to every element on the track.",
+		args: {
+			trackId: "string",
+			muted: "boolean?",
+			hidden: "boolean?",
+			linkedStyle: "boolean?",
 		},
-	},
-
-	"timeline.toggle_track_visibility": {
-		description: "Toggle visibility on a whole track.",
-		args: { trackId: "string" },
 		run: ({ editor, args }) => {
-			editor.timeline.toggleTrackVisibility({
+			const patch: {
+				muted?: boolean;
+				hidden?: boolean;
+				linkedStyle?: boolean;
+			} = {};
+			for (const key of ["muted", "hidden", "linkedStyle"] as const) {
+				if (typeof args[key] === "boolean") {
+					patch[key] = args[key];
+				}
+			}
+			if (Object.keys(patch).length === 0) {
+				throw new Error(
+					"Nothing to update: pass at least one of muted/hidden/linkedStyle",
+				);
+			}
+			editor.timeline.updateTrack({
 				trackId: requireString(args.trackId, "trackId"),
+				patch,
 			});
-			return { toggled: true };
-		},
-	},
-
-	"timeline.toggle_track_linked_style": {
-		description:
-			"Toggle linked caption style on a text track. While linked, text style edits (font, size, color, background) and transform edits (position, scale, rotate) on one element apply to every element on the track.",
-		args: { trackId: "string" },
-		run: ({ editor, args }) => {
-			editor.timeline.toggleTrackLinkedStyle({
-				trackId: requireString(args.trackId, "trackId"),
-			});
-			return { toggled: true };
+			return { updated: true };
 		},
 	},
 
@@ -2799,7 +3088,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"keyframes.upsert": {
 		description:
-			"Create or update element animation keyframes. Times in seconds, relative to the timeline (not element-local). Legal propertyPath values: see params.list (transform.positionX/Y, scaleX/Y, rotate, opacity, retime.sourceTime, background.*, effects.<effectId>.params.<key> for clip effects, masks.<maskId>.params.<key> for masks).",
+			"Create or update element animation keyframes. Times in seconds, absolute on the timeline (same coordinates as state.get element startTime + animations keys). A time outside the element's timeline range is rejected with an error. Legal propertyPath values: see params.list (transform.positionX/Y, scaleX/Y, rotate, opacity, retime.sourceTime, background.*, effects.<effectId>.params.<key> for clip effects, masks.<maskId>.params.<key> for masks).",
 		args: {
 			keyframes:
 				"[{ trackId, elementId, propertyPath, time, value, interpolation?, keyframeId? }] (interpolation: linear|hold|bezier; pass keyframeId to update an existing keyframe)",
@@ -2810,23 +3099,35 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				throw new Error("Missing or invalid argument: keyframes");
 			}
 			editor.timeline.upsertKeyframes({
-				keyframes: raw.map((keyframe) => ({
-					trackId: requireString(keyframe.trackId, "keyframes[].trackId"),
-					elementId: requireString(keyframe.elementId, "keyframes[].elementId"),
-					propertyPath: requireString(
-						keyframe.propertyPath,
-						"keyframes[].propertyPath",
-					),
-					time: toTicks(requireNumber(keyframe.time, "keyframes[].time")),
-					value: keyframe.value as never,
-					interpolation: requireInterpolation(
-						keyframe.interpolation,
-						KEYFRAME_INTERPOLATIONS,
-					),
-					...(typeof keyframe.keyframeId === "string"
-						? { keyframeId: keyframe.keyframeId }
-						: {}),
-				})),
+				keyframes: raw.map((keyframe) => {
+					const trackId = requireString(keyframe.trackId, "keyframes[].trackId");
+					const elementId = requireString(
+						keyframe.elementId,
+						"keyframes[].elementId",
+					);
+					return {
+						trackId,
+						elementId,
+						propertyPath: requireString(
+							keyframe.propertyPath,
+							"keyframes[].propertyPath",
+						),
+						time: requireLocalKeyframeTicks({
+							editor,
+							trackId,
+							elementId,
+							seconds: requireNumber(keyframe.time, "keyframes[].time"),
+						}),
+						value: keyframe.value as never,
+						interpolation: requireInterpolation(
+							keyframe.interpolation,
+							KEYFRAME_INTERPOLATIONS,
+						),
+						...(typeof keyframe.keyframeId === "string"
+							? { keyframeId: keyframe.keyframeId }
+							: {}),
+					};
+				}),
 			});
 			return { upserted: raw.length };
 		},
@@ -2862,7 +3163,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	},
 
 	"keyframes.retime": {
-		description: "Move a keyframe to a new time (seconds).",
+		description:
+			"Move a keyframe to a new time (seconds, absolute on the timeline). A time outside the element's timeline range is rejected with an error.",
 		args: {
 			trackId: "string",
 			elementId: "string",
@@ -2871,12 +3173,19 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			time: "seconds",
 		},
 		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
 			editor.timeline.retimeKeyframe({
-				trackId: requireString(args.trackId, "trackId"),
-				elementId: requireString(args.elementId, "elementId"),
+				trackId,
+				elementId,
 				propertyPath: requireString(args.propertyPath, "propertyPath"),
 				keyframeId: requireString(args.keyframeId, "keyframeId"),
-				time: toTicks(requireNumber(args.time, "time")),
+				time: requireLocalKeyframeTicks({
+					editor,
+					trackId,
+					elementId,
+					seconds: requireNumber(args.time, "time"),
+				}),
 			});
 			return { retimed: true };
 		},
@@ -3101,7 +3410,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"effects.upsert_keyframe": {
 		description:
-			"Animate a clip-attached effect param over time. Works only for effects added via effects.add (per-clip); effect-layer params (effects.add_layer) cannot be keyframed. Time in seconds; interpolation: linear|hold.",
+			"Animate a clip-attached effect param over time. Works only for effects added via effects.add (per-clip); effect-layer params (effects.add_layer) cannot be keyframed. Time in seconds, absolute on the timeline; a time outside the element's range is rejected with an error. Interpolation: linear|hold.",
 		args: {
 			trackId: "string",
 			elementId: "string",
@@ -3113,12 +3422,19 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			keyframeId: "string? (update existing)",
 		},
 		run: ({ editor, args }) => {
+			const trackId = requireString(args.trackId, "trackId");
+			const elementId = requireString(args.elementId, "elementId");
 			editor.timeline.upsertEffectParamKeyframe({
-				trackId: requireString(args.trackId, "trackId"),
-				elementId: requireString(args.elementId, "elementId"),
+				trackId,
+				elementId,
 				effectId: requireString(args.effectId, "effectId"),
 				paramKey: requireString(args.paramKey, "paramKey"),
-				time: toTicks(requireNumber(args.time, "time")),
+				time: requireLocalKeyframeTicks({
+					editor,
+					trackId,
+					elementId,
+					seconds: requireNumber(args.time, "time"),
+				}),
 				value: requireNumber(args.value, "value"),
 				interpolation: requireInterpolation(args.interpolation, [
 					"linear",

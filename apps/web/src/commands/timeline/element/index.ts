@@ -4,6 +4,7 @@ export { RippleShiftElementsCommand } from "./ripple-shift-elements";
 export { DeleteElementsCommand } from "./delete-elements";
 export { DuplicateElementsCommand } from "./duplicate-elements";
 export { SplitElementsCommand } from "./split-elements";
+export { ReplaceRangeCommand } from "./replace-range";
 export { UpdateElementsCommand } from "./update-elements";
 export { ToggleSourceAudioSeparationCommand } from "./toggle-source-audio-separation";
 export { MoveElementCommand } from "./move-elements";

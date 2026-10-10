@@ -10,7 +10,6 @@ const ELEMENT_PATCH_ROOT_KEYS = new Set([
 	"trimStart",
 	"trimEnd",
 	"sourceDuration",
-	"animations",
 	"params",
 	"mediaId",
 	"sourceType",
@@ -31,6 +30,11 @@ const ELEMENT_PATCH_ROOT_KEYS = new Set([
 export function validateElementPatchRootKeys(
 	patch: Record<string, unknown>,
 ): void {
+	if ("animations" in patch) {
+		throw new Error(
+			"update_elements does not accept animations — use keyframes.upsert / keyframes.retime / keyframes.remove instead (absolute timeline seconds).",
+		);
+	}
 	const unknownKeys = Object.keys(patch).filter(
 		(key) => !ELEMENT_PATCH_ROOT_KEYS.has(key),
 	);

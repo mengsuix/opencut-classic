@@ -41,11 +41,13 @@ import {
 	ToggleTrackMuteCommand,
 	ToggleTrackVisibilityCommand,
 	ToggleTrackLinkedStyleCommand,
+	UpdateTrackCommand,
 	InsertElementCommand,
 	DeleteElementsCommand,
 	DuplicateElementsCommand,
 	UpdateElementsCommand,
 	SplitElementsCommand,
+	ReplaceRangeCommand,
 	MoveElementCommand,
 	TracksSnapshotCommand,
 	UpsertKeyframeCommand,
@@ -199,6 +201,17 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	updateTrack({
+		trackId,
+		patch,
+	}: {
+		trackId: string;
+		patch: { muted?: boolean; hidden?: boolean; linkedStyle?: boolean };
+	}): void {
+		const command = new UpdateTrackCommand(trackId, patch);
+		this.editor.command.execute({ command });
+	}
+
 	splitElements({
 		elements,
 		splitTime,
@@ -215,6 +228,42 @@ export class TimelineManager {
 		});
 		this.editor.command.execute({ command });
 		return command.getRightSideElements();
+	}
+
+	replaceRange({
+		trackId,
+		elementId,
+		rangeStart,
+		rangeEnd,
+		mediaId,
+		name,
+		sourceDuration,
+	}: {
+		trackId: string;
+		elementId: string;
+		rangeStart: MediaTime;
+		rangeEnd: MediaTime;
+		mediaId: string;
+		name?: string;
+		sourceDuration?: MediaTime;
+	}): {
+		inserted: { trackId: string; elementId: string } | null;
+		right: { trackId: string; elementId: string } | null;
+	} {
+		const command = new ReplaceRangeCommand({
+			trackId,
+			elementId,
+			rangeStart,
+			rangeEnd,
+			mediaId,
+			...(name !== undefined ? { name } : {}),
+			...(sourceDuration !== undefined ? { sourceDuration } : {}),
+		});
+		this.editor.command.execute({ command });
+		return {
+			inserted: command.getInsertedElement(),
+			right: command.getRightElement(),
+		};
 	}
 
 	getTotalDuration(): MediaTime {
