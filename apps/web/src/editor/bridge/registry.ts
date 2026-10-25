@@ -15,6 +15,7 @@ import {
 } from "@/timeline";
 import { getTimelineDurationForSourceSpan } from "@/retime";
 import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
+import { floatToFrameRate } from "@/fps/utils";
 import { buildRemoveHtmlPresetCommand } from "@/commands";
 import { collectHtmlPresetInstances } from "@/timeline/element-utils";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
@@ -2249,7 +2250,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const options: ExportOptions = {
 				format: (args.format as ExportOptions["format"]) ?? "mp4",
 				quality: (args.quality as ExportOptions["quality"]) ?? "high",
-				...(typeof args.fps === "number" ? { fps: args.fps as never } : {}),
+				...(typeof args.fps === "number"
+				? { fps: floatToFrameRate(args.fps) }
+				: {}),
 				includeAudio: args.includeAudio !== false,
 			};
 			const result = await editor.renderer.exportProject({ options });
