@@ -1656,6 +1656,16 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const element = normalizeGraphicElementInput(
 				converted,
 			) as unknown as CreateTimelineElement;
+			// 裸写的 audio 元素常漏掉 sourceType —— 带 mediaId 即按 upload 归一化，
+			// 否则导出混音会把它当 library 元素走 sourceUrl 分支静默丢弃（导出无声）
+			if (
+				element.type === "audio" &&
+				"mediaId" in element &&
+				typeof element.mediaId === "string" &&
+				!("sourceType" in element)
+			) {
+				(element as { sourceType?: string }).sourceType = "upload";
+			}
 			requireExistingMediaId({
 				editor,
 				mediaId: (element as { mediaId?: unknown }).mediaId,
@@ -2255,7 +2265,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				: {}),
 				includeAudio: args.includeAudio !== false,
 			};
-			const result = await editor.renderer.exportProject({ options });
+			// 走 project.export（而非直接 renderer.exportProject），
+			// 让 export.status / export.cancel 能看到这次导出
+			const result = await editor.project.export({ options });
 			if (!result.success || !result.buffer) {
 				throw new Error(result.error ?? "Export failed");
 			}

@@ -2,6 +2,7 @@ import type {
 	AudioElement,
 	VideoElement,
 	LibraryAudioElement,
+	UploadAudioElement,
 	RetimeConfig,
 	SceneTracks,
 } from "@/timeline";
@@ -28,6 +29,15 @@ import {
 
 const MAX_AUDIO_CHANNELS = 2;
 const EXPORT_SAMPLE_RATE = 44100;
+
+// agent 经 bridge insert_element 插入的裸 audio 元素可能漏写 sourceType
+// （序列化原样透传，加载无归一化）——带 mediaId 的一律按 upload 处理，
+// 否则会落入 library 分支 fetch(undefined) 被静默丢弃，导出无声。
+function isUploadAudioElement(
+	element: AudioElement,
+): element is UploadAudioElement {
+	return element.sourceType === "upload" || "mediaId" in element;
+}
 
 export interface CollectedAudioElement {
 	timelineElement: AudioCapableElement;
@@ -224,7 +234,7 @@ async function resolveAudioBufferForElement({
 	audioContext: AudioContext;
 }): Promise<AudioBuffer | null> {
 	try {
-		if (element.sourceType === "upload") {
+		if (isUploadAudioElement(element)) {
 			const asset = mediaMap.get(element.mediaId);
 			if (!asset) return null;
 			return await resolveAudioBufferForAsset({ asset, audioContext });
@@ -513,7 +523,7 @@ export async function collectAudioMixSources({
 			});
 
 			if (element.type === "audio") {
-				if (element.sourceType === "upload") {
+				if (isUploadAudioElement(element)) {
 					const mediaAsset = mediaMap.get(element.mediaId);
 					if (!mediaAsset) continue;
 
@@ -579,7 +589,7 @@ export async function collectAudioClips({
 			});
 
 			if (element.type === "audio") {
-				if (element.sourceType === "upload") {
+				if (isUploadAudioElement(element)) {
 					const mediaAsset = mediaMap.get(element.mediaId);
 					if (!mediaAsset) continue;
 
