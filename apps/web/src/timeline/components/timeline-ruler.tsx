@@ -27,7 +27,6 @@ interface TimelineRulerProps {
 	zoomLevel: number;
 	dynamicTimelineWidth: number;
 	rulerRef: React.Ref<HTMLDivElement>;
-	handleWheel: (e: React.WheelEvent) => void;
 	handleTimelineContentClick: (e: React.MouseEvent) => void;
 	handleRulerTrackingMouseDown: (e: React.MouseEvent) => void;
 	handleRulerMouseDown: (e: React.MouseEvent) => void;
@@ -37,7 +36,6 @@ export function TimelineRuler({
 	zoomLevel,
 	dynamicTimelineWidth,
 	rulerRef,
-	handleWheel,
 	handleTimelineContentClick,
 	handleRulerTrackingMouseDown,
 	handleRulerMouseDown,
@@ -118,7 +116,6 @@ export function TimelineRuler({
 			aria-valuenow={0}
 			className="relative flex-1 overflow-x-visible"
 			style={{ height: TIMELINE_RULER_HEIGHT_PX }}
-			onWheel={handleWheel}
 			onClick={(event) => {
 				// Ruler seek already happens on mousedown via playhead scrubbing.
 				// Forwarding the follow-up click re-enters the selection-clearing path.

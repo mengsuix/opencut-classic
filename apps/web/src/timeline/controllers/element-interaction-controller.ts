@@ -231,6 +231,7 @@ function resolveDropTarget({
 	snappedTime,
 	verticalDragDirection,
 	rippleInsertEnabled,
+	allowOverlapClamp,
 }: {
 	clientX: number;
 	clientY: number;
@@ -242,6 +243,7 @@ function resolveDropTarget({
 	snappedTime: MediaTime;
 	verticalDragDirection: "up" | "down" | null;
 	rippleInsertEnabled: boolean;
+	allowOverlapClamp: boolean;
 }): DropTarget | null {
 	const containerRect = viewport
 		.getTracksContainerEl()
@@ -273,6 +275,7 @@ function resolveDropTarget({
 		excludeElementId: movingElement.id,
 		verticalDragDirection,
 		rippleInsertEnabled,
+		allowOverlapClamp,
 	});
 }
 
@@ -541,7 +544,18 @@ export class ElementInteractionController {
 				currentMouseY: clientY,
 			}),
 			rippleInsertEnabled: rippleSingle,
-		});
+			allowOverlapClamp: drag.moveGroup.members.length === 1,
+			});
+
+			// A clamped drop target carries the nearest free start time — let the
+			// preview and the commit follow it.
+			if (
+			anchorDropTarget &&
+			!anchorDropTarget.isNewTrack &&
+			anchorDropTarget.xPosition !== snappedTime
+			) {
+			drag.currentTime = anchorDropTarget.xPosition;
+			}
 
 		// Effect elements convert to clip effects instead of moving when
 		// dropped onto a visual element — keep that hit as the drop target.
@@ -575,7 +589,7 @@ export class ElementInteractionController {
 			? resolveGroupMoveForDrop({
 					group: drag.moveGroup,
 					tracks,
-					anchorStartTime: snappedTime,
+					anchorStartTime: drag.currentTime,
 					dropTarget: anchorDropTarget,
 					reservedNewTrackIds: drag.reservedNewTrackIds,
 				})

@@ -188,31 +188,11 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_user_marks",
-        "获取用户用于指代位置的可视化标注：canvasRects = 用户在预览画面上框选的矩形（每个带 \"C1\"、\"C2\" 等标注 id，直接显示在框上；坐标是 0~1 画布比例、左上角原点——与 masks.set_canvas_rect 同一坐标系，可直接作它的 rect 参数；内含框选时刻的播放头秒数；把它传给 get_preview_frame 的 rect 可拿该区域的原生分辨率特写——看清图标、文字等小细节的正确方式）；timeRanges = 用户在时间轴上拖选的时间范围（每个带 \"T1\"、\"T2\" 等标注 id，显示在色带上；单位秒）。每种都可标多个，用户用标注 id 指代（如 \"C1\"）；无标注时两者都是空数组。用完调 clear_marks 清除。",
+        "获取用户用于指代位置的可视化标注：canvasRects = 用户在预览画面上框选的矩形（每个带 \"C1\"、\"C2\" 等标注 id，直接显示在框上；坐标是 0~1 画布比例、左上角原点——与 masks.set_canvas_rect 同一坐标系，可直接作它的 rect 参数；内含框选时刻的播放头秒数；把它传给 get_preview_frame 的 rect 可拿该区域的原生分辨率特写——看清图标、文字等小细节的正确方式）；timeRanges = 用户在时间轴上拖选的时间范围（每个带 \"T1\"、\"T2\" 等标注 id，显示在色带上；单位秒）。每种都可标多个，用户用标注 id 指代（如 \"C1\"）；无标注时两者都是空数组。用完用 execute_command 的 marks.clear 子命令清除。",
         {},
     )
     async def get_user_marks(args):
         return await run("marks.get")
-
-    @tool(
-        "clear_marks",
-        "清除用户标注（消费完后调用）。target: \"all\"（默认）| \"canvasRects\" | \"timeRanges\"。",
-        {
-            "type": "object",
-            "properties": {
-                "target": {
-                    "type": "string",
-                    "enum": ["all", "canvasRects", "timeRanges"],
-                    "description": "清除哪类标注，默认 all",
-                },
-            },
-        },
-    )
-    async def clear_marks(args):
-        target = args.get("target")
-        if not isinstance(target, str) or not target:
-            target = "all"
-        return await run("marks.clear", {"target": target})
 
     @tool(
         "execute_command",

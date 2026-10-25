@@ -8,9 +8,11 @@ import {
 import { TIMELINE_TRACK_GAP_PX } from "./layout";
 import { getTrackHeight } from "./track-layout";
 import {
+	addMediaTime,
 	mediaTime,
 	type MediaTime,
 	roundMediaTime,
+	subMediaTime,
 	TICKS_PER_SECOND,
 } from "@/wasm";
 
@@ -119,6 +121,7 @@ export function computeDropTarget({
 	excludeElementId,
 	targetElementTypes,
 	rippleInsertEnabled,
+	allowOverlapClamp,
 }: ComputeDropTargetParams): DropTarget {
 	const orderedTracks = [...tracks.overlay, tracks.main, ...tracks.audio];
 	const mainTrackIndex = tracks.overlay.length;
@@ -269,6 +272,31 @@ export function computeDropTarget({
 		};
 	}
 
+	// Overlap on a compatible track: clamp the drop to the nearest free slot
+	// so it snaps against the neighbor's edge instead of silently overflowing
+	// to a new track.
+	if (
+		allowOverlapClamp &&
+		placementResult.kind === "newTrack" &&
+		canElementGoOnTrack({ elementType, trackType: track.type })
+	) {
+		const clampedStart = findNearestFreeStartTime({
+			track,
+			duration: elementDuration,
+			desiredStart: xPosition,
+			excludeElementId,
+		});
+		if (clampedStart !== null) {
+			return {
+				trackIndex,
+				isNewTrack: false,
+				insertPosition: null,
+				xPosition: clampedStart,
+				targetElement: EMPTY_TARGET_ELEMENT,
+			};
+		}
+	}
+
 	if (placementResult.kind === "existingTrack") {
 		const adjustedXPosition =
 			placementResult.adjustedStartTime !== undefined
@@ -291,6 +319,50 @@ export function computeDropTarget({
 		xPosition,
 		targetElement: EMPTY_TARGET_ELEMENT,
 	};
+}
+
+function findNearestFreeStartTime({
+	track,
+	duration,
+	desiredStart,
+	excludeElementId,
+}: {
+	track: TimelineTrack;
+	duration: MediaTime;
+	desiredStart: MediaTime;
+	excludeElementId?: string;
+}): MediaTime | null {
+	const others = track.elements.filter(
+		(element) => element.id !== excludeElementId,
+	);
+
+	const fits = (start: MediaTime): boolean =>
+		start >= 0 &&
+		!others.some(
+			(element) =>
+				start < element.startTime + element.duration &&
+				start + duration > element.startTime,
+		);
+
+	if (fits(desiredStart)) return desiredStart;
+
+	let best: MediaTime | null = null;
+	for (const element of others) {
+		const candidates: MediaTime[] = [
+			subMediaTime({ a: element.startTime, b: duration }),
+			addMediaTime({ a: element.startTime, b: element.duration }),
+		];
+		for (const candidate of candidates) {
+			if (!fits(candidate)) continue;
+			if (
+				best === null ||
+				Math.abs(candidate - desiredStart) < Math.abs(best - desiredStart)
+			) {
+				best = candidate;
+			}
+		}
+	}
+	return best;
 }
 
 export function getDropLineY({

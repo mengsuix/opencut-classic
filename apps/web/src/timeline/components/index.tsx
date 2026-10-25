@@ -191,7 +191,7 @@ export function Timeline() {
 
 	const savedViewState = editor.project.getTimelineViewState();
 
-	const { zoomLevel, setZoomLevel, handleWheel, saveScrollPosition } =
+	const { zoomLevel, setZoomLevel, saveScrollPosition } =
 		useTimelineZoom({
 			containerRef: timelineRef,
 			minZoom: minZoomLevel,
@@ -626,7 +626,6 @@ export function Timeline() {
 								zoomLevel={zoomLevel}
 								dynamicTimelineWidth={dynamicTimelineWidth}
 								rulerRef={rulerRef}
-								handleWheel={handleWheel}
 								handleTimelineContentClick={handleRulerClick}
 								handleRulerTrackingMouseDown={handleRulerMouseDown}
 								handleRulerMouseDown={handlePlayheadRulerMouseDown}
@@ -636,7 +635,6 @@ export function Timeline() {
 								dynamicTimelineWidth={dynamicTimelineWidth}
 								dragState={bookmarkDragState}
 								onBookmarkMouseDown={handleBookmarkMouseDown}
-								handleWheel={handleWheel}
 								handleTimelineContentClick={handleRulerClick}
 								handleRulerTrackingMouseDown={handleRulerMouseDown}
 								handleRulerMouseDown={handlePlayheadRulerMouseDown}
@@ -1021,28 +1019,32 @@ function TimelineTrackRows({
 						>
 							{t("timeline.pasteElements")}
 							</ContextMenuItem>
-							<ContextMenuItem
-							icon={<HugeiconsIcon icon={VolumeHighIcon} />}
-							onClick={(event: React.MouseEvent) => {
-								event.stopPropagation();
-								timeline.toggleTrackMute({ trackId: track.id });
-							}}
-							>
-							{canTrackHaveAudio(track) && track.muted
-								? t("timeline.unmuteTrack")
-								: t("timeline.muteTrack")}
-							</ContextMenuItem>
-							<ContextMenuItem
-							icon={<HugeiconsIcon icon={ViewIcon} />}
-							onClick={(event: React.MouseEvent) => {
-								event.stopPropagation();
-								timeline.toggleTrackVisibility({ trackId: track.id });
-							}}
-							>
-							{canTrackBeHidden(track) && track.hidden
-								? t("timeline.showTrack")
-								: t("timeline.hideTrack")}
-							</ContextMenuItem>
+							{canTrackHaveAudio(track) && (
+								<ContextMenuItem
+									icon={<HugeiconsIcon icon={VolumeHighIcon} />}
+									onClick={(event: React.MouseEvent) => {
+										event.stopPropagation();
+										timeline.toggleTrackMute({ trackId: track.id });
+									}}
+								>
+									{track.muted
+										? t("timeline.unmuteTrack")
+										: t("timeline.muteTrack")}
+								</ContextMenuItem>
+							)}
+							{canTrackBeHidden(track) && (
+								<ContextMenuItem
+									icon={<HugeiconsIcon icon={ViewIcon} />}
+									onClick={(event: React.MouseEvent) => {
+										event.stopPropagation();
+										timeline.toggleTrackVisibility({ trackId: track.id });
+									}}
+								>
+									{track.hidden
+										? t("timeline.showTrack")
+										: t("timeline.hideTrack")}
+								</ContextMenuItem>
+							)}
 						{track.id !== mainTrackId && (
 							<ContextMenuItem
 								icon={<HugeiconsIcon icon={Delete02Icon} />}

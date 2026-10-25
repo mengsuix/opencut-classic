@@ -2573,14 +2573,37 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"project.update_settings": {
 		description:
-			"Update project settings (e.g. canvasSize, fps, background).",
+			"Update project settings (e.g. canvasSize, fps, background). fps accepts a number (e.g. 24) or a FrameRate object.",
 		args: { settings: "Partial<ProjectSettings>" },
 		run: ({ editor, args }) => {
 			if (!args.settings || typeof args.settings !== "object") {
 				throw new Error("Missing or invalid argument: settings");
 			}
+			const settings = { ...(args.settings as Record<string, unknown>) };
+			if ("fps" in settings) {
+				const fps = settings.fps;
+				if (typeof fps === "number") {
+					if (!Number.isFinite(fps) || fps <= 0) {
+						throw new Error(
+							`Invalid fps: ${fps}. Must be a positive number or a {numerator, denominator} object.`,
+						);
+					}
+					settings.fps = floatToFrameRate(fps);
+				} else if (
+					typeof fps !== "object" ||
+					fps === null ||
+					!Number.isFinite((fps as { numerator?: unknown }).numerator) ||
+					!Number.isFinite((fps as { denominator?: unknown }).denominator) ||
+					(fps as { numerator: number }).numerator <= 0 ||
+					(fps as { denominator: number }).denominator <= 0
+				) {
+					throw new Error(
+						"Invalid fps: must be a positive number or a {numerator, denominator} object.",
+					);
+				}
+			}
 			editor.project.updateSettings({
-				settings: args.settings as never,
+				settings: settings as never,
 			});
 			return { updated: true };
 		},

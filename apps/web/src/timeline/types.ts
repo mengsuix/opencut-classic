@@ -309,6 +309,8 @@ export interface ComputeDropTargetParams {
 	excludeElementId?: string;
 	targetElementTypes?: string[];
 	rippleInsertEnabled?: boolean;
+	/** When true, an overlap on a compatible hovered track clamps the drop to the nearest free slot instead of creating a new track. */
+	allowOverlapClamp?: boolean;
 }
 
 export interface ClipboardItem {

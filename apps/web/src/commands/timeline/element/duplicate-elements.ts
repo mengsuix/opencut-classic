@@ -8,7 +8,7 @@ import { generateUUID } from "@/utils/id";
 import { EditorCore } from "@/core";
 import { applyPlacement, resolveTrackPlacement } from "@/timeline/placement";
 import { cloneAnimations } from "@/animation";
-import type { MediaTime } from "@/wasm";
+import { addMediaTime, type MediaTime } from "@/wasm";
 
 interface DuplicateElementsParams {
 	elements: { trackId: string; elementId: string }[];
@@ -32,11 +32,13 @@ export class DuplicateElementsCommand extends Command {
 
 		let updatedTracks = this.savedState;
 
-		for (const track of [
+		const orderedTracks = [
 			...this.savedState.overlay,
 			this.savedState.main,
 			...this.savedState.audio,
-		]) {
+		];
+
+		for (const track of orderedTracks) {
 			const elementsToDuplicate = this.elements.filter(
 				(elementEntry) => elementEntry.trackId === track.id,
 			);
@@ -60,18 +62,32 @@ export class DuplicateElementsCommand extends Command {
 					buildDuplicateElement({
 						element,
 						id: newId,
-						startTime: element.startTime,
+						// Place the copy right after the original (CapCut-style),
+						// instead of stacked at the same time on a brand-new track.
+						startTime: addMediaTime({
+							a: element.startTime,
+							b: element.duration,
+						}),
 					}),
 				);
 			}
 
+			// Prefer the source track; only overflow to an adjacent new track
+			// when the copies don't fit there.
 			const placementResult = resolveTrackPlacement({
 				tracks: updatedTracks,
 				trackType: track.type,
-				timeSpans: [],
-				strategy: { type: "alwaysNew", position: "highest" },
+				timeSpans: newTrackElements.map((element) => ({
+					startTime: element.startTime,
+					duration: element.duration,
+				})),
+				strategy: {
+					type: "preferIndex",
+					trackIndex: orderedTracks.findIndex((t) => t.id === track.id),
+					hoverDirection: "above",
+				},
 			});
-			if (!placementResult || placementResult.kind !== "newTrack") {
+			if (!placementResult) {
 				continue;
 			}
 

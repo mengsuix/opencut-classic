@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { t } from "@/i18n";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { useActionHandler } from "@/actions/use-action-handler";
 import { useEditor } from "@/editor/use-editor";
@@ -230,12 +232,18 @@ export function useEditorActions() {
 							time: currentTime,
 						});
 
-			if (elementsToSplit.length === 0) return;
+			if (elementsToSplit.length === 0) {
+				toast.info(t("timeline.nothingToSplit"));
+				return;
+			}
 
-			editor.timeline.splitElements({
+			const rightSideElements = editor.timeline.splitElements({
 				elements: elementsToSplit,
 				splitTime: currentTime,
 			});
+			if (rightSideElements.length === 0) {
+				toast.info(t("timeline.nothingToSplit"));
+			}
 		},
 		undefined,
 	);
