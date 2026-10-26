@@ -3368,7 +3368,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"effects.add_layer": {
 		description:
-			"Add a standalone scene-effect layer: a full-screen look applied to the composited picture (all layers below it) during its time window, instead of following a single clip. Use this for atmosphere covering a span of the timeline (glow, glitch, blur, old film, vignette). For per-clip effects that move with one element, use effects.add. Returns the selected element ref.",
+			"Add a standalone scene-effect layer: a full-screen look applied to the composited picture (all layers below it) during its time window, instead of following a single clip. Use this for atmosphere covering a span of the timeline (blur, color adjustment, vignette, filters). For per-clip effects that move with one element, use effects.add. Returns the selected element ref.",
 		args: {
 			effectType: "string",
 			startTime: "number (seconds)",

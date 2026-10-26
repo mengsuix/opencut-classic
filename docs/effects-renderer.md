@@ -17,7 +17,7 @@ All effects use the shared GPU renderer. TypeScript decides which shader identif
 
 ## Single-pass vs multi-pass
 
-The renderer supports a `passes` array. Single-pass effects (e.g. color grading) just have one entry. Multi-pass is needed when an effect has to process its own output — blur (H then V), bloom (extract → blur → composite), glow, etc.
+The renderer supports a `passes` array. Single-pass effects (e.g. color grading) just have one entry. Multi-pass is needed when an effect has to process its own output — for example, blur (H then V).
 
 ```typescript
 renderer: {

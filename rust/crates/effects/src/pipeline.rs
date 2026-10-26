@@ -34,11 +34,6 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         uniforms: &["u_key_color", "u_tolerance", "u_softness"],
     },
     ShaderSpec {
-        id: "channel-shift",
-        source: include_str!("shaders/channel_shift.wgsl"),
-        uniforms: &["u_offset"],
-    },
-    ShaderSpec {
         id: "sharpen",
         source: include_str!("shaders/sharpen.wgsl"),
         uniforms: &["u_amount"],
@@ -49,26 +44,6 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         uniforms: &["u_size"],
     },
     ShaderSpec {
-        id: "edge-glow",
-        source: include_str!("shaders/edge_glow.wgsl"),
-        uniforms: &["u_intensity", "u_threshold", "u_color"],
-    },
-    ShaderSpec {
-        id: "distort-wave",
-        source: include_str!("shaders/distort_wave.wgsl"),
-        uniforms: &["u_amplitude", "u_frequency", "u_phase"],
-    },
-    ShaderSpec {
-        id: "noise",
-        source: include_str!("shaders/noise.wgsl"),
-        uniforms: &["u_amount", "u_time"],
-    },
-    ShaderSpec {
-        id: "glow",
-        source: include_str!("shaders/glow.wgsl"),
-        uniforms: &["u_intensity", "u_radius", "u_color"],
-    },
-    ShaderSpec {
         id: "vignette",
         source: include_str!("shaders/vignette.wgsl"),
         uniforms: &["u_amount", "u_softness"],
@@ -77,11 +52,6 @@ const SHADER_SPECS: &[ShaderSpec] = &[
         id: "filter",
         source: include_str!("shaders/filter.wgsl"),
         uniforms: &["u_style", "u_intensity"],
-    },
-    ShaderSpec {
-        id: "swirl",
-        source: include_str!("shaders/swirl.wgsl"),
-        uniforms: &["u_angle", "u_radius", "u_center"],
     },
 ];
 
@@ -451,6 +421,23 @@ mod tests {
         assert_eq!(
             packed,
             vec![1.0, 1.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0]
+        );
+    }
+
+    #[test]
+    fn builtin_shader_ids_match_supported_effects() {
+        let ids: Vec<_> = SHADER_SPECS.iter().map(|spec| spec.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "gaussian-blur",
+                "color-adjust",
+                "chroma-key",
+                "sharpen",
+                "pixelate",
+                "vignette",
+                "filter",
+            ]
         );
     }
 

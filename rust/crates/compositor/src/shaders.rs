@@ -6,7 +6,6 @@ mod tests {
         ("layer", include_str!("shaders/layer.wgsl")),
         ("blend", include_str!("shaders/blend.wgsl")),
         ("mask", include_str!("shaders/mask.wgsl")),
-        ("transition_blend", include_str!("shaders/transition_blend.wgsl")),
     ];
 
     #[test]

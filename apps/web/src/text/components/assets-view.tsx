@@ -18,21 +18,9 @@ function buildPresetPreviewStyle({
 	if (typeof params.color === "string") {
 		style.color = params.color;
 	}
-	if (params.fontWeight === "bold") {
-		style.fontWeight = 700;
-	}
 	if (params["stroke.enabled"] === true && typeof params["stroke.color"] === "string") {
 		const strokeColor = params["stroke.color"];
 		style.textShadow = `-1px -1px 0 ${strokeColor}, 1px -1px 0 ${strokeColor}, -1px 1px 0 ${strokeColor}, 1px 1px 0 ${strokeColor}, 0 -1px 0 ${strokeColor}, 0 1px 0 ${strokeColor}, -1px 0 0 ${strokeColor}, 1px 0 0 ${strokeColor}`;
-	}
-	if (params["shadow.enabled"] === true && typeof params["shadow.color"] === "string") {
-		style.textShadow = `0 2px 4px ${params["shadow.color"]}`;
-	}
-	if (params["gradient.enabled"] === true && typeof params["gradient.color"] === "string") {
-		style.backgroundImage = `linear-gradient(180deg, ${typeof params.color === "string" ? params.color : "#ffffff"}, ${params["gradient.color"]})`;
-		style.backgroundClip = "text";
-		style.WebkitBackgroundClip = "text";
-		style.WebkitTextFillColor = "transparent";
 	}
 	if (params["background.enabled"] === true && typeof params["background.color"] === "string") {
 		style.backgroundColor = params["background.color"];
@@ -92,9 +80,6 @@ export function TextView() {
 					}
 					shouldShowLabel={false}
 				/>
-				<div className="col-span-full mt-1 text-xs text-muted-foreground select-none">
-					{t("assets.textPresets")}
-				</div>
 				{TEXT_PRESETS.map((preset) => (
 					<DraggableItem
 						key={preset.key}

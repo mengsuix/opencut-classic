@@ -7,7 +7,6 @@ import {
 } from "@/animation/visual-anim";
 import {
 	resolveElementTransitionAtTime,
-	resolveTransitionBlendAtTime,
 	transitionLeadInTicks,
 } from "@/timeline/transition";
 import {
@@ -227,14 +226,6 @@ function resolveVisualState({
 		canvasWidth: context.renderer.width,
 		ticksPerSecond: TICKS_PER_SECOND,
 	});
-	const transitionBlend = resolveTransitionBlendAtTime({
-		transitionIn: params.transitionIn,
-		transitionOut: params.transitionOut,
-		time: context.time,
-		timeOffset: params.timeOffset,
-		duration: params.duration,
-		ticksPerSecond: TICKS_PER_SECOND,
-	});
 	const motion = combineVisualAnimStates({ a: anim, b: transition });
 	const transform =
 		motion.scaleFactor === 1 && motion.offsetX === 0 && motion.offsetY === 0
@@ -266,7 +257,6 @@ function resolveVisualState({
 		localTime,
 		transform,
 		opacity,
-		transitionBlend,
 		effectPasses: resolveEffectPassGroups({
 			effects: params.effects,
 			animations: params.animations,
