@@ -47,7 +47,7 @@ export class EditorCore {
 		registerTranscriptionDiagnostics({ diagnostics: this.diagnostics });
 		this.playback.bindTimelineScope();
 		this.command.registerReactor((command) => {
-			if (command.preserveEmptyTracks) {
+			if (!command.pruneEmptyTracks) {
 				return;
 			}
 

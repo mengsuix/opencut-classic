@@ -22,6 +22,8 @@ function removeTrackElements<TTrack extends TimelineTrack>({
 }
 
 export class DeleteElementsCommand extends Command {
+	// Deleting can empty a track; prune the leftover empty track afterwards.
+	public override pruneEmptyTracks = true;
 	private savedState: SceneTracks | null = null;
 	private readonly elements: { trackId: string; elementId: string }[];
 

@@ -45,7 +45,11 @@ export function describeElementTarget(element: {
 }
 
 export abstract class Command {
-	public preserveEmptyTracks = false;
+	/** Opt-in: only commands that can leave a track empty (e.g. deleting its
+	 *  last elements) set this, letting the post-command reactor prune the
+	 *  now-empty overlay/audio tracks. Everything else must not prune, so a
+	 *  manually added empty track survives unrelated edits. */
+	public pruneEmptyTracks = false;
 	/** Element refs the command operates on. The history panel resolves them
 	 *  to element names before execution to show what was affected. */
 	public affectedElementRefs?: ElementRef[];

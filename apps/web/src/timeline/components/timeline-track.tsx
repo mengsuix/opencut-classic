@@ -19,6 +19,9 @@ const TRACK_ELEMENT_OVERSCAN_PX = 1024;
 
 interface TimelineTrackContentProps {
 	track: TimelineTrack;
+	/** Position in the rendered track list, used to disambiguate same-named
+	 *  tracks in the aria label. */
+	index: number;
 	zoomLevel: number;
 	dragView: ElementDragView;
 	onResizeStart: (params: {
@@ -45,6 +48,7 @@ interface TimelineTrackContentProps {
 
 export function TimelineTrackContent({
 	track,
+	index,
 	zoomLevel,
 	dragView,
 	onResizeStart,
@@ -96,7 +100,10 @@ export function TimelineTrackContent({
 			<button
 				type="button"
 				className="absolute inset-0 m-0 size-full appearance-none border-0 bg-transparent p-0"
-				aria-label={t("timeline.selectTrack", { name: track.name })}
+				aria-label={t("timeline.seekOnTrack", {
+					index: index + 1,
+					name: track.name,
+				})}
 				onMouseUp={(event) => {
 					if (shouldIgnoreClick?.()) return;
 					onTrackMouseUp?.(event);

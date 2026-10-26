@@ -18,8 +18,7 @@ import {
 } from "@/wasm";
 
 export class SplitElementsCommand extends Command {
-	// Splitting never empties a track; keeps ripple-move batches preserving.
-	public override preserveEmptyTracks = true;
+	// Splitting never empties a track, so it never prunes empty tracks.
 	private savedState: SceneTracks | null = null;
 	private rightSideElements: { trackId: string; elementId: string }[] = [];
 	private readonly elements: { trackId: string; elementId: string }[];

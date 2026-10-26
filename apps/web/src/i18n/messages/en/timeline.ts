@@ -6,7 +6,7 @@ export const timeline = {
 	"timeline.rangeMark": "Mark a time range (for AI)",
 	"timeline.timelinePlayhead": "Timeline playhead",
 	"timeline.dragPlayhead": "Drag playhead",
-	"timeline.selectTrack": "Select {name}",
+	"timeline.seekOnTrack": "Position playhead on track {index} ({name})",
 	"timeline.selectKeyframe": "Select keyframe",
 	"timeline.leftResizeHandle": "Left resize handle",
 	"timeline.rightResizeHandle": "Right resize handle",
@@ -35,7 +35,7 @@ export const timeline = {
 	"timeline.deleteTrack": "Delete track",
 	"timeline.deleteTrackConfirmTitle": "Delete track?",
 	"timeline.deleteTrackConfirmDescription":
-		"This track contains {count} element(s). You can restore it with undo.",
+		"\"{name}\" contains {count} element(s). You can restore it with undo.",
 	"timeline.addTrack": "Add track",
 	"timeline.rippleDelete": "Ripple delete",
 	"timeline.lockTrack": "Lock track",

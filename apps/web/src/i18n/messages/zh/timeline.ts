@@ -6,7 +6,7 @@ export const timeline = {
 	"timeline.rangeMark": "框选时间范围（供 AI 引用）",
 	"timeline.timelinePlayhead": "时间轴播放头",
 	"timeline.dragPlayhead": "拖动播放头",
-	"timeline.selectTrack": "选择 {name}",
+	"timeline.seekOnTrack": "在轨道 {index}（{name}）定位播放头",
 	"timeline.selectKeyframe": "选择关键帧",
 	"timeline.leftResizeHandle": "左侧调整手柄",
 	"timeline.rightResizeHandle": "右侧调整手柄",
@@ -35,7 +35,7 @@ export const timeline = {
 	"timeline.deleteTrack": "删除轨道",
 	"timeline.deleteTrackConfirmTitle": "删除轨道？",
 	"timeline.deleteTrackConfirmDescription":
-		"该轨道包含 {count} 个片段，删除后可通过撤销恢复。",
+		"「{name}」包含 {count} 个片段，删除后可通过撤销恢复。",
 	"timeline.addTrack": "添加轨道",
 	"timeline.rippleDelete": "波纹删除",
 	"timeline.lockTrack": "锁定轨道",

@@ -298,6 +298,39 @@ export function Timeline() {
 		}
 	}, []);
 
+	// A newly added track can land below the fold (audio tracks append at the
+	// bottom), making "add track" look like a no-op. Scroll it into view. The
+	// pending id sits in a ref; the tracks change caused by addTrack re-runs
+	// the effect, which then does the scrolling.
+	const pendingRevealTrackIdRef = useRef<string | null>(null);
+	const handleAddTrack = useCallback(
+		(type: (typeof ADDABLE_TRACK_TYPES)[number]["type"]) => {
+			pendingRevealTrackIdRef.current = editor.timeline.addTrack({ type });
+		},
+		[editor],
+	);
+	useEffect(() => {
+		const trackId = pendingRevealTrackIdRef.current;
+		if (!trackId) return;
+		pendingRevealTrackIdRef.current = null;
+		const scrollEl = tracksScrollRef.current;
+		const trackIndex = tracks.findIndex((track) => track.id === trackId);
+		if (!scrollEl || trackIndex < 0) return;
+		const trackTop =
+			TIMELINE_CONTENT_TOP_PADDING_PX + (trackLayout.offsets[trackIndex] ?? 0);
+		const trackBottom =
+			trackTop + getTrackHeight({ type: tracks[trackIndex].type });
+		const viewportTop = scrollEl.scrollTop;
+		const viewportBottom = viewportTop + scrollEl.clientHeight;
+		if (trackTop >= viewportTop && trackBottom <= viewportBottom) return;
+		scrollEl.scrollTop =
+			trackBottom > viewportBottom
+				? trackBottom - scrollEl.clientHeight
+				: Math.max(0, trackTop - TIMELINE_CONTENT_TOP_PADDING_PX);
+		syncFollowers();
+		saveScrollPositionRef.current();
+	}, [tracks, trackLayout, syncFollowers]);
+
 	// Inserting an element selects it. When that element lands outside the
 	// viewport — long timelines or small zoom levels make default-duration
 	// blocks only a few pixels wide, and overlapping inserts can open a new
@@ -630,6 +663,7 @@ export function Timeline() {
 					timelineHeaderHeight={timelineHeaderHeight}
 					hasHorizontalScrollbar={hasHorizontalScrollbar}
 					getTrackExpansionHeight={getTrackExpansionHeight}
+					onAddTrack={handleAddTrack}
 				/>
 
 				<div
@@ -764,6 +798,7 @@ export function Timeline() {
 									handleSelectionMouseDown(event);
 								}}
 								onClick={handleTracksClick}
+								onAddTrack={handleAddTrack}
 							/>
 						</div>
 					</ScrollArea>
@@ -796,12 +831,14 @@ function TrackLabelsPanel({
 	timelineHeaderHeight,
 	hasHorizontalScrollbar,
 	getTrackExpansionHeight,
+	onAddTrack,
 }: {
 	trackLabelsRef: React.RefObject<HTMLDivElement | null>;
 	trackLabelsScrollRef: React.RefObject<HTMLDivElement | null>;
 	timelineHeaderHeight: number;
 	hasHorizontalScrollbar: boolean;
 	getTrackExpansionHeight: (trackIndex: number) => number;
+	onAddTrack: (type: (typeof ADDABLE_TRACK_TYPES)[number]["type"]) => void;
 }) {
 	const t = useT();
 	const editor = useEditor();
@@ -816,6 +853,9 @@ function TrackLabelsPanel({
 	const mainTrackId = scene?.tracks.main.id ?? null;
 	const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
+	// Escape unmounts the input, which fires blur — without this flag the
+	// blur handler would commit the draft the user meant to discard.
+	const renameCancelledRef = useRef(false);
 	const { selectedElements } = useElementSelection();
 	const tracksWithSelection = useMemo(
 		() => new Set(selectedElements.map((el) => el.trackId)),
@@ -823,6 +863,11 @@ function TrackLabelsPanel({
 	);
 
 	const commitRename = useCallback(() => {
+		if (renameCancelledRef.current) {
+			renameCancelledRef.current = false;
+			setRenamingTrackId(null);
+			return;
+		}
 		const currentId = renamingTrackId;
 		if (currentId) {
 			const nextName = renameDraft.trim();
@@ -893,16 +938,20 @@ function TrackLabelsPanel({
 													onBlur={commitRename}
 													onKeyDown={(event) => {
 														if (event.key === "Enter") commitRename();
-														if (event.key === "Escape") setRenamingTrackId(null);
+														if (event.key === "Escape") {
+															renameCancelledRef.current = true;
+															setRenamingTrackId(null);
+														}
 													}}
 													onClick={(event) => event.stopPropagation()}
 													onMouseDown={(event) => event.stopPropagation()}
 												/>
 											) : (
 												<span
-													className="text-muted-foreground/80 absolute top-1 left-3 max-w-20 cursor-text truncate text-[10px] leading-none select-none"
+													className="text-muted-foreground/80 mr-auto min-w-0 flex-1 cursor-text self-start truncate pt-1 text-[10px] leading-none select-none"
 													title={`${track.name} — ${t("timeline.renameTrack")}`}
 													onDoubleClick={() => {
+														renameCancelledRef.current = false;
 														setRenamingTrackId(track.id);
 														setRenameDraft(track.name);
 													}}
@@ -910,7 +959,7 @@ function TrackLabelsPanel({
 													{track.name}
 												</span>
 											)}
-											<div className="flex items-center justify-end gap-2">
+											<div className="flex shrink-0 items-center justify-end gap-2">
 											{track.type === "text" && (
 											<button
 												type="button"
@@ -1029,7 +1078,7 @@ function TrackLabelsPanel({
 						{ADDABLE_TRACK_TYPES.map(({ type, labelKey }) => (
 							<DropdownMenuItem
 								key={type}
-								onClick={() => editor.timeline.addTrack({ type })}
+								onClick={() => onAddTrack(type)}
 							>
 								{t(labelKey)}
 							</DropdownMenuItem>
@@ -1176,6 +1225,7 @@ function TimelineTrackRows({
 						>
 							<TimelineTrackContent
 								track={track}
+								index={index}
 								zoomLevel={zoomLevel}
 								dragView={dragView}
 								onResizeStart={onResizeStart}
@@ -1297,6 +1347,7 @@ function TimelineTrackRows({
 						</AlertDialogTitle>
 						<AlertDialogDescription>
 							{t("timeline.deleteTrackConfirmDescription", {
+								name: pendingDeleteTrack?.name ?? "",
 								count: pendingDeleteTrack?.elements.length ?? 0,
 							})}
 						</AlertDialogDescription>
@@ -1323,12 +1374,13 @@ function TimelineTrackRows({
 function TimelineGutter({
 	onMouseDown,
 	onClick,
+	onAddTrack,
 }: {
 	onMouseDown: (event: React.MouseEvent) => void;
 	onClick: (event: React.MouseEvent) => void;
+	onAddTrack: (type: (typeof ADDABLE_TRACK_TYPES)[number]["type"]) => void;
 }) {
 	const t = useT();
-	const editor = useEditor();
 	const hasClipboardEntry = useClipboardHasEntry();
 	return (
 		<ContextMenu>
@@ -1357,7 +1409,7 @@ function TimelineGutter({
 								key={type}
 								onClick={(event: React.MouseEvent) => {
 									event.stopPropagation();
-									editor.timeline.addTrack({ type });
+									onAddTrack(type);
 								}}
 							>
 								{t(labelKey)}

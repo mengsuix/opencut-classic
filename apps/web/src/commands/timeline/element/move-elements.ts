@@ -18,8 +18,8 @@ import { findTrackInSceneTracks } from "@/timeline/track-element-update";
 
 export class MoveElementCommand extends Command {
 	// Moving the last element off a track must not delete the track — an empty
-	// track stays so it can be dragged back into (JianYing behavior).
-	public override preserveEmptyTracks = true;
+	// track stays so it can be dragged back into (JianYing behavior). This
+	// command simply does not opt into empty-track pruning.
 	private savedState: SceneTracks | null = null;
 
 	constructor({

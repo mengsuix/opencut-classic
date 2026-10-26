@@ -442,10 +442,11 @@ export function TimelineElement({
 					<ActionMenuItem
 						action="split"
 						icon={<HugeiconsIcon icon={ScissorIcon} />}
+						disabled={track.locked ?? false}
 					>
 						{t("timeline.split")}
 					</ActionMenuItem>
-					<CopyMenuItem />
+					<CopyMenuItem disabled={track.locked ?? false} />
 					{selectedElements.length === 1 && (
 						<ActionMenuItem
 							action="duplicate-selected"
@@ -522,6 +523,7 @@ export function TimelineElement({
 						isCurrentElementSelected={isCurrentElementSelected}
 						elementType={element.type}
 						selectedCount={selectedElements.length}
+						disabled={track.locked ?? false}
 					/>
 					<RippleDeleteMenuItem
 						trackId={track.id}
@@ -529,6 +531,7 @@ export function TimelineElement({
 						isMultipleSelected={selectedElements.length > 1}
 						isCurrentElementSelected={isCurrentElementSelected}
 						selectedCount={selectedElements.length}
+						disabled={track.locked ?? false}
 					/>
 				</ContextMenuContent>
 			</ContextMenu>
@@ -1391,12 +1394,13 @@ function ElementContent({
 	}
 }
 
-function CopyMenuItem() {
+function CopyMenuItem({ disabled }: { disabled?: boolean }) {
 	const t = useT();
 	return (
 		<ActionMenuItem
 			action="copy-selected"
 			icon={<HugeiconsIcon icon={Copy01Icon} />}
+			disabled={disabled}
 		>
 			{t("common.copy")}
 		</ActionMenuItem>
@@ -1469,11 +1473,13 @@ function DeleteMenuItem({
 	isCurrentElementSelected,
 	elementType,
 	selectedCount,
+	disabled,
 }: {
 	isMultipleSelected: boolean;
 	isCurrentElementSelected: boolean;
 	elementType: TimelineElementType["type"];
 	selectedCount: number;
+	disabled?: boolean;
 }) {
 	const t = useT();
 	return (
@@ -1481,6 +1487,7 @@ function DeleteMenuItem({
 			action="delete-selected"
 			variant="destructive"
 			icon={<HugeiconsIcon icon={Delete02Icon} />}
+			disabled={disabled}
 		>
 			{isMultipleSelected && isCurrentElementSelected
 				? t("timeline.deleteElements", { count: selectedCount })
@@ -1499,12 +1506,14 @@ function RippleDeleteMenuItem({
 	isMultipleSelected,
 	isCurrentElementSelected,
 	selectedCount,
+	disabled,
 }: {
 	trackId: string;
 	elementId: string;
 	isMultipleSelected: boolean;
 	isCurrentElementSelected: boolean;
 	selectedCount: number;
+	disabled?: boolean;
 }) {
 	const t = useT();
 	const editor = useEditor();
@@ -1513,6 +1522,7 @@ function RippleDeleteMenuItem({
 		<ContextMenuItem
 			variant="destructive"
 			icon={<HugeiconsIcon icon={Delete02Icon} />}
+			disabled={disabled}
 			onClick={(event: React.MouseEvent) => {
 				event.stopPropagation();
 				const elements =
