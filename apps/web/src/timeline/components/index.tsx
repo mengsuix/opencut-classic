@@ -810,29 +810,36 @@ function TrackLabelsPanel({
 											style={{ height: `${baseHeight}px` }}
 										>
 											{track.type === "text" && (
-											<span
+											<button
+												type="button"
+												className="flex items-center"
+												aria-label={
+													track.linkedStyle
+														? t("timeline.unlinkCaptionStyle")
+														: t("timeline.linkCaptionStyle")
+												}
 												title={
 													track.linkedStyle
 														? t("timeline.unlinkCaptionStyle")
 														: t("timeline.linkCaptionStyle")
 												}
+												onClick={() =>
+													editor.timeline.toggleTrackLinkedStyle({
+														trackId: track.id,
+													})
+												}
 											>
-													<HugeiconsIcon
-														icon={track.linkedStyle ? Link02Icon : Unlink02Icon}
-														className={cn(
-															"size-4 cursor-pointer",
-															track.linkedStyle
-																? "text-foreground"
-																: "text-muted-foreground",
-														)}
-														onClick={() =>
-															editor.timeline.toggleTrackLinkedStyle({
-																trackId: track.id,
-															})
-														}
-													/>
-												</span>
-											)}
+												<HugeiconsIcon
+													icon={track.linkedStyle ? Link02Icon : Unlink02Icon}
+													className={cn(
+														"size-4",
+														track.linkedStyle
+															? "text-foreground"
+															: "text-muted-foreground",
+													)}
+												/>
+											</button>
+										)}
 											{canTrackHaveAudio(track) && (
 												<TrackToggleIcon
 													isOff={track.muted}
@@ -840,6 +847,11 @@ function TrackLabelsPanel({
 														on: VolumeHighIcon,
 														off: VolumeOffIcon,
 													}}
+													label={
+														track.muted
+															? t("timeline.unmuteTrack")
+															: t("timeline.muteTrack")
+													}
 													onClick={() =>
 														editor.timeline.toggleTrackMute({
 															trackId: track.id,
@@ -854,6 +866,11 @@ function TrackLabelsPanel({
 														on: ViewIcon,
 														off: ViewOffSlashIcon,
 													}}
+													label={
+														track.hidden
+															? t("timeline.showTrack")
+															: t("timeline.hideTrack")
+													}
 													onClick={() =>
 														editor.timeline.toggleTrackVisibility({
 															trackId: track.id,
@@ -1084,6 +1101,7 @@ function TrackIcon({ track }: { track: TimelineTrack }) {
 function TrackToggleIcon({
 	isOff,
 	icons,
+	label,
 	onClick,
 }: {
 	isOff: boolean;
@@ -1091,24 +1109,26 @@ function TrackToggleIcon({
 		on: IconSvgElement;
 		off: IconSvgElement;
 	};
+	label: string;
 	onClick: () => void;
 }) {
 	return (
-		<>
-			{isOff ? (
-				<HugeiconsIcon
-					icon={icons.off}
-					className="text-destructive size-4 cursor-pointer"
-					onClick={onClick}
-				/>
-			) : (
-				<HugeiconsIcon
-					icon={icons.on}
-					className="text-muted-foreground size-4 cursor-pointer"
-					onClick={onClick}
-				/>
-			)}
-		</>
+		<button
+			type="button"
+			title={label}
+			aria-label={label}
+			aria-pressed={isOff}
+			className="flex items-center"
+			onClick={onClick}
+		>
+			<HugeiconsIcon
+				icon={isOff ? icons.off : icons.on}
+				className={cn(
+					"size-4",
+					isOff ? "text-destructive" : "text-muted-foreground",
+				)}
+			/>
+		</button>
 	);
 }
 

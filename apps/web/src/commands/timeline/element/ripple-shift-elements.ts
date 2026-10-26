@@ -25,6 +25,9 @@ type RippleShiftBoundary =
  * back to the timeline start.
  */
 export class RippleShiftElementsCommand extends Command {
+	// Shifting never removes elements; keep this true so ripple-move batches
+	// (split + shift + move) inherit MoveElementCommand's empty-track policy.
+	public override preserveEmptyTracks = true;
 	private savedState: SceneTracks | null = null;
 	private readonly trackId: string;
 	private readonly boundary: RippleShiftBoundary;

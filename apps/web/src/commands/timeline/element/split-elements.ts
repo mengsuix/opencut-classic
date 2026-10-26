@@ -18,6 +18,8 @@ import {
 } from "@/wasm";
 
 export class SplitElementsCommand extends Command {
+	// Splitting never empties a track; keeps ripple-move batches preserving.
+	public override preserveEmptyTracks = true;
 	private savedState: SceneTracks | null = null;
 	private rightSideElements: { trackId: string; elementId: string }[] = [];
 	private readonly elements: { trackId: string; elementId: string }[];
@@ -146,7 +148,6 @@ export class SplitElementsCommand extends Command {
 							...element,
 							duration: leftVisibleDuration,
 							trimEnd: leftTrimEnd,
-							name: `${element.name} (left)`,
 							animations: leftAnimations,
 							...(retimeRef !== undefined ? { retime: retimeRef } : {}),
 						},
@@ -164,7 +165,6 @@ export class SplitElementsCommand extends Command {
 							startTime: this.splitTime,
 							duration: rightVisibleDuration,
 							trimStart: rightTrimStart,
-							name: `${element.name} (right)`,
 							animations: rightAnimations,
 							...(retimeRef !== undefined ? { retime: retimeRef } : {}),
 						},
@@ -180,7 +180,6 @@ export class SplitElementsCommand extends Command {
 							...element,
 							duration: leftVisibleDuration,
 							trimEnd: leftTrimEnd,
-							name: `${element.name} (left)`,
 							animations: leftAnimations,
 							...(retimeRef !== undefined ? { retime: retimeRef } : {}),
 						},
@@ -190,7 +189,6 @@ export class SplitElementsCommand extends Command {
 							startTime: this.splitTime,
 							duration: rightVisibleDuration,
 							trimStart: rightTrimStart,
-							name: `${element.name} (right)`,
 							animations: rightAnimations,
 							...(retimeRef !== undefined ? { retime: retimeRef } : {}),
 						},

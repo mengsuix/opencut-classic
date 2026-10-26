@@ -11,6 +11,10 @@ interface PendingSeekSession {
 	downX: number;
 	downY: number;
 	downTime: number;
+	/** Playhead time before the mousedown seek, used to undo the seek when the
+	 *  gesture turns out to be a drag (e.g. box-select) rather than a click. */
+	previousTime: MediaTime | null;
+	restored: boolean;
 }
 
 type Session = { kind: "idle" } | PendingSeekSession;
@@ -24,6 +28,7 @@ export interface SeekConfig {
 	getRulerScrollEl: () => HTMLDivElement | null;
 	getTracksScrollEl: () => HTMLDivElement | null;
 	getActiveProjectFps: () => FrameRate | null;
+	getCurrentTime: () => MediaTime;
 	clearSelectedElements: () => void;
 	seek: (time: MediaTime) => void;
 	setTimelineViewState: (viewState: {
@@ -94,6 +99,7 @@ export class SeekController {
 	}
 
 	destroy(): void {
+		this.disarmDragRestore();
 		this.session = { kind: "idle" };
 	}
 
@@ -104,10 +110,16 @@ export class SeekController {
 		// click/mouseup silently drops the seek whenever the gesture is not
 		// recognized as a click (pointer released over a different element,
 		// moved >5px, or held >500ms) — the user sees "no response".
+		// If the gesture turns out to be a drag (box-select), the playhead is
+		// restored — see handleDragRestoreMouseMove.
 		if (event.button !== 0) return;
 		const target = event.target as HTMLElement;
 		if (this.config.getPlayheadEl()?.contains(target)) return;
+		if (this.session.kind === "pending") {
+			this.session.previousTime = this.config.getCurrentTime();
+		}
 		this.seekFromEvent({ event, source: "tracks" });
+		this.armDragRestore();
 	}
 
 	onRulerMouseDown(event: ReactMouseEvent): void {
@@ -131,13 +143,58 @@ export class SeekController {
 	}): void {
 		if (event.button !== 0) return;
 
+		this.disarmDragRestore();
 		this.session = {
 			kind: "pending",
 			source,
 			downX: event.clientX,
 			downY: event.clientY,
 			downTime: event.timeStamp,
+			previousTime: null,
+			restored: false,
 		};
+	}
+
+	// Box-select on empty track space shares the mousedown that triggered the
+	// seek above; once the pointer moves past the click threshold the gesture
+	// is a drag, so put the playhead back where it was.
+	private handleDragRestoreMouseMove = (event: MouseEvent): void => {
+		if (this.session.kind !== "pending" || this.session.source !== "tracks") {
+			return;
+		}
+		const deltaX = Math.abs(event.clientX - this.session.downX);
+		const deltaY = Math.abs(event.clientY - this.session.downY);
+		if (deltaX <= 5 && deltaY <= 5) return;
+
+		this.restorePlayhead({ session: this.session });
+		this.disarmDragRestore();
+	};
+
+	private handleDragRestoreMouseUp = (): void => {
+		this.disarmDragRestore();
+	};
+
+	private restorePlayhead({ session }: { session: PendingSeekSession }): void {
+		if (session.restored || session.previousTime === null) return;
+		session.restored = true;
+
+		const previousTime = session.previousTime;
+		this.config.seek(previousTime);
+		this.config.setTimelineViewState({
+			zoomLevel: this.config.zoomLevel,
+			scrollLeft: this.config.getTracksScrollEl()?.scrollLeft ?? 0,
+			playheadTime: previousTime,
+		});
+	}
+
+	private armDragRestore(): void {
+		document.addEventListener("mousemove", this.handleDragRestoreMouseMove);
+		document.addEventListener("mouseup", this.handleDragRestoreMouseUp);
+	}
+
+	private disarmDragRestore(): void {
+		document.removeEventListener("mousemove", this.handleDragRestoreMouseMove);
+		document.removeEventListener("mouseup", this.handleDragRestoreMouseUp);
 	}
 
 	private handleClick({

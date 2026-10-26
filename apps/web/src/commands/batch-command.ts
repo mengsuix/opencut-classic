@@ -3,6 +3,11 @@ import { Command, type CommandResult } from "./base-command";
 export class BatchCommand extends Command {
 	constructor(private commands: Command[]) {
 		super();
+		// A batch preserves empty tracks only if every child does — a batch
+		// containing a delete still prunes.
+		this.preserveEmptyTracks = commands.every(
+			(command) => command.preserveEmptyTracks,
+		);
 	}
 
 	execute(): CommandResult | undefined {

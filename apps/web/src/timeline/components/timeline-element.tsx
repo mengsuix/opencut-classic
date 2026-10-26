@@ -675,7 +675,7 @@ function ResizeHandle({
 		<button
 			type="button"
 			className={cn(
-				"absolute top-0 bottom-0 w-2",
+				"absolute top-0 bottom-0 w-2.5 rounded-full transition-colors hover:bg-primary/60",
 				isLeft ? "-left-1 cursor-w-resize" : "-right-1 cursor-e-resize",
 			)}
 			onMouseDown={(event) => onResizeStart({ event, element, track, side })}

@@ -150,6 +150,7 @@ function ToolbarLeftSection() {
 		isSourceAudioSeparated({
 			element: selectedElement.element,
 		});
+	const hasSelectedElements = selectedElements.length > 0;
 
 	const handleAction = ({
 		action,
@@ -194,18 +195,21 @@ function ToolbarLeftSection() {
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={ScissorIcon} />}
 					tooltip={t("timeline.splitElement")}
+					disabled={!hasSelectedElements}
 					onClick={({ event }) => handleAction({ action: "split", event })}
 				/>
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={AlignLeftIcon} />}
 					tooltip={t("timeline.splitLeft")}
+					disabled={!hasSelectedElements}
 					onClick={({ event }) => handleAction({ action: "split-left", event })}
 				/>
 
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={AlignRightIcon} />}
 					tooltip={t("timeline.splitRight")}
+					disabled={!hasSelectedElements}
 					onClick={({ event }) =>
 						handleAction({ action: "split-right", event })
 					}
@@ -227,6 +231,7 @@ function ToolbarLeftSection() {
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Copy01Icon} />}
 					tooltip={t("timeline.duplicateElement")}
+					disabled={!hasSelectedElements}
 					onClick={({ event }) =>
 						handleAction({ action: "duplicate-selected", event })
 					}
@@ -242,6 +247,7 @@ function ToolbarLeftSection() {
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={Delete02Icon} />}
 					tooltip={t("timeline.deleteElement")}
+					disabled={!hasSelectedElements}
 					onClick={({ event }) =>
 						handleAction({ action: "delete-selected", event })
 					}

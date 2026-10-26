@@ -152,6 +152,16 @@ function resolveNewTrackMove({
 		return null;
 	}
 
+	// Members that started on the anchor's track share the anchor's new track
+	// instead of each getting their own — same-layer members stay on one layer.
+	const anchorNewTrackId = newTrackIds[anchorMemberIndex];
+	const memberTrackIds = sortedMembers.map((member, memberIndex) =>
+		memberIndex !== anchorMemberIndex &&
+		member.displayIndex === group.anchor.displayIndex
+			? anchorNewTrackId
+			: newTrackIds[memberIndex],
+	);
+
 	const clampedAnchorStartTime = clampAnchorStartTime({
 		group,
 		anchorStartTime,
@@ -166,18 +176,25 @@ function resolveNewTrackMove({
 				Math.min(anchorInsertIndex - anchorMemberIndex, tracks.overlay.length),
 			);
 
-	const createTracks: PlannedTrackCreation[] = sortedMembers.map(
-		(member, memberIndex) => ({
-			id: newTrackIds[memberIndex],
+	const createTracks: PlannedTrackCreation[] = [];
+	const createdTrackIds = new Set<string>();
+	sortedMembers.forEach((member, memberIndex) => {
+		const trackId = memberTrackIds[memberIndex];
+		if (createdTrackIds.has(trackId)) {
+			return;
+		}
+		createdTrackIds.add(trackId);
+		createTracks.push({
+			id: trackId,
 			type: getTrackTypeForElementType({
 				elementType: member.elementType,
 			}),
-			index: blockStartIndex + memberIndex,
-		}),
-	);
+			index: blockStartIndex + createTracks.length,
+		});
+	});
 	const moves = sortedMembers.map((member, memberIndex) => ({
 		sourceTrackId: member.trackId,
-		targetTrackId: newTrackIds[memberIndex],
+		targetTrackId: memberTrackIds[memberIndex],
 		elementId: member.elementId,
 		newStartTime: addMediaTime({
 			a: clampedAnchorStartTime,
@@ -252,6 +269,12 @@ function resolveExistingTrackIdsByElementId({
 		memberIndex -= 1
 	) {
 		const member = sortedMembers[memberIndex];
+		// Members that started on the anchor's track follow the anchor to its
+		// target track — they share a layer, so no per-member track search.
+		if (member.displayIndex === group.anchor.displayIndex) {
+			targetTrackIdsByElementId.set(member.elementId, anchorPlacement.trackId);
+			continue;
+		}
 		const targetPlacement = findCompatibleTrackPlacement({
 			tracks,
 			requiredTrackType: getTrackTypeForElementType({
@@ -277,6 +300,11 @@ function resolveExistingTrackIdsByElementId({
 		memberIndex += 1
 	) {
 		const member = sortedMembers[memberIndex];
+		// Same source track as the anchor — share the anchor's target track.
+		if (member.displayIndex === group.anchor.displayIndex) {
+			targetTrackIdsByElementId.set(member.elementId, anchorPlacement.trackId);
+			continue;
+		}
 		const targetPlacement = findCompatibleTrackPlacement({
 			tracks,
 			requiredTrackType: getTrackTypeForElementType({
