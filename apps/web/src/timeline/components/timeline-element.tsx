@@ -268,10 +268,18 @@ export function TimelineElement({
 		isDragging && isBeingDragged
 			? dragView.currentMouseY - dragView.startMouseY
 			: 0;
+	// Ripple push preview: followers render at their would-be position while
+	// the drop is still being aimed.
+	const previewTimeOffset =
+		isDragging && !isBeingDragged
+			? dragView.previewTimeOffsets.get(element.id)
+			: undefined;
 	const elementStartTime =
 		isDragging && isBeingDragged
 			? addMediaTime({ a: dragView.currentTime, b: dragTimeOffset })
-			: renderElement.startTime;
+			: previewTimeOffset !== undefined
+				? addMediaTime({ a: renderElement.startTime, b: previewTimeOffset })
+				: renderElement.startTime;
 	const displayedStartTime = elementStartTime;
 	const displayedDuration = renderElement.duration;
 	const elementWidth = timelineTimeToPixels({
@@ -513,6 +521,13 @@ export function TimelineElement({
 						isMultipleSelected={selectedElements.length > 1}
 						isCurrentElementSelected={isCurrentElementSelected}
 						elementType={element.type}
+						selectedCount={selectedElements.length}
+					/>
+					<RippleDeleteMenuItem
+						trackId={track.id}
+						elementId={element.id}
+						isMultipleSelected={selectedElements.length > 1}
+						isCurrentElementSelected={isCurrentElementSelected}
 						selectedCount={selectedElements.length}
 					/>
 				</ContextMenuContent>
@@ -1475,6 +1490,42 @@ function DeleteMenuItem({
 							: "timeline.deleteClip",
 					)}
 		</ActionMenuItem>
+	);
+}
+
+function RippleDeleteMenuItem({
+	trackId,
+	elementId,
+	isMultipleSelected,
+	isCurrentElementSelected,
+	selectedCount,
+}: {
+	trackId: string;
+	elementId: string;
+	isMultipleSelected: boolean;
+	isCurrentElementSelected: boolean;
+	selectedCount: number;
+}) {
+	const t = useT();
+	const editor = useEditor();
+	const { selectedElements } = useElementSelection();
+	return (
+		<ContextMenuItem
+			variant="destructive"
+			icon={<HugeiconsIcon icon={Delete02Icon} />}
+			onClick={(event: React.MouseEvent) => {
+				event.stopPropagation();
+				const elements =
+					isMultipleSelected && isCurrentElementSelected
+						? selectedElements
+						: [{ trackId, elementId }];
+				editor.timeline.deleteElements({ elements, forceRipple: true });
+			}}
+		>
+			{isMultipleSelected && isCurrentElementSelected
+				? `${t("timeline.rippleDelete")} (${selectedCount})`
+				: t("timeline.rippleDelete")}
+		</ContextMenuItem>
 	);
 }
 

@@ -240,7 +240,7 @@ export class DragDropController {
 			: target.xPosition;
 
 		this.setOver({ dropTarget: target, elementType });
-		event.dataTransfer.dropEffect = "copy";
+		event.dataTransfer.dropEffect = target.isInvalid ? "none" : "copy";
 	}
 
 	onDragLeave(event: DragEvent): void {
@@ -265,7 +265,7 @@ export class DragDropController {
 
 		try {
 			if (dragData) {
-				if (!currentTarget) return;
+				if (!currentTarget || currentTarget.isInvalid) return;
 				this.executeAssetDrop({ target: currentTarget, dragData });
 				return;
 			}
@@ -335,6 +335,8 @@ export class DragDropController {
 		target: DropTarget;
 		trackType: TrackType;
 	}): void {
+		if (target.isInvalid) return;
+
 		if (target.insertRipple && !target.isNewTrack) {
 			this.executeRippleInsert({ element, target });
 			return;

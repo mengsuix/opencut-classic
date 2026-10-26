@@ -2,10 +2,14 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+	ArrowDown01Icon,
+	ArrowUp01Icon,
 	Delete02Icon,
 	Link02Icon,
+	LockIcon,
 	MagicWand05Icon,
 	MusicNote03Icon,
+	PlusSignIcon,
 	TaskAdd02Icon,
 	TextIcon,
 	Unlink02Icon,
@@ -20,8 +24,27 @@ import {
 	ContextMenu,
 	ContextMenuContent,
 	ContextMenuItem,
+	ContextMenuSub,
+	ContextMenuSubContent,
+	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useTimelineZoom } from "@/timeline/hooks/use-timeline-zoom";
 import {
 	useCallback,
@@ -30,6 +53,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 	type ReactNode,
 } from "react";
 import { useContainerSize } from "@/hooks/use-container-size";
@@ -126,6 +150,22 @@ const TRACK_ICONS: Record<TimelineTrack["type"], ReactNode> = {
 	),
 };
 
+const ADDABLE_TRACK_TYPES = [
+	{ type: "video", labelKey: "timeline.videoTrack" },
+	{ type: "text", labelKey: "timeline.textTrack" },
+	{ type: "graphic", labelKey: "timeline.graphicTrack" },
+	{ type: "audio", labelKey: "timeline.audioTrack" },
+] as const;
+
+function useClipboardHasEntry(): boolean {
+	const editor = useEditor();
+	const subscribe = useCallback(
+		(callback: () => void) => editor.clipboard.subscribe(callback),
+		[editor],
+	);
+	return useSyncExternalStore(subscribe, () => editor.clipboard.hasEntry());
+}
+
 export function Timeline() {
 	const t = useT();
 	const snappingEnabled = useTimelineStore((s) => s.snappingEnabled);
@@ -148,6 +188,10 @@ export function Timeline() {
 		[scene],
 	);
 	const mainTrackId = scene?.tracks.main.id ?? null;
+	const lockedTrackIds = useMemo(
+		() => new Set(tracks.filter((track) => track.locked).map((track) => track.id)),
+		[tracks],
+	);
 	const seek = (time: MediaTime) => editor.playback.seek({ time });
 
 	const timelineRef = useRef<HTMLDivElement>(null);
@@ -404,6 +448,13 @@ export function Timeline() {
 		onSnapPointChange: handleSnapPointChange,
 	});
 	const isElementDragging = dragView.kind === "dragging";
+	// Same-track drags already render the element at the landing slot — the
+	// ghost block would just dim it.
+	const isSameTrackElementDrag =
+		dragView.kind === "dragging" &&
+		dragView.dropTarget != null &&
+		!dragView.dropTarget.isNewTrack &&
+		tracks[dragView.dropTarget.trackIndex]?.id === dragView.trackId;
 	// Effect elements dropped onto a visual element attach to it instead of
 	// moving — highlight that element the same way external drops do.
 	const elementDragTargetId =
@@ -474,10 +525,13 @@ export function Timeline() {
 			});
 		},
 		onSelectionChange: ({ intersectedIds, isAdditive }) => {
+			const selectableIds = intersectedIds.filter(
+				(ref) => !lockedTrackIds.has(ref.trackId),
+			);
 			if (isAdditive) {
-				mergeElementsIntoSelection({ elements: intersectedIds });
+				mergeElementsIntoSelection({ elements: selectableIds });
 			} else {
-				setElementSelection({ elements: intersectedIds });
+				setElementSelection({ elements: selectableIds });
 			}
 		},
 	});
@@ -614,6 +668,7 @@ export function Timeline() {
 						isVisible={isElementDragging && elementDragTargetId === null}
 						headerHeight={timelineHeaderHeight}
 						zoomLevel={zoomLevel}
+						suppressGhost={isSameTrackElementDrag}
 					/>
 
 					<div ref={rulerScrollRef} className="shrink-0 overflow-hidden">
@@ -758,11 +813,31 @@ function TrackLabelsPanel({
 				: [],
 		[scene],
 	);
+	const mainTrackId = scene?.tracks.main.id ?? null;
+	const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
+	const [renameDraft, setRenameDraft] = useState("");
 	const { selectedElements } = useElementSelection();
 	const tracksWithSelection = useMemo(
 		() => new Set(selectedElements.map((el) => el.trackId)),
 		[selectedElements],
 	);
+
+	const commitRename = useCallback(() => {
+		const currentId = renamingTrackId;
+		if (currentId) {
+			const nextName = renameDraft.trim();
+			// Read live state: Enter fires before blur, and both call this —
+			// the second call must no-op instead of pushing a duplicate command.
+			const current = editor.timeline.getTrackById({ trackId: currentId });
+			if (current && nextName.length > 0 && nextName !== current.name) {
+				editor.timeline.updateTrack({
+					trackId: currentId,
+					patch: { name: nextName },
+				});
+			}
+		}
+		setRenamingTrackId(null);
+	}, [renamingTrackId, renameDraft, editor]);
 
 	const expandedElementIds = useTimelineStore((s) => s.expandedElementIds);
 	const trackExpandedRowsMap = useMemo(
@@ -806,9 +881,36 @@ function TrackLabelsPanel({
 										}}
 									>
 										<div
-											className="flex shrink-0 items-center justify-end gap-2 px-3"
+											className="relative flex shrink-0 items-center justify-end gap-2 px-3"
 											style={{ height: `${baseHeight}px` }}
 										>
+											{renamingTrackId === track.id ? (
+												<input
+													ref={(el) => el?.focus()}
+													className="bg-background border-input absolute inset-x-2 top-1 z-10 rounded-sm border px-1 text-xs leading-none"
+													value={renameDraft}
+													onChange={(event) => setRenameDraft(event.target.value)}
+													onBlur={commitRename}
+													onKeyDown={(event) => {
+														if (event.key === "Enter") commitRename();
+														if (event.key === "Escape") setRenamingTrackId(null);
+													}}
+													onClick={(event) => event.stopPropagation()}
+													onMouseDown={(event) => event.stopPropagation()}
+												/>
+											) : (
+												<span
+													className="text-muted-foreground/80 absolute top-1 left-3 max-w-20 cursor-text truncate text-[10px] leading-none select-none"
+													title={`${track.name} — ${t("timeline.renameTrack")}`}
+													onDoubleClick={() => {
+														setRenamingTrackId(track.id);
+														setRenameDraft(track.name);
+													}}
+												>
+													{track.name}
+												</span>
+											)}
+											<div className="flex items-center justify-end gap-2">
 											{track.type === "text" && (
 											<button
 												type="button"
@@ -859,7 +961,7 @@ function TrackLabelsPanel({
 													}
 												/>
 											)}
-											{canTrackBeHidden(track) && (
+											{canTrackBeHidden(track) && track.id !== mainTrackId && (
 												<TrackToggleIcon
 													isOff={track.hidden}
 													icons={{
@@ -878,8 +980,26 @@ function TrackLabelsPanel({
 													}
 												/>
 											)}
+											<TrackToggleIcon
+												isOff={track.locked ?? false}
+												icons={{
+													on: LockIcon,
+													off: LockIcon,
+												}}
+												label={
+													track.locked
+														? t("timeline.unlockTrack")
+														: t("timeline.lockTrack")
+												}
+												onClick={() =>
+													editor.timeline.toggleTrackLocked({
+														trackId: track.id,
+													})
+												}
+											/>
 											<TrackIcon track={track} />
-										</div>
+											</div>
+											</div>
 										{expandedRows.length > 0 && (
 											<PropertyTree rows={expandedRows} />
 										)}
@@ -889,6 +1009,33 @@ function TrackLabelsPanel({
 						</div>
 					)}
 				</div>
+			</div>
+			<div className="flex shrink-0 items-center border-t px-3 py-1">
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<button
+							type="button"
+							className="hover:bg-accent flex size-6 items-center justify-center rounded-sm"
+							aria-label={t("timeline.addTrack")}
+							title={t("timeline.addTrack")}
+						>
+							<HugeiconsIcon
+								icon={PlusSignIcon}
+								className="text-muted-foreground size-4"
+							/>
+						</button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent side="right" align="start">
+						{ADDABLE_TRACK_TYPES.map(({ type, labelKey }) => (
+							<DropdownMenuItem
+								key={type}
+								onClick={() => editor.timeline.addTrack({ type })}
+							>
+								{t(labelKey)}
+							</DropdownMenuItem>
+						))}
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 			<div
 				className="bg-background shrink-0"
@@ -936,11 +1083,22 @@ function TimelineTrackRows({
 	const t = useT();
 	const timeline = useEditor((e) => e.timeline);
 	const scene = useEditor((e) => e.scenes.getActiveSceneOrNull());
+	const hasClipboardEntry = useClipboardHasEntry();
+	const [pendingDeleteTrack, setPendingDeleteTrack] =
+		useState<TimelineTrack | null>(null);
 	const tracks = useMemo<TimelineTrack[]>(
 		() =>
 			scene
 				? [...scene.tracks.overlay, scene.tracks.main, ...scene.tracks.audio]
 				: [],
+		[scene],
+	);
+	const overlayTrackIds = useMemo(
+		() => scene?.tracks.overlay.map((track) => track.id) ?? [],
+		[scene],
+	);
+	const audioTrackIds = useMemo(
+		() => scene?.tracks.audio.map((track) => track.id) ?? [],
 		[scene],
 	);
 	const { selectedElements } = useElementSelection();
@@ -995,7 +1153,15 @@ function TimelineTrackRows({
 
 	return (
 		<>
-			{sortedTracks.map(({ track, index }) => (
+			{sortedTracks.map(({ track, index }) => {
+				const overlayIndex = overlayTrackIds.indexOf(track.id);
+				const audioIndex = audioTrackIds.indexOf(track.id);
+				const canMoveUp = overlayIndex > 0 || audioIndex > 0;
+				const canMoveDown =
+					(overlayIndex >= 0 && overlayIndex < overlayTrackIds.length - 1) ||
+					(audioIndex >= 0 && audioIndex < audioTrackIds.length - 1);
+
+				return (
 				<ContextMenu key={track.id}>
 					<ContextMenuTrigger asChild>
 						<div
@@ -1029,6 +1195,7 @@ function TimelineTrackRows({
 					<ContextMenuContent className="w-40">
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={TaskAdd02Icon} />}
+							disabled={!hasClipboardEntry}
 							onClick={(event: React.MouseEvent) => {
 								event.stopPropagation();
 								invokeAction("paste-copied");
@@ -1049,7 +1216,7 @@ function TimelineTrackRows({
 										: t("timeline.muteTrack")}
 								</ContextMenuItem>
 							)}
-							{canTrackBeHidden(track) && (
+							{canTrackBeHidden(track) && track.id !== mainTrackId && (
 								<ContextMenuItem
 									icon={<HugeiconsIcon icon={ViewIcon} />}
 									onClick={(event: React.MouseEvent) => {
@@ -1062,12 +1229,51 @@ function TimelineTrackRows({
 										: t("timeline.hideTrack")}
 								</ContextMenuItem>
 							)}
-						{track.id !== mainTrackId && (
+							<ContextMenuItem
+								icon={<HugeiconsIcon icon={LockIcon} />}
+								onClick={(event: React.MouseEvent) => {
+									event.stopPropagation();
+									timeline.toggleTrackLocked({ trackId: track.id });
+								}}
+							>
+								{track.locked
+									? t("timeline.unlockTrack")
+									: t("timeline.lockTrack")}
+							</ContextMenuItem>
+							{track.id !== mainTrackId && (
+								<>
+									<ContextMenuItem
+										icon={<HugeiconsIcon icon={ArrowUp01Icon} />}
+										disabled={!canMoveUp}
+										onClick={(event: React.MouseEvent) => {
+											event.stopPropagation();
+											timeline.moveTrack({ trackId: track.id, direction: "up" });
+										}}
+									>
+										{t("timeline.moveTrackUp")}
+									</ContextMenuItem>
+									<ContextMenuItem
+										icon={<HugeiconsIcon icon={ArrowDown01Icon} />}
+										disabled={!canMoveDown}
+										onClick={(event: React.MouseEvent) => {
+											event.stopPropagation();
+											timeline.moveTrack({ trackId: track.id, direction: "down" });
+										}}
+									>
+										{t("timeline.moveTrackDown")}
+									</ContextMenuItem>
+								</>
+							)}
+						{track.id !== mainTrackId && !track.locked && (
 							<ContextMenuItem
 								icon={<HugeiconsIcon icon={Delete02Icon} />}
 								onClick={(event: React.MouseEvent) => {
 									event.stopPropagation();
-									timeline.removeTrack({ trackId: track.id });
+									if (track.elements.length > 0) {
+										setPendingDeleteTrack(track);
+									} else {
+										timeline.removeTrack({ trackId: track.id });
+									}
 								}}
 								variant="destructive"
 								>
@@ -1076,7 +1282,40 @@ function TimelineTrackRows({
 						)}
 					</ContextMenuContent>
 				</ContextMenu>
-			))}
+				);
+			})}
+			<AlertDialog
+				open={pendingDeleteTrack !== null}
+				onOpenChange={(open) => {
+					if (!open) setPendingDeleteTrack(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{t("timeline.deleteTrackConfirmTitle")}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{t("timeline.deleteTrackConfirmDescription", {
+								count: pendingDeleteTrack?.elements.length ?? 0,
+							})}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								if (pendingDeleteTrack) {
+									timeline.removeTrack({ trackId: pendingDeleteTrack.id });
+								}
+								setPendingDeleteTrack(null);
+							}}
+						>
+							{t("common.delete")}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</>
 	);
 }
@@ -1088,9 +1327,46 @@ function TimelineGutter({
 	onMouseDown: (event: React.MouseEvent) => void;
 	onClick: (event: React.MouseEvent) => void;
 }) {
+	const t = useT();
+	const editor = useEditor();
+	const hasClipboardEntry = useClipboardHasEntry();
 	return (
-		// eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- spatial gesture surface (empty space below tracks); clicks here clear selection. Keyboard control is global timeline shortcuts.
-		<div className="flex-1" onMouseDown={onMouseDown} onClick={onClick} />
+		<ContextMenu>
+			<ContextMenuTrigger asChild>
+				{/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- spatial gesture surface (empty space below tracks); clicks here clear selection. Keyboard control is global timeline shortcuts. */}
+				<div className="flex-1" onMouseDown={onMouseDown} onClick={onClick} />
+			</ContextMenuTrigger>
+			<ContextMenuContent className="w-40">
+				<ContextMenuItem
+					icon={<HugeiconsIcon icon={TaskAdd02Icon} />}
+					disabled={!hasClipboardEntry}
+					onClick={(event: React.MouseEvent) => {
+						event.stopPropagation();
+						invokeAction("paste-copied");
+					}}
+				>
+					{t("timeline.pasteElements")}
+				</ContextMenuItem>
+				<ContextMenuSub>
+					<ContextMenuSubTrigger>
+						{t("timeline.addTrack")}
+					</ContextMenuSubTrigger>
+					<ContextMenuSubContent>
+						{ADDABLE_TRACK_TYPES.map(({ type, labelKey }) => (
+							<ContextMenuItem
+								key={type}
+								onClick={(event: React.MouseEvent) => {
+									event.stopPropagation();
+									editor.timeline.addTrack({ type });
+								}}
+							>
+								{t(labelKey)}
+							</ContextMenuItem>
+						))}
+					</ContextMenuSubContent>
+				</ContextMenuSub>
+			</ContextMenuContent>
+		</ContextMenu>
 	);
 }
 

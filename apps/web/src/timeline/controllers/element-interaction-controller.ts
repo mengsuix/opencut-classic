@@ -140,6 +140,9 @@ interface DragProgress {
 	currentMouseY: number;
 	groupMoveResult: GroupMoveResult | null;
 	dropTarget: DropTarget | null;
+	// Ripple push preview: elementId → time delta the element would shift by
+	// if the drop committed right now. Empty when no push applies.
+	previewTimeOffsets: Map<string, MediaTime>;
 }
 
 type Session =
@@ -279,6 +282,83 @@ function resolveDropTarget({
 	});
 }
 
+// Mirrors commitSameTrackRippleMove: which neighbors would shift, and by how
+// much, if the same-track ripple drop committed right now.
+function sameTrackRipplePreviewOffsets({
+	track,
+	anchorElementId,
+	anchorNewStartTime,
+	anchorOriginalStartTime,
+	anchorDuration,
+}: {
+	track: TimelineTrack;
+	anchorElementId: string;
+	anchorNewStartTime: MediaTime;
+	anchorOriginalStartTime: MediaTime;
+	anchorDuration: MediaTime;
+}): Map<string, MediaTime> {
+	const offsets = new Map<string, MediaTime>();
+	const pushParams = {
+		track,
+		anchorElementId,
+		anchorNewStartTime,
+		anchorOriginalStartTime,
+		anchorDuration,
+	};
+
+	const rightPlan = planFollowerPush(pushParams);
+	if (rightPlan) {
+		for (const element of track.elements) {
+			if (
+				element.id !== anchorElementId &&
+				element.startTime >= rightPlan.afterTime
+			) {
+				offsets.set(element.id, rightPlan.shiftAmount);
+			}
+		}
+		return offsets;
+	}
+
+	const leftPlan = planFollowerPushLeft(pushParams);
+	if (leftPlan) {
+		const negativeShift = subMediaTime({
+			a: ZERO_MEDIA_TIME,
+			b: leftPlan.shiftAmount,
+		});
+		for (const element of track.elements) {
+			if (
+				element.id !== anchorElementId &&
+				element.startTime < leftPlan.beforeTime
+			) {
+				offsets.set(element.id, negativeShift);
+			}
+		}
+	}
+	return offsets;
+}
+
+// Mirrors commitRippleMove: elements at/after the insert point shift right by
+// the inserted duration.
+function rippleInsertPreviewOffsets({
+	track,
+	insertTime,
+	shiftAmount,
+	excludeElementId,
+}: {
+	track: TimelineTrack;
+	insertTime: MediaTime;
+	shiftAmount: MediaTime;
+	excludeElementId: string;
+}): Map<string, MediaTime> {
+	const offsets = new Map<string, MediaTime>();
+	for (const element of track.elements) {
+		if (element.id !== excludeElementId && element.startTime >= insertTime) {
+			offsets.set(element.id, shiftAmount);
+		}
+	}
+	return offsets;
+}
+
 function resolveGroupMoveForDrop({
 	group,
 	tracks,
@@ -360,6 +440,7 @@ export class ElementInteractionController {
 			currentMouseX: drag.currentMouseX,
 			currentMouseY: drag.currentMouseY,
 			dropTarget: drag.dropTarget,
+			previewTimeOffsets: drag.previewTimeOffsets,
 		};
 	}
 
@@ -391,6 +472,14 @@ export class ElementInteractionController {
 		element: TimelineElement;
 		track: TimelineTrack;
 	}): void => {
+		// Locked tracks reject element interaction entirely (no selection, no drag).
+		if (track.locked) {
+			if (event.button !== MOUSE_BUTTON_RIGHT) {
+				event.stopPropagation();
+			}
+			return;
+		}
+
 		// Right-click must not stopPropagation — ContextMenu needs the bubble.
 		if (event.button === MOUSE_BUTTON_RIGHT) {
 			const ref = { trackId: track.id, elementId: element.id };
@@ -443,6 +532,8 @@ export class ElementInteractionController {
 	}): void => {
 		event.stopPropagation();
 
+		if (track.locked) return;
+
 		if (this.lastGestureWasDrag) {
 			this.lastGestureWasDrag = false;
 			return;
@@ -476,9 +567,14 @@ export class ElementInteractionController {
 		for (const fn of this.subscribers) fn();
 	}
 
+	private applyDropCursor(dropTarget: DropTarget | null): void {
+		document.body.style.cursor = dropTarget?.isInvalid ? "not-allowed" : "";
+	}
+
 	private finishSession(): void {
 		this.session = { kind: "idle" };
 		this.deactivate();
+		this.applyDropCursor(null);
 		this.deps.snap.onChange?.(null);
 		this.notify();
 	}
@@ -557,11 +653,23 @@ export class ElementInteractionController {
 			drag.currentTime = anchorDropTarget.xPosition;
 			}
 
+		// Invalid drop (incompatible or locked track): show the rejection and
+		// snap back on mouseup instead of silently creating a new track.
+		if (anchorDropTarget?.isInvalid) {
+			drag.groupMoveResult = null;
+			drag.dropTarget = anchorDropTarget;
+			drag.previewTimeOffsets = new Map();
+			this.applyDropCursor(anchorDropTarget);
+			return;
+		}
+
 		// Effect elements convert to clip effects instead of moving when
 		// dropped onto a visual element — keep that hit as the drop target.
 		if (anchorDropTarget?.targetElement) {
 			drag.groupMoveResult = null;
 			drag.dropTarget = anchorDropTarget;
+			drag.previewTimeOffsets = new Map();
+			this.applyDropCursor(anchorDropTarget);
 			return;
 		}
 
@@ -571,8 +679,21 @@ export class ElementInteractionController {
 		if (anchorDropTarget && rippleSingle && !anchorDropTarget.isNewTrack) {
 			const targetTrack = orderedTracks(tracks)[anchorDropTarget.trackIndex];
 			if (targetTrack?.id === mousedown.trackId) {
+				const anchorElement = targetTrack.elements.find(
+					(element) => element.id === mousedown.elementId,
+				);
 				drag.groupMoveResult = null;
 				drag.dropTarget = { ...anchorDropTarget, insertRipple: false };
+				drag.previewTimeOffsets = anchorElement
+					? sameTrackRipplePreviewOffsets({
+							track: targetTrack,
+							anchorElementId: anchorElement.id,
+							anchorNewStartTime: drag.currentTime,
+							anchorOriginalStartTime: mousedown.startElementTime,
+							anchorDuration: anchorElement.duration,
+						})
+					: new Map();
+				this.applyDropCursor(drag.dropTarget);
 				return;
 			}
 		}
@@ -580,8 +701,40 @@ export class ElementInteractionController {
 		// Cross-track ripple insert keeps its drop target as-is — the
 		// group-move resolver can't model "push right side along".
 		if (anchorDropTarget?.insertRipple) {
+			const targetTrack = orderedTracks(tracks)[anchorDropTarget.trackIndex];
+			const sourceTrack = orderedTracks(tracks).find(
+				(track) => track.id === mousedown.trackId,
+			);
+			const anchorElement = sourceTrack?.elements.find(
+				(element) => element.id === mousedown.elementId,
+			);
+			const snapTolerance =
+				this.deps.snap.isEnabled() && !this.deps.input.isShiftHeld()
+					? getTimelineSnapThresholdInTicks({
+							zoomLevel: this.deps.viewport.getZoomLevel(),
+						})
+					: 0;
+			const insertPlan =
+				targetTrack && anchorElement
+					? planRippleInsert({
+							track: targetTrack,
+							requestedInsertTime: anchorDropTarget.xPosition,
+							elementDuration: anchorElement.duration,
+							snapTolerance,
+						})
+					: null;
 			drag.groupMoveResult = null;
 			drag.dropTarget = anchorDropTarget;
+			drag.previewTimeOffsets =
+				targetTrack && insertPlan
+					? rippleInsertPreviewOffsets({
+							track: targetTrack,
+							insertTime: insertPlan.insertTime,
+							shiftAmount: insertPlan.shiftAmount,
+							excludeElementId: mousedown.elementId,
+						})
+					: new Map();
+			this.applyDropCursor(drag.dropTarget);
 			return;
 		}
 
@@ -600,6 +753,8 @@ export class ElementInteractionController {
 			anchorDropTarget && (anchorDropTarget.isNewTrack || !nextGroupMoveResult)
 				? { ...anchorDropTarget, isNewTrack: true }
 				: null;
+		drag.previewTimeOffsets = new Map();
+		this.applyDropCursor(drag.dropTarget);
 	}
 
 	private handleMouseMove = ({ clientX, clientY }: MouseEvent): void => {
@@ -692,6 +847,7 @@ export class ElementInteractionController {
 			currentMouseY: clientY,
 			groupMoveResult: null,
 			dropTarget: null,
+			previewTimeOffsets: new Map(),
 		};
 
 		this.session = { kind: "dragging", mousedown, drag };
@@ -773,6 +929,12 @@ export class ElementInteractionController {
 			})
 		) {
 			this.lastGestureWasDrag = false;
+			this.finishSession();
+			return;
+		}
+
+		// Invalid drop: snap back, commit nothing.
+		if (drag.dropTarget?.isInvalid) {
 			this.finishSession();
 			return;
 		}

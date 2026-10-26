@@ -239,6 +239,21 @@ export function computeDropTarget({
 	}
 
 	const trackHeight = getTrackHeight({ type: track.type });
+
+	// Hovering an existing track that cannot accept this element (wrong type
+	// or locked) rejects the drop outright instead of silently overflowing
+	// to a new track. New tracks are only created from empty areas.
+	if (!canElementGoOnTrack({ elementType, trackType: track.type }) || track.locked) {
+		return {
+			trackIndex,
+			isNewTrack: false,
+			insertPosition: null,
+			xPosition,
+			targetElement: EMPTY_TARGET_ELEMENT,
+			isInvalid: true,
+		};
+	}
+
 	const placementResult = resolveTrackPlacement({
 		tracks,
 		elementType,
@@ -269,6 +284,7 @@ export function computeDropTarget({
 			xPosition,
 			targetElement: EMPTY_TARGET_ELEMENT,
 			insertRipple: true,
+			elementDuration,
 		};
 	}
 
@@ -293,6 +309,7 @@ export function computeDropTarget({
 				insertPosition: null,
 				xPosition: clampedStart,
 				targetElement: EMPTY_TARGET_ELEMENT,
+				elementDuration,
 			};
 		}
 	}
@@ -309,6 +326,7 @@ export function computeDropTarget({
 			insertPosition: null,
 			xPosition: adjustedXPosition,
 			targetElement: EMPTY_TARGET_ELEMENT,
+			elementDuration,
 		};
 	}
 

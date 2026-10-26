@@ -35,6 +35,8 @@ export const common = {
 	"history.timelineToggleTrackMute": "切换轨道静音",
 	"history.timelineToggleTrackVisibility": "切换轨道可见性",
 	"history.timelineToggleTrackLinkedStyle": "切换字幕样式联动",
+	"history.timelineUpdateTrack": "更新轨道",
+	"history.timelineReorderTrack": "调整轨道顺序",
 	"history.timelineToggleSourceAudioSeparation": "切换人声/伴奏分离",
 	"history.timelineRetimeElement": "调整播放速度",
 	"history.subtitlesTranscribe": "语音转写字幕",

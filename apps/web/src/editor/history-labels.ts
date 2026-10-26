@@ -72,6 +72,8 @@ const COMMAND_CLASS_KEYS: Record<string, MessageKey> = {
 	ToggleTrackMuteCommand: "history.timelineToggleTrackMute",
 	ToggleTrackVisibilityCommand: "history.timelineToggleTrackVisibility",
 	ToggleTrackLinkedStyleCommand: "history.timelineToggleTrackLinkedStyle",
+	UpdateTrackCommand: "history.timelineUpdateTrack",
+	ReorderTrackCommand: "history.timelineReorderTrack",
 	AddMediaAssetCommand: "history.mediaImport",
 	RemoveMediaAssetCommand: "history.mediaRemove",
 	CreateSceneCommand: "history.scenesCreate",

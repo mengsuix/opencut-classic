@@ -4,3 +4,4 @@ export { ToggleTrackMuteCommand } from "./toggle-track-mute";
 export { ToggleTrackVisibilityCommand } from "./toggle-track-visibility";
 export { ToggleTrackLinkedStyleCommand } from "./toggle-track-linked-style";
 export { UpdateTrackCommand } from "./update-track";
+export { ReorderTrackCommand } from "./reorder-track";

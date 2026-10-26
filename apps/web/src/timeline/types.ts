@@ -31,6 +31,8 @@ export type TrackType = "video" | "text" | "audio" | "graphic" | "effect";
 interface BaseTrack {
 	id: string;
 	name: string;
+	/** Locked tracks reject element selection/dragging and drops. */
+	locked?: boolean;
 }
 
 export interface VideoTrack extends BaseTrack {
@@ -282,6 +284,8 @@ export type ElementDragView =
 			readonly currentMouseX: number;
 			readonly currentMouseY: number;
 			readonly dropTarget: DropTarget | null;
+			/** Ripple push preview: elementId → time delta it would shift by on drop. */
+			readonly previewTimeOffsets: ReadonlyMap<string, MediaTime>;
 	  };
 
 export interface DropTarget {
@@ -292,6 +296,10 @@ export interface DropTarget {
 	targetElement: { elementId: string; trackId: string } | null;
 	/** When true, dropping inserts at xPosition and pushes elements at/after it right (ripple insert) instead of creating a new track. */
 	insertRipple?: boolean;
+	/** When true, the hovered track cannot accept this element (incompatible type or locked) — the drop is rejected instead of overflowing to a new track. */
+	isInvalid?: boolean;
+	/** Duration of the element being dropped, for placeholder preview rendering. */
+	elementDuration?: MediaTime;
 }
 
 export interface ComputeDropTargetParams {

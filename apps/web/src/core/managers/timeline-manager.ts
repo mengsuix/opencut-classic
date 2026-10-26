@@ -42,6 +42,7 @@ import {
 	ToggleTrackVisibilityCommand,
 	ToggleTrackLinkedStyleCommand,
 	UpdateTrackCommand,
+	ReorderTrackCommand,
 	InsertElementCommand,
 	DeleteElementsCommand,
 	DuplicateElementsCommand,
@@ -206,9 +207,32 @@ export class TimelineManager {
 		patch,
 	}: {
 		trackId: string;
-		patch: { muted?: boolean; hidden?: boolean; linkedStyle?: boolean };
+		patch: {
+			muted?: boolean;
+			hidden?: boolean;
+			linkedStyle?: boolean;
+			locked?: boolean;
+			name?: string;
+		};
 	}): void {
 		const command = new UpdateTrackCommand(trackId, patch);
+		this.editor.command.execute({ command });
+	}
+
+	toggleTrackLocked({ trackId }: { trackId: string }): void {
+		const track = this.getTrackById({ trackId });
+		if (!track) return;
+		this.updateTrack({ trackId, patch: { locked: !track.locked } });
+	}
+
+	moveTrack({
+		trackId,
+		direction,
+	}: {
+		trackId: string;
+		direction: "up" | "down";
+	}): void {
+		const command = new ReorderTrackCommand({ trackId, direction });
 		this.editor.command.execute({ command });
 	}
 
@@ -315,11 +339,20 @@ export class TimelineManager {
 
 	deleteElements({
 		elements,
+		forceRipple,
 	}: {
 		elements: { trackId: string; elementId: string }[];
+		/** When true, ripple-shift followers even if the ripple toggle is off. */
+		forceRipple?: boolean;
 	}): void {
-		const command = new DeleteElementsCommand({ elements });
-		this.editor.command.execute({ command });
+		const unlocked = elements.filter(
+			({ trackId }) => !this.getTrackById({ trackId })?.locked,
+		);
+		if (unlocked.length === 0) {
+			return;
+		}
+		const command = new DeleteElementsCommand({ elements: unlocked });
+		this.editor.command.execute({ command, forceRipple });
 	}
 
 	toggleSourceAudioSeparation({

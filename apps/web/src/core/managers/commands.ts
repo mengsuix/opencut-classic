@@ -83,11 +83,19 @@ export class CommandManager {
 		return names.length > 0 ? [...new Set(names)] : undefined;
 	}
 
-	execute({ command }: { command: Command }): Command {
+	execute({
+		command,
+		forceRipple,
+	}: {
+		command: Command;
+		/** Runs the post-command ripple pass even when the ripple toggle is off. */
+		forceRipple?: boolean;
+	}): Command {
 		const targets = this.describeTargets(command);
-		const beforeTracks = this.isRippleEnabled
-			? (this.editor.scenes.getActiveSceneOrNull()?.tracks ?? null)
-			: null;
+		const beforeTracks =
+			this.isRippleEnabled || forceRipple
+				? (this.editor.scenes.getActiveSceneOrNull()?.tracks ?? null)
+				: null;
 		const previousSelection = this.getSelectionSnapshot();
 		const result = command.execute();
 		this.applyRippleIfEnabled({ beforeTracks });
@@ -245,7 +253,7 @@ export class CommandManager {
 	}: {
 		beforeTracks: SceneTracks | null;
 	}): void {
-		if (!this.isRippleEnabled || !beforeTracks) {
+		if (!beforeTracks) {
 			return;
 		}
 

@@ -35,6 +35,8 @@ export const common = {
 	"history.timelineToggleTrackMute": "Toggle track mute",
 	"history.timelineToggleTrackVisibility": "Toggle track visibility",
 	"history.timelineToggleTrackLinkedStyle": "Toggle linked caption style",
+	"history.timelineUpdateTrack": "Update track",
+	"history.timelineReorderTrack": "Reorder track",
 	"history.timelineToggleSourceAudioSeparation": "Toggle vocal/accompaniment separation",
 	"history.timelineRetimeElement": "Retime element",
 	"history.subtitlesTranscribe": "Transcribe subtitles",

@@ -17,7 +17,13 @@ export class UpdateTrackCommand extends Command {
 
 	constructor(
 		private trackId: string,
-		private patch: { muted?: boolean; hidden?: boolean; linkedStyle?: boolean },
+		private patch: {
+			muted?: boolean;
+			hidden?: boolean;
+			linkedStyle?: boolean;
+			locked?: boolean;
+			name?: string;
+		},
 	) {
 		super();
 	}
@@ -34,7 +40,7 @@ export class UpdateTrackCommand extends Command {
 			return;
 		}
 
-		const { muted, hidden, linkedStyle } = this.patch;
+		const { muted, hidden, linkedStyle, locked, name } = this.patch;
 		const updatedTracks = updateTrackInSceneTracks({
 			tracks: this.savedState,
 			trackId: this.trackId,
@@ -48,6 +54,12 @@ export class UpdateTrackCommand extends Command {
 				}
 				if (typeof linkedStyle === "boolean" && next.type === "text") {
 					next = { ...next, linkedStyle } as typeof next;
+				}
+				if (typeof locked === "boolean") {
+					next = { ...next, locked } as typeof next;
+				}
+				if (typeof name === "string" && name.trim().length > 0) {
+					next = { ...next, name: name.trim() } as typeof next;
 				}
 				return next;
 			},

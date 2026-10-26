@@ -2017,27 +2017,34 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.update_track": {
 		description:
-			"Set track properties (set semantics — idempotent, no need to read current state first). muted: whole-track audio (video/audio tracks); hidden: whole-track visibility (non-audio tracks); linkedStyle: text tracks only — while linked, text style edits (font, size, color, background) and transform edits on one element apply to every element on the track.",
+			"Set track properties (set semantics — idempotent, no need to read current state first). muted: whole-track audio (video/audio tracks); hidden: whole-track visibility (non-audio tracks); linkedStyle: text tracks only — while linked, text style edits (font, size, color, background) and transform edits on one element apply to every element on the track; locked: rejects element selection/dragging and drops on the track; name: renames the track.",
 		args: {
 			trackId: "string",
 			muted: "boolean?",
 			hidden: "boolean?",
 			linkedStyle: "boolean?",
+			locked: "boolean?",
+			name: "string?",
 		},
 		run: ({ editor, args }) => {
 			const patch: {
 				muted?: boolean;
 				hidden?: boolean;
 				linkedStyle?: boolean;
+				locked?: boolean;
+				name?: string;
 			} = {};
-			for (const key of ["muted", "hidden", "linkedStyle"] as const) {
+			for (const key of ["muted", "hidden", "linkedStyle", "locked"] as const) {
 				if (typeof args[key] === "boolean") {
 					patch[key] = args[key];
 				}
 			}
+			if (typeof args.name === "string") {
+				patch.name = args.name;
+			}
 			if (Object.keys(patch).length === 0) {
 				throw new Error(
-					"Nothing to update: pass at least one of muted/hidden/linkedStyle",
+					"Nothing to update: pass at least one of muted/hidden/linkedStyle/locked/name",
 				);
 			}
 			editor.timeline.updateTrack({
