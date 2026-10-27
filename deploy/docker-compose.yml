@@ -1,0 +1,145 @@
+# ================================================================
+# opencut 生产环境 Docker Compose（单副本 / CCR 镜像部署）
+#
+# 架构:
+#   web (Next.js :3000→宿主机 3100)
+#   gateway (FastAPI :8787→宿主机 8787, AI 面板经浏览器直连)
+#   db (Postgres 17, 仅内部) / redis + serverless-redis-http (仅内部)
+#
+# 与 infer-web 共存：容器/网络/卷全部 opencut-* 前缀，无冲突；
+# 80/443 仍归 infer-web Nginx，将来合并入口时由其反代 127.0.0.1:3100/8787。
+#
+# 部署: bash deploy/deploy.sh（勿直接在服务器手改本文件，以本地为准）
+# ================================================================
+
+name: opencut
+
+services:
+  db:
+    image: postgres:17
+    container_name: opencut-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opencut
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/env 缺少 POSTGRES_PASSWORD}
+      POSTGRES_DB: opencut
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - opencut-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencut"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: opencut-redis
+    restart: unless-stopped
+    networks:
+      - opencut-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # better-auth 的 Upstash REST 适配层（rate-limit 用），仅容器网络内可见
+  serverless-redis-http:
+    image: hiett/serverless-redis-http:latest
+    container_name: opencut-srh
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${SRH_TOKEN:?deploy/env 缺少 SRH_TOKEN}
+      SRH_CONNECTION_STRING: "redis://redis:6379"
+    networks:
+      - opencut-net
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  web:
+    image: ccr.ccs.tencentyun.com/infer-web/opencut-web:latest
+    container_name: opencut-web
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    env_file:
+      - ./env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://opencut:${POSTGRES_PASSWORD}@db:5432/opencut
+      UPSTASH_REDIS_REST_URL: http://serverless-redis-http:80
+      UPSTASH_REDIS_REST_TOKEN: ${SRH_TOKEN}
+      NEXT_PUBLIC_SITE_URL: ${OPENCUT_SITE_URL:?deploy/env 缺少 OPENCUT_SITE_URL}
+      NEXT_PUBLIC_AGENT_GATEWAY_URL: ${OPENCUT_GATEWAY_URL:?deploy/env 缺少 OPENCUT_GATEWAY_URL}
+    networks:
+      - opencut-net
+    depends_on:
+      db:
+        condition: service_healthy
+      serverless-redis-http:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  gateway:
+    image: ccr.ccs.tencentyun.com/infer-web/opencut-gateway:latest
+    container_name: opencut-gateway
+    restart: unless-stopped
+    stop_grace_period: 20s
+    ports:
+      - "8787:8787"
+    env_file:
+      - ./env
+    environment:
+      # 真实服务从第一天就是 better_auth 鉴权（查 web 共享 PG 的 sessions 表）
+      AUTH_MODE: better_auth
+      DATABASE_URL: postgresql://opencut:${POSTGRES_PASSWORD}@db:5432/opencut
+      WEB_ORIGIN: ${OPENCUT_SITE_URL}
+      AGENT_DATA_DIR: /data
+    volumes:
+      - agent-data:/data
+    networks:
+      - opencut-net
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  pg-data:
+    name: opencut-pg-data
+  agent-data:
+    name: opencut-agent-data
+
+networks:
+  opencut-net:
+    name: opencut-net
+    driver: bridge

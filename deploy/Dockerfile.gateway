@@ -1,0 +1,52 @@
+# ================================================================
+# Agent Gateway 生产镜像（linux/amd64）
+#   FastAPI(uvicorn 单 worker) + Claude Code CLI(claude-agent-sdk 子进程)
+#   + Node/npx(HyperFrames 特效渲染机，无头 Chrome)
+# 构建上下文：项目根目录
+#   docker build -f deploy/Dockerfile.gateway .
+# ================================================================
+FROM node:20-bookworm
+
+ARG FX_HYPERFRAMES_VERSION=0.8.46
+
+# Python + 无头 Chrome 运行库 + 中文字体（fx 渲染含中文文本时必需，缺了会变豆腐块）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-pip \
+    curl ca-certificates git \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
+    libpango-1.0-0 libcairo2 libx11-xcb1 libxcursor1 libgtk-3-0 \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI：claude-agent-sdk 每个会话拉起一个常驻 claude 子进程
+RUN npm i -g @anthropic-ai/claude-code && npm cache clean --force
+
+WORKDIR /app
+
+COPY agent-gateway/requirements.txt ./requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+ENV PATH="/opt/venv/bin:$PATH"
+
+# skills/ 被 agent_service 按相对路径(../skills)软链进会话工作区，目录层级不可变
+COPY agent-gateway/app ./app
+COPY agent-gateway/skills ./skills
+COPY agent-gateway/registry ./registry
+
+# 预热 npx 缓存与无头 Chrome，避免首个特效渲染任务撞包安装/浏览器下载
+RUN npx --yes hyperframes@${FX_HYPERFRAMES_VERSION} --version || true \
+    && npx --yes puppeteer browsers install chrome || true
+
+# 会话数据（Claude 配置、fx/特效产物、media/窗口段）挂卷持久化
+ENV GATEWAY_HOST=0.0.0.0 \
+    GATEWAY_PORT=8787 \
+    AGENT_DATA_DIR=/data
+
+EXPOSE 8787
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=30s \
+  CMD curl -fsS http://127.0.0.1:8787/health || exit 1
+
+# 必须单 worker：Claude SDK 子进程状态在内存 _sessions 字典，多 worker 会话错乱
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787", "--workers", "1"]
