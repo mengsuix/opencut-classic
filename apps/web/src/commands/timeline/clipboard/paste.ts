@@ -4,6 +4,8 @@ import {
 	type CommandResult,
 } from "@/commands/base-command";
 import { EditorCore } from "@/core";
+import { toast } from "sonner";
+import { t as i18nT } from "@/i18n";
 import type { SceneTracks, TimelineElement } from "@/timeline";
 import type { ElementClipboardItem } from "@/clipboard";
 import { generateUUID } from "@/utils/id";
@@ -26,17 +28,21 @@ export class PasteCommand extends Command {
 	private pastedElements: { trackId: string; elementId: string }[] = [];
 	private readonly time: MediaTime;
 	private readonly clipboardItems: ElementClipboardItem[];
+	private readonly targetTrackId?: string;
 
 	constructor({
 		time,
 		clipboardItems,
+		targetTrackId,
 	}: {
 		time: MediaTime;
 		clipboardItems: ElementClipboardItem[];
+		targetTrackId?: string;
 	}) {
 		super();
 		this.time = time;
 		this.clipboardItems = clipboardItems;
+		this.targetTrackId = targetTrackId;
 	}
 
 	execute(): CommandResult | undefined {
@@ -83,9 +89,16 @@ export class PasteCommand extends Command {
 					startTime: element.startTime,
 					duration: element.duration,
 				})),
-				strategy: { type: "aboveSource", sourceTrackIndex },
+				strategy: this.targetTrackId
+					? { type: "explicit", trackId: this.targetTrackId }
+					: { type: "aboveSource", sourceTrackIndex },
 			});
 			if (!placementResult) {
+				// Explicit target failed (type mismatch or the spans overlap
+				// existing elements) — silent skips read as data loss.
+				if (this.targetTrackId) {
+					toast.info(i18nT("timeline.pasteTrackRejected"));
+				}
 				continue;
 			}
 

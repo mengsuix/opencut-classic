@@ -324,7 +324,10 @@ function SceneSelector() {
 				</SplitButtonLeft>
 				<SplitButtonSeparator />
 				<ScenesView>
-					<SplitButtonRight onClick={() => {}}>
+					<SplitButtonRight
+						aria-label={t("timeline.sceneList")}
+						onClick={() => {}}
+					>
 						<HugeiconsIcon icon={Layers01Icon} className="size-4" />
 					</SplitButtonRight>
 				</ScenesView>
@@ -374,6 +377,8 @@ function ToolbarRightSection({
 				<Button
 					variant="text"
 					size="icon"
+					aria-label={t("timeline.zoomOut")}
+					title={t("timeline.zoomOut")}
 					onClick={() => onZoom({ direction: "out" })}
 				>
 					<HugeiconsIcon icon={SearchMinusIcon} />
@@ -391,6 +396,8 @@ function ToolbarRightSection({
 				<Button
 					variant="text"
 					size="icon"
+					aria-label={t("timeline.zoomIn")}
+					title={t("timeline.zoomIn")}
 					onClick={() => onZoom({ direction: "in" })}
 				>
 					<HugeiconsIcon icon={SearchAddIcon} />
@@ -420,6 +427,7 @@ function ToolbarButton({
 			variant={isActive ? "secondary" : "text"}
 			size="icon"
 			disabled={disabled}
+			aria-label={tooltip}
 			onClick={onClick ? (event) => onClick({ event }) : undefined}
 			className={cn(
 				"rounded-sm",

@@ -36,7 +36,13 @@ export function useKeybindingsListener() {
 			const boundAction = binding ? keybindings.get(binding) : undefined;
 
 			if (normalizedKey === "escape" && isTextInput) {
-				activeElement.blur();
+				// Inputs marked data-escape-handled manage Escape themselves (e.g.
+				// cancel-on-Escape rename fields). This listener runs in the
+				// capture phase, so blurring here would fire their onBlur commit
+				// before their own keydown handler can mark the edit cancelled.
+				if (!activeElement.hasAttribute("data-escape-handled")) {
+					activeElement.blur();
+				}
 				return;
 			}
 

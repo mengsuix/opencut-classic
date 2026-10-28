@@ -35,14 +35,17 @@ export class ClipboardManager {
 		return true;
 	}
 
-	paste({ time }: { time?: MediaTime } = {}): boolean {
+	paste({
+		time,
+		targetTrackId,
+	}: { time?: MediaTime; targetTrackId?: string } = {}): boolean {
 		if (!this.entry) {
 			return false;
 		}
 
 		const command = buildPasteClipboardCommand({
 			entry: this.entry,
-			context: this.getPasteContext({ time }),
+			context: this.getPasteContext({ time, targetTrackId }),
 		});
 		if (!command) {
 			return false;
@@ -65,12 +68,19 @@ export class ClipboardManager {
 		};
 	}
 
-	private getPasteContext({ time }: { time?: MediaTime }): PasteContext {
+	private getPasteContext({
+		time,
+		targetTrackId,
+	}: {
+		time?: MediaTime;
+		targetTrackId?: string;
+	}): PasteContext {
 		return {
 			editor: this.editor,
 			selectedElements: this.editor.selection.getSelectedElements(),
 			selectedKeyframes: this.editor.selection.getSelectedKeyframes(),
 			time: time ?? this.editor.playback.getCurrentTime(),
+			targetTrackId,
 		};
 	}
 

@@ -43,6 +43,7 @@ export const ElementsClipboardHandler = {
 		return new PasteCommand({
 			time: context.time,
 			clipboardItems: entry.items,
+			targetTrackId: context.targetTrackId,
 		});
 	},
 } satisfies ClipboardHandler<"elements">;

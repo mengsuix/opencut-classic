@@ -24,6 +24,10 @@ export const timeline = {
 	"timeline.deleteText": "Delete text",
 	"timeline.deleteClip": "Delete clip",
 	"timeline.pasteElements": "Paste elements",
+	"timeline.pasteTrackRejected":
+		"Cannot paste to this track: incompatible type or occupied position",
+	"timeline.dropRejectedTrack":
+		"Cannot drop on this track: locked or incompatible type",
 	"timeline.mute": "Mute",
 	"timeline.unmute": "Unmute",
 	"timeline.show": "Show",
@@ -54,6 +58,9 @@ export const timeline = {
 	"timeline.autoSnapping": "Auto snapping",
 	"timeline.rippleEditing": "Ripple editing",
 	"timeline.noScene": "No Scene",
+	"timeline.zoomIn": "Zoom in timeline",
+	"timeline.zoomOut": "Zoom out timeline",
+	"timeline.sceneList": "Scene list",
 	"timeline.addBookmark": "Add bookmark",
 	"timeline.removeBookmark": "Remove bookmark",
 	"timeline.bookmarkAt": "Bookmark at {time}s",

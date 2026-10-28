@@ -30,6 +30,8 @@ import {
 	getTimelineSnapThresholdInTicks,
 	type SnapPoint,
 } from "@/timeline/snapping";
+import { toast } from "sonner";
+import { t as i18nT } from "@/i18n";
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import {
@@ -933,8 +935,10 @@ export class ElementInteractionController {
 			return;
 		}
 
-		// Invalid drop: snap back, commit nothing.
+		// Invalid drop: snap back, commit nothing. The not-allowed cursor shown
+		// during hover is easy to miss — tell the user why nothing happened.
 		if (drag.dropTarget?.isInvalid) {
+			toast.info(i18nT("timeline.dropRejectedTrack"));
 			this.finishSession();
 			return;
 		}

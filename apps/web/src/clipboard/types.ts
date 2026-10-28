@@ -63,6 +63,9 @@ export interface PasteContext {
 	selectedElements: ElementRef[];
 	selectedKeyframes: SelectedKeyframeRef[];
 	time: MediaTime;
+	/** When set (e.g. paste from a track's context menu), elements land on
+	 * this track instead of the auto-resolved one. */
+	targetTrackId?: string;
 }
 
 export interface ClipboardHandler<TType extends ClipboardEntryType> {

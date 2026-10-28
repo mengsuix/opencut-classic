@@ -119,6 +119,7 @@ import { useTimelineRangeSelect } from "@/timeline/hooks/use-timeline-range-sele
 import { useUserMarksStore } from "@/editor/user-marks-store";
 import { DragLine } from "./drag-line";
 import { invokeAction } from "@/actions";
+import type { ClipboardEntry } from "@/clipboard";
 import { resolveTimelineElementIntersections } from "./selection-hit-testing";
 import { cn } from "@/utils/ui";
 import { useT, useLocale } from "@/i18n";
@@ -164,6 +165,31 @@ function useClipboardHasEntry(): boolean {
 		[editor],
 	);
 	return useSyncExternalStore(subscribe, () => editor.clipboard.hasEntry());
+}
+
+function useClipboardEntry(): ClipboardEntry | null {
+	const editor = useEditor();
+	const subscribe = useCallback(
+		(callback: () => void) => editor.clipboard.subscribe(callback),
+		[editor],
+	);
+	return useSyncExternalStore(subscribe, () => editor.clipboard.getEntry());
+}
+
+/** Element clipboard items can only land on a track of the same type;
+ * keyframe entries don't support track-targeted paste. */
+function canPasteEntryOnTrack({
+	entry,
+	track,
+}: {
+	entry: ClipboardEntry | null;
+	track: TimelineTrack;
+}): boolean {
+	return (
+		entry?.type === "elements" &&
+		entry.items.length > 0 &&
+		entry.items.every((item) => item.trackType === track.type)
+	);
 }
 
 export function Timeline() {
@@ -851,6 +877,14 @@ function TrackLabelsPanel({
 		[scene],
 	);
 	const mainTrackId = scene?.tracks.main.id ?? null;
+	const overlayTrackIds = useMemo(
+		() => scene?.tracks.overlay.map((track) => track.id) ?? [],
+		[scene],
+	);
+	const audioTrackIds = useMemo(
+		() => scene?.tracks.audio.map((track) => track.id) ?? [],
+		[scene],
+	);
 	const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
 	// Escape unmounts the input, which fires blur — without this flag the
@@ -912,14 +946,28 @@ function TrackLabelsPanel({
 							{tracks.map((track, index) => {
 								const expandedRows = trackExpandedRowsMap[index];
 								const baseHeight = getTrackHeight({ type: track.type });
+								const overlayIndex = overlayTrackIds.indexOf(track.id);
+								const audioIndex = audioTrackIds.indexOf(track.id);
+								const canMoveUp = overlayIndex > 0 || audioIndex > 0;
+								const canMoveDown =
+									(overlayIndex >= 0 &&
+										overlayIndex < overlayTrackIds.length - 1) ||
+									(audioIndex >= 0 && audioIndex < audioTrackIds.length - 1);
 
 								return (
+								<TrackContextMenu
+									key={track.id}
+									track={track}
+									mainTrackId={mainTrackId}
+									canMoveUp={canMoveUp}
+									canMoveDown={canMoveDown}
+								>
 									<div
-										key={track.id}
 										className={cn(
 											"group flex flex-col",
 											tracksWithSelection.has(track.id) &&
 												SELECTED_TRACK_ROW_CLASS,
+											canTrackBeHidden(track) && track.hidden && "opacity-50",
 										)}
 										style={{
 											height: `${baseHeight + getTrackExpansionHeight(index)}px`,
@@ -932,6 +980,7 @@ function TrackLabelsPanel({
 											{renamingTrackId === track.id ? (
 												<input
 													ref={(el) => el?.focus()}
+													data-escape-handled
 													className="bg-background border-input absolute inset-x-2 top-1 z-10 rounded-sm border px-1 text-xs leading-none"
 													value={renameDraft}
 													onChange={(event) => setRenameDraft(event.target.value)}
@@ -1053,6 +1102,7 @@ function TrackLabelsPanel({
 											<PropertyTree rows={expandedRows} />
 										)}
 									</div>
+								</TrackContextMenu>
 								);
 							})}
 						</div>
@@ -1129,12 +1179,7 @@ function TimelineTrackRows({
 	dropTarget: DropTarget | null;
 	elementDragTargetId: string | null;
 }) {
-	const t = useT();
-	const timeline = useEditor((e) => e.timeline);
 	const scene = useEditor((e) => e.scenes.getActiveSceneOrNull());
-	const hasClipboardEntry = useClipboardHasEntry();
-	const [pendingDeleteTrack, setPendingDeleteTrack] =
-		useState<TimelineTrack | null>(null);
 	const tracks = useMemo<TimelineTrack[]>(
 		() =>
 			scene
@@ -1211,12 +1256,19 @@ function TimelineTrackRows({
 					(audioIndex >= 0 && audioIndex < audioTrackIds.length - 1);
 
 				return (
-				<ContextMenu key={track.id}>
-					<ContextMenuTrigger asChild>
+				<TrackContextMenu
+					key={track.id}
+					track={track}
+					mainTrackId={mainTrackId}
+					canMoveUp={canMoveUp}
+					canMoveDown={canMoveDown}
+				>
 						<div
 							className={cn(
 								"absolute right-0 left-0 transition-colors",
 								tracksWithSelection.has(track.id) && SELECTED_TRACK_ROW_CLASS,
+								canTrackBeHidden(track) && track.hidden && "opacity-50",
+								track.locked && "cursor-not-allowed bg-muted/40",
 							)}
 							style={{
 								top: `${TIMELINE_CONTENT_TOP_PADDING_PX + (trackOffsets[index] ?? 0)}px`,
@@ -1241,105 +1293,129 @@ function TimelineTrackRows({
 								}
 							/>
 						</div>
-					</ContextMenuTrigger>
-					<ContextMenuContent className="w-40">
-						<ContextMenuItem
-							icon={<HugeiconsIcon icon={TaskAdd02Icon} />}
-							disabled={!hasClipboardEntry}
-							onClick={(event: React.MouseEvent) => {
-								event.stopPropagation();
-								invokeAction("paste-copied");
-							}}
-						>
-							{t("timeline.pasteElements")}
-							</ContextMenuItem>
-							{canTrackHaveAudio(track) && (
-								<ContextMenuItem
-									icon={<HugeiconsIcon icon={VolumeHighIcon} />}
-									onClick={(event: React.MouseEvent) => {
-										event.stopPropagation();
-										timeline.toggleTrackMute({ trackId: track.id });
-									}}
-								>
-									{track.muted
-										? t("timeline.unmuteTrack")
-										: t("timeline.muteTrack")}
-								</ContextMenuItem>
-							)}
-							{canTrackBeHidden(track) && track.id !== mainTrackId && (
-								<ContextMenuItem
-									icon={<HugeiconsIcon icon={ViewIcon} />}
-									onClick={(event: React.MouseEvent) => {
-										event.stopPropagation();
-										timeline.toggleTrackVisibility({ trackId: track.id });
-									}}
-								>
-									{track.hidden
-										? t("timeline.showTrack")
-										: t("timeline.hideTrack")}
-								</ContextMenuItem>
-							)}
-							<ContextMenuItem
-								icon={<HugeiconsIcon icon={LockIcon} />}
-								onClick={(event: React.MouseEvent) => {
-									event.stopPropagation();
-									timeline.toggleTrackLocked({ trackId: track.id });
-								}}
-							>
-								{track.locked
-									? t("timeline.unlockTrack")
-									: t("timeline.lockTrack")}
-							</ContextMenuItem>
-							{track.id !== mainTrackId && (
-								<>
-									<ContextMenuItem
-										icon={<HugeiconsIcon icon={ArrowUp01Icon} />}
-										disabled={!canMoveUp}
-										onClick={(event: React.MouseEvent) => {
-											event.stopPropagation();
-											timeline.moveTrack({ trackId: track.id, direction: "up" });
-										}}
-									>
-										{t("timeline.moveTrackUp")}
-									</ContextMenuItem>
-									<ContextMenuItem
-										icon={<HugeiconsIcon icon={ArrowDown01Icon} />}
-										disabled={!canMoveDown}
-										onClick={(event: React.MouseEvent) => {
-											event.stopPropagation();
-											timeline.moveTrack({ trackId: track.id, direction: "down" });
-										}}
-									>
-										{t("timeline.moveTrackDown")}
-									</ContextMenuItem>
-								</>
-							)}
-						{track.id !== mainTrackId && !track.locked && (
-							<ContextMenuItem
-								icon={<HugeiconsIcon icon={Delete02Icon} />}
-								onClick={(event: React.MouseEvent) => {
-									event.stopPropagation();
-									if (track.elements.length > 0) {
-										setPendingDeleteTrack(track);
-									} else {
-										timeline.removeTrack({ trackId: track.id });
-									}
-								}}
-								variant="destructive"
-								>
-								{t("timeline.deleteTrack")}
-								</ContextMenuItem>
-						)}
-					</ContextMenuContent>
-				</ContextMenu>
+				</TrackContextMenu>
 				);
 			})}
-			<AlertDialog
-				open={pendingDeleteTrack !== null}
-				onOpenChange={(open) => {
-					if (!open) setPendingDeleteTrack(null);
-				}}
-			>
+		</>
+	);
+}
+
+/** Track-level context menu shared by the content rows and the track label
+ * column, so right-clicking the track header exposes the same operations. */
+function TrackContextMenu({
+	track,
+	mainTrackId,
+	canMoveUp,
+	canMoveDown,
+	children,
+}: {
+	track: TimelineTrack;
+	mainTrackId: string | null;
+	canMoveUp: boolean;
+	canMoveDown: boolean;
+	children: ReactNode;
+}) {
+	const t = useT();
+	const editor = useEditor();
+	const timeline = editor.timeline;
+	const clipboardEntry = useClipboardEntry();
+	const [isDeletePending, setIsDeletePending] = useState(false);
+
+	return (
+		<>
+			<ContextMenu>
+				<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+				<ContextMenuContent className="w-40">
+					<ContextMenuItem
+						icon={<HugeiconsIcon icon={TaskAdd02Icon} />}
+						disabled={!canPasteEntryOnTrack({ entry: clipboardEntry, track })}
+						onClick={(event: React.MouseEvent) => {
+							event.stopPropagation();
+							editor.clipboard.paste({ targetTrackId: track.id });
+						}}
+					>
+						{t("timeline.pasteElements")}
+					</ContextMenuItem>
+					{canTrackHaveAudio(track) && (
+						<ContextMenuItem
+							icon={<HugeiconsIcon icon={VolumeHighIcon} />}
+							onClick={(event: React.MouseEvent) => {
+								event.stopPropagation();
+								timeline.toggleTrackMute({ trackId: track.id });
+							}}
+						>
+							{track.muted
+								? t("timeline.unmuteTrack")
+								: t("timeline.muteTrack")}
+						</ContextMenuItem>
+					)}
+					{canTrackBeHidden(track) && track.id !== mainTrackId && (
+						<ContextMenuItem
+							icon={<HugeiconsIcon icon={ViewIcon} />}
+							onClick={(event: React.MouseEvent) => {
+								event.stopPropagation();
+								timeline.toggleTrackVisibility({ trackId: track.id });
+							}}
+						>
+							{track.hidden
+								? t("timeline.showTrack")
+								: t("timeline.hideTrack")}
+						</ContextMenuItem>
+					)}
+					<ContextMenuItem
+						icon={<HugeiconsIcon icon={LockIcon} />}
+						onClick={(event: React.MouseEvent) => {
+							event.stopPropagation();
+							timeline.toggleTrackLocked({ trackId: track.id });
+						}}
+					>
+						{track.locked
+							? t("timeline.unlockTrack")
+							: t("timeline.lockTrack")}
+					</ContextMenuItem>
+					{track.id !== mainTrackId && (
+						<>
+							<ContextMenuItem
+								icon={<HugeiconsIcon icon={ArrowUp01Icon} />}
+								disabled={!canMoveUp}
+								onClick={(event: React.MouseEvent) => {
+									event.stopPropagation();
+									timeline.moveTrack({ trackId: track.id, direction: "up" });
+								}}
+							>
+								{t("timeline.moveTrackUp")}
+							</ContextMenuItem>
+							<ContextMenuItem
+								icon={<HugeiconsIcon icon={ArrowDown01Icon} />}
+								disabled={!canMoveDown}
+								onClick={(event: React.MouseEvent) => {
+									event.stopPropagation();
+									timeline.moveTrack({ trackId: track.id, direction: "down" });
+								}}
+							>
+								{t("timeline.moveTrackDown")}
+							</ContextMenuItem>
+						</>
+					)}
+					{track.id !== mainTrackId && !track.locked && (
+						<ContextMenuItem
+							icon={<HugeiconsIcon icon={Delete02Icon} />}
+							onClick={(event: React.MouseEvent) => {
+								event.stopPropagation();
+								if (track.elements.length > 0) {
+									setIsDeletePending(true);
+								} else {
+									timeline.removeTrack({ trackId: track.id });
+								}
+							}}
+							variant="destructive"
+						>
+							{t("timeline.deleteTrack")}
+						</ContextMenuItem>
+					)}
+				</ContextMenuContent>
+			</ContextMenu>
+			<AlertDialog open={isDeletePending} onOpenChange={setIsDeletePending}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>
@@ -1347,8 +1423,8 @@ function TimelineTrackRows({
 						</AlertDialogTitle>
 						<AlertDialogDescription>
 							{t("timeline.deleteTrackConfirmDescription", {
-								name: pendingDeleteTrack?.name ?? "",
-								count: pendingDeleteTrack?.elements.length ?? 0,
+								name: track.name,
+								count: track.elements.length,
 							})}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
@@ -1356,10 +1432,8 @@ function TimelineTrackRows({
 						<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => {
-								if (pendingDeleteTrack) {
-									timeline.removeTrack({ trackId: pendingDeleteTrack.id });
-								}
-								setPendingDeleteTrack(null);
+								timeline.removeTrack({ trackId: track.id });
+								setIsDeletePending(false);
 							}}
 						>
 							{t("common.delete")}
