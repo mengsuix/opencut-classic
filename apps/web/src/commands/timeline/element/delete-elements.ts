@@ -22,8 +22,6 @@ function removeTrackElements<TTrack extends TimelineTrack>({
 }
 
 export class DeleteElementsCommand extends Command {
-	// Deleting can empty a track; prune the leftover empty track afterwards.
-	public override pruneEmptyTracks = true;
 	private savedState: SceneTracks | null = null;
 	private readonly elements: { trackId: string; elementId: string }[];
 
@@ -35,6 +33,9 @@ export class DeleteElementsCommand extends Command {
 		super();
 		this.elements = elements;
 		this.affectedElementRefs = elements;
+		// Deleting can empty the tracks it touches; only those are pruned, so
+		// an unrelated manually added empty track survives the deletion.
+		this.pruneTrackIds = [...new Set(elements.map((element) => element.trackId))];
 	}
 
 	execute(): CommandResult | undefined {

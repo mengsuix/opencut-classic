@@ -3,11 +3,16 @@ import { Command, type CommandResult } from "./base-command";
 export class BatchCommand extends Command {
 	constructor(private commands: Command[]) {
 		super();
-		// A batch prunes empty tracks if any child opts in — a batch
-		// containing a delete still prunes.
-		this.pruneEmptyTracks = commands.some(
-			(command) => command.pruneEmptyTracks,
-		);
+		// A batch prunes the union of its children's prunable tracks — a batch
+		// containing a delete still prunes the tracks that delete touched.
+		const pruneTrackIds = [
+			...new Set(
+				commands.flatMap((command) => command.pruneTrackIds ?? []),
+			),
+		];
+		if (pruneTrackIds.length > 0) {
+			this.pruneTrackIds = pruneTrackIds;
+		}
 	}
 
 	execute(): CommandResult | undefined {

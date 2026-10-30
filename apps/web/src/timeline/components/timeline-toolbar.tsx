@@ -15,6 +15,12 @@ import {
 	SplitButtonRight,
 	SplitButtonSeparator,
 } from "@/components/ui/split-button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
 import { TIMELINE_ZOOM_BUTTON_FACTOR } from "./interaction";
 import { TIMELINE_ZOOM_MAX } from "@/timeline/scale";
@@ -50,6 +56,7 @@ import {
 	Undo02Icon,
 	Redo02Icon,
 	Clock01Icon,
+	PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { OcRippleIcon } from "@/components/icons";
@@ -59,14 +66,25 @@ import { useGraphEditorController } from "./graph-editor/use-controller";
 import { HistoryPopover } from "./history-popover";
 import { useT } from "@/i18n";
 
+export const ADDABLE_TRACK_TYPES = [
+	{ type: "video", labelKey: "timeline.videoTrack" },
+	{ type: "text", labelKey: "timeline.textTrack" },
+	{ type: "graphic", labelKey: "timeline.graphicTrack" },
+	{ type: "audio", labelKey: "timeline.audioTrack" },
+] as const;
+
+export type AddableTrackType = (typeof ADDABLE_TRACK_TYPES)[number]["type"];
+
 export function TimelineToolbar({
 	zoomLevel,
 	minZoom,
 	setZoomLevel,
+	onAddTrack,
 }: {
 	zoomLevel: number;
 	minZoom: number;
 	setZoomLevel: ({ zoom }: { zoom: number }) => void;
+	onAddTrack: (type: AddableTrackType) => void;
 }) {
 	const handleZoom = ({ direction }: { direction: "in" | "out" }) => {
 		const newZoomLevel =
@@ -79,7 +97,7 @@ export function TimelineToolbar({
 	return (
 		<ScrollArea className="scrollbar-hidden">
 			<div className="flex h-10 items-center justify-between border-b px-2 py-1">
-				<ToolbarLeftSection />
+				<ToolbarLeftSection onAddTrack={onAddTrack} />
 
 				<SceneSelector />
 
@@ -94,7 +112,11 @@ export function TimelineToolbar({
 	);
 }
 
-function ToolbarLeftSection() {
+function ToolbarLeftSection({
+	onAddTrack,
+}: {
+	onAddTrack: (type: AddableTrackType) => void;
+}) {
 	const t = useT();
 	const editor = useEditor();
 	const canUndo = useEditor((e) => e.command.canUndo());
@@ -192,8 +214,27 @@ function ToolbarLeftSection() {
 
 				<div className="bg-border mx-1 h-6 w-px" />
 
+				<DropdownMenu>
+					<ToolbarButton
+						icon={<HugeiconsIcon icon={PlusSignIcon} />}
+						tooltip={t("timeline.addTrack")}
+						buttonWrapper={(button) => (
+							<DropdownMenuTrigger asChild>{button}</DropdownMenuTrigger>
+						)}
+					/>
+					<DropdownMenuContent align="start">
+						{ADDABLE_TRACK_TYPES.map(({ type, labelKey }) => (
+							<DropdownMenuItem key={type} onClick={() => onAddTrack(type)}>
+								{t(labelKey)}
+							</DropdownMenuItem>
+						))}
+					</DropdownMenuContent>
+				</DropdownMenu>
+
+				<div className="bg-border mx-1 h-6 w-px" />
+
 				<ToolbarButton
-					icon={<HugeiconsIcon icon={ScissorIcon} />}
+						icon={<HugeiconsIcon icon={ScissorIcon} />}
 					tooltip={t("timeline.splitElement")}
 					disabled={!hasSelectedElements}
 					onClick={({ event }) => handleAction({ action: "split", event })}

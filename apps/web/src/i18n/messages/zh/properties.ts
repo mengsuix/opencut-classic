@@ -182,6 +182,8 @@ export const properties = {
 	"properties.openEffects": "打开特效",
 	"properties.toggleEffect": "切换{name}",
 	"properties.removeEffect": "移除{name}",
+	"properties.effectUnavailable": "特效「{type}」已下线，渲染时将被跳过。",
+	"properties.panelRenderError": "此面板渲染失败，请重新选择元素。",
 	"properties.graphicRectangle": "矩形",
 	"properties.graphicEllipse": "椭圆",
 	"properties.graphicPolygon": "多边形",

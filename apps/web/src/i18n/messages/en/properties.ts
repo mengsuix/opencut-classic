@@ -184,6 +184,10 @@ export const properties = {
 	"properties.openEffects": "Open effects",
 	"properties.toggleEffect": "Toggle {name}",
 	"properties.removeEffect": "Remove {name}",
+	"properties.effectUnavailable":
+		"Effect \"{type}\" is no longer available and will be skipped during rendering.",
+	"properties.panelRenderError":
+		"This panel failed to render. Try reselecting the element.",
 	"properties.graphicRectangle": "Rectangle",
 	"properties.graphicEllipse": "Ellipse",
 	"properties.graphicPolygon": "Polygon",

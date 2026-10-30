@@ -26,8 +26,10 @@ export const timeline = {
 	"timeline.pasteElements": "Paste elements",
 	"timeline.pasteTrackRejected":
 		"Cannot paste to this track: incompatible type or occupied position",
-	"timeline.dropRejectedTrack":
-		"Cannot drop on this track: locked or incompatible type",
+	"timeline.dropRejectedLocked": "Cannot drop here: the track is locked",
+	"timeline.dropRejectedIncompatible":
+		"Cannot drop here: incompatible element type",
+	"timeline.trackLockedNotice": "This track is locked. Unlock it to edit",
 	"timeline.mute": "Mute",
 	"timeline.unmute": "Unmute",
 	"timeline.show": "Show",

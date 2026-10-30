@@ -9,7 +9,6 @@ import {
 	LockIcon,
 	MagicWand05Icon,
 	MusicNote03Icon,
-	PlusSignIcon,
 	TaskAdd02Icon,
 	TextIcon,
 	Unlink02Icon,
@@ -29,12 +28,6 @@ import {
 	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -94,7 +87,7 @@ import {
 	type ExpandedRow,
 } from "./expanded-layout";
 import { TIMELINE_HORIZONTAL_WHEEL_STEP_PX } from "./interaction";
-import { TimelineToolbar } from "./timeline-toolbar";
+import { TimelineToolbar, ADDABLE_TRACK_TYPES } from "./timeline-toolbar";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
 import { useTimelineSeek } from "@/timeline/hooks/use-timeline-seek";
 import { useTimelineDragDrop } from "@/timeline/hooks/use-timeline-drag-drop";
@@ -150,13 +143,6 @@ const TRACK_ICONS: Record<TimelineTrack["type"], ReactNode> = {
 		/>
 	),
 };
-
-const ADDABLE_TRACK_TYPES = [
-	{ type: "video", labelKey: "timeline.videoTrack" },
-	{ type: "text", labelKey: "timeline.textTrack" },
-	{ type: "graphic", labelKey: "timeline.graphicTrack" },
-	{ type: "audio", labelKey: "timeline.audioTrack" },
-] as const;
 
 function useClipboardHasEntry(): boolean {
 	const editor = useEditor();
@@ -680,6 +666,7 @@ export function Timeline() {
 				zoomLevel={zoomLevel}
 				minZoom={minZoomLevel}
 				setZoomLevel={({ zoom }) => setZoomLevel(zoom)}
+				onAddTrack={handleAddTrack}
 			/>
 
 			<div className="relative flex flex-1 overflow-hidden" ref={timelineRef}>
@@ -689,7 +676,6 @@ export function Timeline() {
 					timelineHeaderHeight={timelineHeaderHeight}
 					hasHorizontalScrollbar={hasHorizontalScrollbar}
 					getTrackExpansionHeight={getTrackExpansionHeight}
-					onAddTrack={handleAddTrack}
 				/>
 
 				<div
@@ -857,14 +843,12 @@ function TrackLabelsPanel({
 	timelineHeaderHeight,
 	hasHorizontalScrollbar,
 	getTrackExpansionHeight,
-	onAddTrack,
 }: {
 	trackLabelsRef: React.RefObject<HTMLDivElement | null>;
 	trackLabelsScrollRef: React.RefObject<HTMLDivElement | null>;
 	timelineHeaderHeight: number;
 	hasHorizontalScrollbar: boolean;
 	getTrackExpansionHeight: (trackIndex: number) => number;
-	onAddTrack: (type: (typeof ADDABLE_TRACK_TYPES)[number]["type"]) => void;
 }) {
 	const t = useT();
 	const editor = useEditor();
@@ -981,7 +965,7 @@ function TrackLabelsPanel({
 												<input
 													ref={(el) => el?.focus()}
 													data-escape-handled
-													className="bg-background border-input absolute inset-x-2 top-1 z-10 rounded-sm border px-1 text-xs leading-none"
+													className="bg-background border-input absolute inset-x-2 top-1/2 z-10 h-6 -translate-y-1/2 rounded-sm border px-1 text-xs leading-none"
 													value={renameDraft}
 													onChange={(event) => setRenameDraft(event.target.value)}
 													onBlur={commitRename}
@@ -1108,43 +1092,16 @@ function TrackLabelsPanel({
 						</div>
 					)}
 				</div>
-			</div>
-			<div className="flex shrink-0 items-center border-t px-3 py-1">
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<button
-							type="button"
-							className="hover:bg-accent flex size-6 items-center justify-center rounded-sm"
-							aria-label={t("timeline.addTrack")}
-							title={t("timeline.addTrack")}
-						>
-							<HugeiconsIcon
-								icon={PlusSignIcon}
-								className="text-muted-foreground size-4"
-							/>
-						</button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent side="right" align="start">
-						{ADDABLE_TRACK_TYPES.map(({ type, labelKey }) => (
-							<DropdownMenuItem
-								key={type}
-								onClick={() => onAddTrack(type)}
-							>
-								{t(labelKey)}
-							</DropdownMenuItem>
-						))}
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</div>
-			<div
+				</div>
+				<div
 				className="bg-background shrink-0"
 				style={{
 					height: hasHorizontalScrollbar ? TIMELINE_SCROLLBAR_SIZE_PX : 0,
 				}}
-			/>
-		</div>
-	);
-}
+				/>
+				</div>
+				);
+				}
 
 function TimelineTrackRows({
 	mainTrackId,

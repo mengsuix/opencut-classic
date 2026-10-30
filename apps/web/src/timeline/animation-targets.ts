@@ -157,6 +157,10 @@ function buildEffectParamDescriptor({
 	}
 
 	registerDefaultEffects();
+	// Removed effect definitions (legacy projects) have no animatable params.
+	if (!effectsRegistry.has(effect.type)) {
+		return null;
+	}
 	const definition = effectsRegistry.get(effect.type);
 	const param = definition.params.find((candidate) => candidate.key === paramKey);
 	if (!param) {

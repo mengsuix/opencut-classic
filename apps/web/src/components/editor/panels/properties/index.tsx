@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { Button } from "@/components/ui/button";
 import {
 	Tooltip,
@@ -98,9 +99,18 @@ export function PropertiesPanel() {
 				</div>
 			</TooltipProvider>
 			<ScrollArea className="flex-1 scrollbar-hidden">
-				<Fragment key={element.id}>
-					{activeTab.content({ trackId: track.id })}
-				</Fragment>
+				<ErrorBoundary
+					key={`${element.id}:${activeTab.id}`}
+					fallback={
+						<p className="text-muted-foreground p-4 text-sm">
+							{t("properties.panelRenderError")}
+						</p>
+					}
+				>
+					<Fragment key={element.id}>
+						{activeTab.content({ trackId: track.id })}
+					</Fragment>
+				</ErrorBoundary>
 			</ScrollArea>
 		</div>
 	);

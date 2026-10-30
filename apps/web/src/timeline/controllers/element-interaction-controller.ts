@@ -410,6 +410,8 @@ export class ElementInteractionController {
 	// has already returned to idle, so the "was this a drag?" answer must
 	// outlive the session. Reset on the next mousedown.
 	private lastGestureWasDrag = false;
+	// Throttles the locked-track toast so rapid clicks don't stack toasts.
+	private lastLockedNoticeAt = 0;
 
 	private readonly subscribers = new Set<() => void>();
 	private readonly depsRef: ElementInteractionDepsRef;
@@ -474,10 +476,16 @@ export class ElementInteractionController {
 		element: TimelineElement;
 		track: TimelineTrack;
 	}): void => {
-		// Locked tracks reject element interaction entirely (no selection, no drag).
+		// Locked tracks reject element interaction entirely (no selection, no
+		// drag) — say so, otherwise it reads as the app freezing.
 		if (track.locked) {
 			if (event.button !== MOUSE_BUTTON_RIGHT) {
 				event.stopPropagation();
+				const now = Date.now();
+				if (now - this.lastLockedNoticeAt > 1500) {
+					this.lastLockedNoticeAt = now;
+					toast.info(i18nT("timeline.trackLockedNotice"));
+				}
 			}
 			return;
 		}
@@ -938,7 +946,13 @@ export class ElementInteractionController {
 		// Invalid drop: snap back, commit nothing. The not-allowed cursor shown
 		// during hover is easy to miss — tell the user why nothing happened.
 		if (drag.dropTarget?.isInvalid) {
-			toast.info(i18nT("timeline.dropRejectedTrack"));
+			toast.info(
+				i18nT(
+					drag.dropTarget.invalidReason === "locked"
+						? "timeline.dropRejectedLocked"
+						: "timeline.dropRejectedIncompatible",
+				),
+			);
 			this.finishSession();
 			return;
 		}

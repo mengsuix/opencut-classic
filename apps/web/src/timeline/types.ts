@@ -298,6 +298,8 @@ export interface DropTarget {
 	insertRipple?: boolean;
 	/** When true, the hovered track cannot accept this element (incompatible type or locked) — the drop is rejected instead of overflowing to a new track. */
 	isInvalid?: boolean;
+	/** Why the drop is invalid, so the rejection toast can name the actual cause. */
+	invalidReason?: "locked" | "incompatible";
 	/** Duration of the element being dropped, for placeholder preview rendering. */
 	elementDuration?: MediaTime;
 }

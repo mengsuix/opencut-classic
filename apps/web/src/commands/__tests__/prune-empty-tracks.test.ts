@@ -29,7 +29,7 @@ mock.module("opencut-wasm", () => ({
 // NOTE: split-elements / ripple-shift-elements are not imported here — their
 // "@/timeline" / "@/animation" barrel chains need @/wasm exports that other
 // test files' earlier @/wasm mocks (shared bun module registry) don't
-// provide. Their pruneEmptyTracks=false is the base-class default, which the
+// provide. Their unset pruneTrackIds is the base-class default, which the
 // MoveElementCommand case below covers.
 const { BatchCommand } = await import("../batch-command");
 const { AddTrackCommand } = await import("../timeline/track/add-track");
@@ -39,35 +39,71 @@ const { DeleteElementsCommand } = await import(
 const { MoveElementCommand } = await import(
 	"../timeline/element/move-elements"
 );
+const { pruneEmptyTracksByIds } = await import("../../core/prune-empty-tracks");
 
-// Empty-track pruning is opt-in: only commands that can leave a track empty
-// may prune. Anything else (rename, mute, lock, add-track...) must not, so a
-// manually added empty track survives unrelated edits.
-describe("pruneEmptyTracks opt-in", () => {
-	test("DeleteElementsCommand opts in", () => {
-		expect(new DeleteElementsCommand({ elements: [] }).pruneEmptyTracks).toBe(
-			true,
-		);
+// Empty-track pruning is scoped: a command lists the track ids it may have
+// emptied; the reactor prunes exactly those. Anything else (rename, mute,
+// lock, add-track...) lists nothing, so a manually added empty track
+// survives unrelated edits.
+describe("pruneTrackIds scoping", () => {
+	test("DeleteElementsCommand lists the touched tracks, deduped", () => {
+		expect(
+			new DeleteElementsCommand({
+				elements: [
+					{ trackId: "t1", elementId: "e1" },
+					{ trackId: "t2", elementId: "e2" },
+					{ trackId: "t1", elementId: "e3" },
+				],
+			}).pruneTrackIds,
+		).toEqual(["t1", "t2"]);
 	});
 
-	test("AddTrackCommand does not prune — the new track starts empty", () => {
-		expect(new AddTrackCommand({ type: "video" }).pruneEmptyTracks).toBe(false);
+	test("AddTrackCommand prunes nothing — the new track starts empty", () => {
+		expect(new AddTrackCommand({ type: "video" }).pruneTrackIds).toBeUndefined();
 	});
 
 	test("moving never empties a track intentionally — it does not prune", () => {
-		expect(new MoveElementCommand({ moves: [] }).pruneEmptyTracks).toBe(false);
+		expect(new MoveElementCommand({ moves: [] }).pruneTrackIds).toBeUndefined();
 	});
 
-	test("BatchCommand prunes when any child opts in", () => {
+	test("BatchCommand prunes the union of its children's tracks", () => {
 		expect(
-			new BatchCommand([new AddTrackCommand({ type: "audio" })])
-				.pruneEmptyTracks,
-		).toBe(false);
+			new BatchCommand([new AddTrackCommand({ type: "audio" })]).pruneTrackIds,
+		).toBeUndefined();
 		expect(
 			new BatchCommand([
 				new AddTrackCommand({ type: "audio" }),
-				new DeleteElementsCommand({ elements: [] }),
-			]).pruneEmptyTracks,
-		).toBe(true);
+				new DeleteElementsCommand({
+					elements: [{ trackId: "t3", elementId: "e9" }],
+				}),
+			]).pruneTrackIds,
+		).toEqual(["t3"]);
+	});
+});
+
+describe("pruneEmptyTracksByIds", () => {
+	const track = (id: string, elements: unknown[] = []) =>
+		({ id, elements }) as never;
+	const tracks = {
+		overlay: [track("a", [{}]), track("empty-a"), track("empty-b")],
+		main: track("main"),
+		audio: [track("empty-c")],
+	};
+
+	test("prunes only listed tracks that are empty", () => {
+		const result = pruneEmptyTracksByIds({
+			tracks,
+			trackIds: ["empty-a", "a", "main"],
+		});
+		expect(result.overlay.map((t: { id: string }) => t.id)).toEqual([
+			"a",
+			"empty-b",
+		]);
+		expect(result.main.id).toBe("main");
+		expect(result.audio.map((t: { id: string }) => t.id)).toEqual(["empty-c"]);
+	});
+
+	test("returns the same reference when nothing is pruned", () => {
+		expect(pruneEmptyTracksByIds({ tracks, trackIds: ["a"] })).toBe(tracks);
 	});
 });

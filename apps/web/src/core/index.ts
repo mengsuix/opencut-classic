@@ -13,6 +13,7 @@ import { DiagnosticsManager } from "./managers/diagnostics-manager";
 import { registerDefaultEffects } from "@/effects";
 import { registerDefaultMasks } from "@/masks";
 import { registerTranscriptionDiagnostics } from "@/transcription/diagnostics";
+import { pruneEmptyTracksByIds } from "./prune-empty-tracks";
 
 export class EditorCore {
 	private static instance: EditorCore | null = null;
@@ -47,7 +48,8 @@ export class EditorCore {
 		registerTranscriptionDiagnostics({ diagnostics: this.diagnostics });
 		this.playback.bindTimelineScope();
 		this.command.registerReactor((command) => {
-			if (!command.pruneEmptyTracks) {
+			const pruneTrackIds = command.pruneTrackIds;
+			if (!pruneTrackIds || pruneTrackIds.length === 0) {
 				return;
 			}
 
@@ -56,16 +58,14 @@ export class EditorCore {
 				return;
 			}
 
+			// Only tracks the command touched are eligible for pruning — a
+			// manually added empty track elsewhere must survive.
 			const tracks = activeScene.tracks;
-			const prunedTracks = {
-				...tracks,
-				overlay: tracks.overlay.filter((track) => track.elements.length > 0),
-				audio: tracks.audio.filter((track) => track.elements.length > 0),
-			};
-			if (
-				prunedTracks.overlay.length !== tracks.overlay.length ||
-				prunedTracks.audio.length !== tracks.audio.length
-			) {
+			const prunedTracks = pruneEmptyTracksByIds({
+				tracks,
+				trackIds: pruneTrackIds,
+			});
+			if (prunedTracks !== tracks) {
 				this.timeline.updateTracks(prunedTracks);
 			}
 		});

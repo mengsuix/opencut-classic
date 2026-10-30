@@ -155,7 +155,9 @@ function resolveEffectPassGroups({
 	height: number;
 }): EffectPass[][] {
 	return (effects ?? [])
-		.filter((effect) => effect.enabled)
+		// Legacy projects can reference removed effect definitions — skip them
+		// instead of throwing mid-render.
+		.filter((effect) => effect.enabled && effectsRegistry.has(effect.type))
 		.map((effect) => {
 			const resolvedParams = resolveEffectParamsAtTime({
 				effectId: effect.id,
@@ -711,6 +713,9 @@ function resolveEffectLayerNode({
 		return null;
 	}
 
+	if (!effectsRegistry.has(node.params.effectType)) {
+		return null;
+	}
 	const definition = effectsRegistry.get(node.params.effectType);
 	const passes = resolveEffectPasses({
 		definition,

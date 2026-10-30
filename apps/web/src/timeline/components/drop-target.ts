@@ -251,6 +251,7 @@ export function computeDropTarget({
 			xPosition,
 			targetElement: EMPTY_TARGET_ELEMENT,
 			isInvalid: true,
+			invalidReason: track.locked ? "locked" : "incompatible",
 		};
 	}
 

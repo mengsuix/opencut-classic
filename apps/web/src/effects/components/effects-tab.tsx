@@ -256,6 +256,40 @@ function EffectSection({
 	onRemove?: () => void;
 }) {
 	const t = useT();
+	// Legacy projects can carry effects whose definitions were removed — render
+	// a placeholder (still removable) instead of crashing the whole panel.
+	if (!effectsRegistry.has(effect.type)) {
+		return (
+			<Section
+				sectionKey={onToggle ? `clip-effect:${effect.id}` : undefined}
+				showTopBorder={false}
+			>
+				<SectionHeader
+					trailing={
+						onRemove && (
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label={t("properties.removeEffect", { name: effect.type })}
+								onClick={onRemove}
+							>
+								<HugeiconsIcon icon={Delete02Icon} />
+							</Button>
+						)
+					}
+				>
+					<SectionTitle className="text-muted-foreground">
+						{effect.type}
+					</SectionTitle>
+				</SectionHeader>
+				<SectionContent className="p-0">
+					<p className="text-muted-foreground px-4 py-3 text-xs">
+						{t("properties.effectUnavailable", { type: effect.type })}
+					</p>
+				</SectionContent>
+			</Section>
+		);
+	}
 	const definition = effectsRegistry.get(effect.type);
 
 	return (
