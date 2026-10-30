@@ -18,11 +18,3 @@ export function canTrackBeHidden(
 ): track is VideoTrack | TextTrack | GraphicTrack | EffectTrack {
 	return track.type !== "audio";
 }
-
-export function canTrackCollapse(
-	track: TimelineTrack,
-): track is TextTrack | GraphicTrack | EffectTrack {
-	return (
-		track.type === "text" || track.type === "graphic" || track.type === "effect"
-	);
-}

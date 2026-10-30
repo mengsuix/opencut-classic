@@ -23,7 +23,6 @@ import {
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import { computeDropTarget } from "@/timeline/components/drop-target";
-import { useTimelineStore } from "@/timeline/timeline-store";
 import { planRippleInsert } from "@/ripple";
 import { getTimelineSnapThresholdInTicks } from "@/timeline/snapping";
 import type { TimelineDragSource } from "@/timeline/drag-source";
@@ -142,13 +141,6 @@ function orderedTracks({
 	return [...sceneTracks.overlay, sceneTracks.main, ...sceneTracks.audio];
 }
 
-function expandCollapsedTrack({ trackId }: { trackId: string }): void {
-	const store = useTimelineStore.getState();
-	if (store.collapsedTrackIds.includes(trackId)) {
-		store.toggleTrackCollapsed(trackId);
-	}
-}
-
 // --- Controller ---
 
 export class DragDropController {
@@ -241,7 +233,6 @@ export class DragDropController {
 			zoomLevel: this.config.zoomLevel,
 			targetElementTypes,
 			rippleInsertEnabled: this.config.isRippleInsertEnabled?.() ?? false,
-			collapsedTrackIds: new Set(useTimelineStore.getState().collapsedTrackIds),
 			trackLayout: this.config.getTrackLayout(),
 		});
 
@@ -347,11 +338,6 @@ export class DragDropController {
 		trackType: TrackType;
 	}): void {
 		if (target.isInvalid) return;
-
-		const targetTrack = orderedTracks({
-			sceneTracks: this.config.getSceneTracks(),
-		})[target.trackIndex];
-		if (targetTrack) expandCollapsedTrack({ trackId: targetTrack.id });
 
 		if (target.insertRipple && !target.isNewTrack) {
 			this.executeRippleInsert({ element, target });
@@ -565,7 +551,6 @@ export class DragDropController {
 		}).find((track) => track.type === "effect");
 
 		if (existingEffectTrack) {
-			expandCollapsedTrack({ trackId: existingEffectTrack.id });
 			this.config.insertElement({
 				placement: { mode: "explicit", trackId: existingEffectTrack.id },
 				element,
@@ -644,9 +629,6 @@ export class DragDropController {
 						zoomLevel: this.config.zoomLevel,
 						rippleInsertEnabled:
 							this.config.isRippleInsertEnabled?.() ?? false,
-						collapsedTrackIds: new Set(
-							useTimelineStore.getState().collapsedTrackIds,
-						),
 						trackLayout: this.config.getTrackLayout(),
 					});
 

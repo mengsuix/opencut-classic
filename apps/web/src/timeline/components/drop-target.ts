@@ -53,13 +53,11 @@ function getTrackAtY({
 	mouseY,
 	tracks,
 	verticalDragDirection,
-	collapsedTrackIds,
 	trackLayout,
 }: {
 	mouseY: number;
 	tracks: TimelineTrack[];
 	verticalDragDirection?: "up" | "down" | null;
-	collapsedTrackIds?: ReadonlySet<string>;
 	trackLayout?: { offsets: readonly number[]; totalHeight: number };
 }): { trackIndex: number; relativeY: number } | null {
 	let cumulativeHeight = 0;
@@ -75,10 +73,7 @@ function getTrackAtY({
 		const trackHeight =
 			layoutBottom !== undefined
 				? layoutBottom - trackTop - (nextTrackOffset !== undefined ? TIMELINE_TRACK_GAP_PX : 0)
-				: getTrackHeight({
-						type: tracks[i].type,
-						collapsed: collapsedTrackIds?.has(tracks[i].id),
-					});
+				: getTrackHeight({ type: tracks[i].type });
 		const trackBottom = trackTop + trackHeight;
 
 		if (mouseY >= trackTop && mouseY < trackBottom) {
@@ -138,7 +133,6 @@ export function computeDropTarget({
 	targetElementTypes,
 	rippleInsertEnabled,
 	allowOverlapClamp,
-	collapsedTrackIds,
 	trackLayout,
 }: ComputeDropTargetParams): DropTarget {
 	const orderedTracks = [...tracks.overlay, tracks.main, ...tracks.audio];
@@ -186,7 +180,6 @@ export function computeDropTarget({
 		mouseY,
 		tracks: orderedTracks,
 		verticalDragDirection,
-		collapsedTrackIds,
 		trackLayout,
 	});
 
@@ -255,10 +248,7 @@ export function computeDropTarget({
 		}
 	}
 
-	const trackHeight = getTrackHeight({
-		type: track.type,
-		collapsed: collapsedTrackIds?.has(track.id),
-	});
+	const trackHeight = getTrackHeight({ type: track.type });
 
 	// Hovering an existing track that cannot accept this element (wrong type
 	// or locked) rejects the drop outright instead of silently overflowing
@@ -412,11 +402,9 @@ function findNearestFreeStartTime({
 export function getDropLineY({
 	dropTarget,
 	tracks,
-	collapsedTrackIds,
 }: {
 	dropTarget: DropTarget;
 	tracks: TimelineTrack[];
-	collapsedTrackIds?: ReadonlySet<string>;
 }): number {
 	const safeTrackIndex = Math.min(
 		Math.max(dropTarget.trackIndex, 0),
@@ -425,11 +413,7 @@ export function getDropLineY({
 	let y = 0;
 
 	for (let i = 0; i < safeTrackIndex; i++) {
-		y +=
-			getTrackHeight({
-				type: tracks[i].type,
-				collapsed: collapsedTrackIds?.has(tracks[i].id),
-			}) + TIMELINE_TRACK_GAP_PX;
+		y += getTrackHeight({ type: tracks[i].type }) + TIMELINE_TRACK_GAP_PX;
 	}
 
 	return y;

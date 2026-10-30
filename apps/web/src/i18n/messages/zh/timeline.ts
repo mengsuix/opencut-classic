@@ -116,8 +116,6 @@ export const timeline = {
 	"timeline.cannotDeleteMainScene": "无法删除主场景",
 	"timeline.mainTrack": "主轨道",
 	"timeline.trackOptions": "轨道操作",
-	"timeline.collapseTrack": "折叠轨道",
-	"timeline.expandTrack": "展开轨道",
 	"timeline.deleteTrackLocked": "删除轨道（需先解锁）",
 	"timeline.videoTrack": "视频轨道",
 	"timeline.textTrack": "文本轨道",

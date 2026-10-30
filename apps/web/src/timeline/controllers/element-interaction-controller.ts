@@ -19,7 +19,6 @@ import {
 import { TIMELINE_DRAG_THRESHOLD_PX } from "@/timeline/components/interaction";
 import type { FrameRate } from "opencut-wasm";
 import { computeDropTarget } from "@/timeline/components/drop-target";
-import { useTimelineStore } from "@/timeline/timeline-store";
 import { getMouseTimeFromClientX } from "@/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
 import {
@@ -283,7 +282,6 @@ function resolveDropTarget({
 		verticalDragDirection,
 		rippleInsertEnabled,
 		allowOverlapClamp,
-		collapsedTrackIds: new Set(useTimelineStore.getState().collapsedTrackIds),
 		trackLayout: viewport.getTrackLayout(),
 	});
 }
@@ -959,17 +957,6 @@ export class ElementInteractionController {
 			);
 			this.finishSession();
 			return;
-		}
-
-		const targetTrack =
-			drag.dropTarget && !drag.dropTarget.isNewTrack
-				? orderedTracks(this.deps.scene.getTracks())[drag.dropTarget.trackIndex]
-				: null;
-		if (targetTrack) {
-			const store = useTimelineStore.getState();
-			if (store.collapsedTrackIds.includes(targetTrack.id)) {
-				store.toggleTrackCollapsed(targetTrack.id);
-			}
 		}
 
 		// Dropped onto a visual element: the effect element is consumed and

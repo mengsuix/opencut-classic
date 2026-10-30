@@ -24,7 +24,6 @@ interface DragLineProps {
 	/** Same-track element drags already show the element at the landing slot —
 	 *  the ghost block would just dim it. */
 	suppressGhost?: boolean;
-	collapsedTrackIds?: ReadonlySet<string>;
 	trackOffsets?: readonly number[];
 	trackTotalHeight?: number;
 }
@@ -36,7 +35,6 @@ export function DragLine({
 	headerHeight = 0,
 	zoomLevel,
 	suppressGhost = false,
-	collapsedTrackIds,
 	trackOffsets,
 	trackTotalHeight,
 }: DragLineProps) {
@@ -61,7 +59,7 @@ export function DragLine({
 
 	if (!isVisible || !dropTarget) return null;
 
-	const computedY = getDropLineY({ dropTarget, tracks, collapsedTrackIds });
+	const computedY = getDropLineY({ dropTarget, tracks });
 	const y =
 		trackOffsets?.[dropTarget.trackIndex] ??
 		(dropTarget.trackIndex === tracks.length && trackTotalHeight !== undefined
@@ -71,10 +69,7 @@ export function DragLine({
 	const targetTrack =
 		tracks[Math.min(dropTarget.trackIndex, tracks.length - 1)];
 	const targetTrackHeight = targetTrack
-		? getTrackHeight({
-				type: targetTrack.type,
-				collapsed: collapsedTrackIds?.has(targetTrack.id),
-			})
+		? getTrackHeight({ type: targetTrack.type })
 		: 0;
 
 	// Rejected drop: paint the hovered track row as a forbidden zone.

@@ -128,8 +128,6 @@ export const timeline = {
 	"timeline.cannotDeleteMainScene": "Cannot delete main scene",
 	"timeline.mainTrack": "Main Track",
 	"timeline.trackOptions": "Track options",
-	"timeline.collapseTrack": "Collapse track",
-	"timeline.expandTrack": "Expand track",
 	"timeline.deleteTrackLocked": "Delete track (unlock first)",
 	"timeline.videoTrack": "Video track",
 	"timeline.textTrack": "Text track",

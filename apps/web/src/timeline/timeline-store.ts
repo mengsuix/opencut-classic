@@ -13,8 +13,6 @@ interface TimelineStore {
 	toggleRippleEditing: () => void;
 	expandedElementIds: Set<string>;
 	toggleElementExpanded: (elementId: string) => void;
-	collapsedTrackIds: string[];
-	toggleTrackCollapsed: (trackId: string) => void;
 }
 
 export const useTimelineStore = create<TimelineStore>()(
@@ -31,16 +29,6 @@ export const useTimelineStore = create<TimelineStore>()(
 			toggleRippleEditing: () => {
 				set((state) => ({
 					rippleEditingEnabled: !state.rippleEditingEnabled,
-				}));
-			},
-
-			collapsedTrackIds: [],
-
-			toggleTrackCollapsed: (trackId) => {
-				set((state) => ({
-					collapsedTrackIds: state.collapsedTrackIds.includes(trackId)
-						? state.collapsedTrackIds.filter((id) => id !== trackId)
-						: [...state.collapsedTrackIds, trackId],
 				}));
 			},
 
@@ -81,13 +69,11 @@ export const useTimelineStore = create<TimelineStore>()(
 						typeof rippleEditingEnabled === "boolean"
 							? rippleEditingEnabled
 							: false,
-					collapsedTrackIds: [],
 				};
 			},
 			partialize: (state) => ({
 				snappingEnabled: state.snappingEnabled,
 				rippleEditingEnabled: state.rippleEditingEnabled,
-				collapsedTrackIds: state.collapsedTrackIds,
 			}),
 		},
 	),

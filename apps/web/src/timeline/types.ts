@@ -321,7 +321,6 @@ export interface ComputeDropTargetParams {
 	rippleInsertEnabled?: boolean;
 	/** When true, an overlap on a compatible hovered track clamps the drop to the nearest free slot instead of creating a new track. */
 	allowOverlapClamp?: boolean;
-	collapsedTrackIds?: ReadonlySet<string>;
 	trackLayout?: { offsets: readonly number[]; totalHeight: number };
 }
 
