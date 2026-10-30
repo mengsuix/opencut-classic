@@ -53,16 +53,32 @@ function getTrackAtY({
 	mouseY,
 	tracks,
 	verticalDragDirection,
+	collapsedTrackIds,
+	trackLayout,
 }: {
 	mouseY: number;
 	tracks: TimelineTrack[];
 	verticalDragDirection?: "up" | "down" | null;
+	collapsedTrackIds?: ReadonlySet<string>;
+	trackLayout?: { offsets: readonly number[]; totalHeight: number };
 }): { trackIndex: number; relativeY: number } | null {
 	let cumulativeHeight = 0;
 
 	for (let i = 0; i < tracks.length; i++) {
-		const trackHeight = getTrackHeight({ type: tracks[i].type });
-		const trackTop = cumulativeHeight;
+		const trackTop = trackLayout?.offsets[i] ?? cumulativeHeight;
+		const nextTrackOffset = trackLayout?.offsets[i + 1];
+		const layoutBottom =
+			nextTrackOffset ??
+			(i === tracks.length - 1 && trackLayout
+				? trackLayout.totalHeight
+				: undefined);
+		const trackHeight =
+			layoutBottom !== undefined
+				? layoutBottom - trackTop - (nextTrackOffset !== undefined ? TIMELINE_TRACK_GAP_PX : 0)
+				: getTrackHeight({
+						type: tracks[i].type,
+						collapsed: collapsedTrackIds?.has(tracks[i].id),
+					});
 		const trackBottom = trackTop + trackHeight;
 
 		if (mouseY >= trackTop && mouseY < trackBottom) {
@@ -122,6 +138,8 @@ export function computeDropTarget({
 	targetElementTypes,
 	rippleInsertEnabled,
 	allowOverlapClamp,
+	collapsedTrackIds,
+	trackLayout,
 }: ComputeDropTargetParams): DropTarget {
 	const orderedTracks = [...tracks.overlay, tracks.main, ...tracks.audio];
 	const mainTrackIndex = tracks.overlay.length;
@@ -168,6 +186,8 @@ export function computeDropTarget({
 		mouseY,
 		tracks: orderedTracks,
 		verticalDragDirection,
+		collapsedTrackIds,
+		trackLayout,
 	});
 
 	if (!trackAtMouse) {
@@ -208,10 +228,7 @@ export function computeDropTarget({
 	const effectiveTargetElementTypes =
 		targetElementTypes ??
 		(elementType === "effect" ? VISUAL_ELEMENT_TYPES : undefined);
-	if (
-		effectiveTargetElementTypes &&
-		effectiveTargetElementTypes.length > 0
-	) {
+	if (effectiveTargetElementTypes && effectiveTargetElementTypes.length > 0) {
 		const targetElement = findElementAtPosition({
 			mouseX,
 			tracks: orderedTracks,
@@ -238,12 +255,18 @@ export function computeDropTarget({
 		}
 	}
 
-	const trackHeight = getTrackHeight({ type: track.type });
+	const trackHeight = getTrackHeight({
+		type: track.type,
+		collapsed: collapsedTrackIds?.has(track.id),
+	});
 
 	// Hovering an existing track that cannot accept this element (wrong type
 	// or locked) rejects the drop outright instead of silently overflowing
 	// to a new track. New tracks are only created from empty areas.
-	if (!canElementGoOnTrack({ elementType, trackType: track.type }) || track.locked) {
+	if (
+		!canElementGoOnTrack({ elementType, trackType: track.type }) ||
+		track.locked
+	) {
 		return {
 			trackIndex,
 			isNewTrack: false,
@@ -258,7 +281,9 @@ export function computeDropTarget({
 	const placementResult = resolveTrackPlacement({
 		tracks,
 		elementType,
-		timeSpans: [{ startTime: xPosition, duration: elementDuration, excludeElementId }],
+		timeSpans: [
+			{ startTime: xPosition, duration: elementDuration, excludeElementId },
+		],
 		strategy: {
 			type: "preferIndex",
 			trackIndex,
@@ -387,9 +412,11 @@ function findNearestFreeStartTime({
 export function getDropLineY({
 	dropTarget,
 	tracks,
+	collapsedTrackIds,
 }: {
 	dropTarget: DropTarget;
 	tracks: TimelineTrack[];
+	collapsedTrackIds?: ReadonlySet<string>;
 }): number {
 	const safeTrackIndex = Math.min(
 		Math.max(dropTarget.trackIndex, 0),
@@ -398,7 +425,11 @@ export function getDropLineY({
 	let y = 0;
 
 	for (let i = 0; i < safeTrackIndex; i++) {
-		y += getTrackHeight({ type: tracks[i].type }) + TIMELINE_TRACK_GAP_PX;
+		y +=
+			getTrackHeight({
+				type: tracks[i].type,
+				collapsed: collapsedTrackIds?.has(tracks[i].id),
+			}) + TIMELINE_TRACK_GAP_PX;
 	}
 
 	return y;

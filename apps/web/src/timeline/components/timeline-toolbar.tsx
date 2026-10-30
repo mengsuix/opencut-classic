@@ -469,6 +469,7 @@ function ToolbarButton({
 			size="icon"
 			disabled={disabled}
 			aria-label={tooltip}
+			aria-pressed={isActive}
 			onClick={onClick ? (event) => onClick({ event }) : undefined}
 			className={cn(
 				"rounded-sm",

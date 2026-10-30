@@ -12,6 +12,7 @@ interface UseTimelineDragDropProps {
 	headerRef?: RefObject<HTMLElement | null>;
 	tracksScrollRef?: RefObject<HTMLDivElement | null>;
 	zoomLevel: number;
+	trackLayout: { offsets: readonly number[]; totalHeight: number };
 }
 
 export function useTimelineDragDrop({
@@ -19,6 +20,7 @@ export function useTimelineDragDrop({
 	headerRef,
 	tracksScrollRef,
 	zoomLevel,
+	trackLayout,
 }: UseTimelineDragDropProps) {
 	const editor = useEditor();
 	const rippleEditingEnabled = useTimelineStore(
@@ -35,6 +37,7 @@ export function useTimelineDragDrop({
 		getActiveProjectId: () =>
 			editor.project.getActiveOrNull()?.metadata.id ?? null,
 		getSceneTracks: () => editor.scenes.getActiveScene().tracks,
+		getTrackLayout: () => trackLayout,
 		getCurrentPlayheadTime: () => editor.playback.getCurrentTime(),
 		getMediaAssets: () => editor.media.getAssets(),
 		dragSource: editor.timeline.dragSource,

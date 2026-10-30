@@ -13,6 +13,8 @@ interface TimelineStore {
 	toggleRippleEditing: () => void;
 	expandedElementIds: Set<string>;
 	toggleElementExpanded: (elementId: string) => void;
+	collapsedTrackIds: string[];
+	toggleTrackCollapsed: (trackId: string) => void;
 }
 
 export const useTimelineStore = create<TimelineStore>()(
@@ -24,11 +26,21 @@ export const useTimelineStore = create<TimelineStore>()(
 				set((state) => ({ snappingEnabled: !state.snappingEnabled }));
 			},
 
-			rippleEditingEnabled: true,
+			rippleEditingEnabled: false,
 
 			toggleRippleEditing: () => {
 				set((state) => ({
 					rippleEditingEnabled: !state.rippleEditingEnabled,
+				}));
+			},
+
+			collapsedTrackIds: [],
+
+			toggleTrackCollapsed: (trackId) => {
+				set((state) => ({
+					collapsedTrackIds: state.collapsedTrackIds.includes(trackId)
+						? state.collapsedTrackIds.filter((id) => id !== trackId)
+						: [...state.collapsedTrackIds, trackId],
 				}));
 			},
 
@@ -48,16 +60,34 @@ export const useTimelineStore = create<TimelineStore>()(
 		}),
 		{
 			name: "timeline-store",
-			// v1: ripple editing became default-on; drop v0 storage so the old
-			// persisted `rippleEditingEnabled: false` doesn't override it.
 			version: 1,
-			migrate: () => ({
-				snappingEnabled: true,
-				rippleEditingEnabled: true,
-			}),
+			migrate: (persistedState) => {
+				const state =
+					typeof persistedState === "object" && persistedState !== null
+						? persistedState
+						: null;
+				const snappingEnabled =
+					state && "snappingEnabled" in state
+						? state.snappingEnabled
+						: undefined;
+				const rippleEditingEnabled =
+					state && "rippleEditingEnabled" in state
+						? state.rippleEditingEnabled
+						: undefined;
+				return {
+					snappingEnabled:
+						typeof snappingEnabled === "boolean" ? snappingEnabled : true,
+					rippleEditingEnabled:
+						typeof rippleEditingEnabled === "boolean"
+							? rippleEditingEnabled
+							: false,
+					collapsedTrackIds: [],
+				};
+			},
 			partialize: (state) => ({
 				snappingEnabled: state.snappingEnabled,
 				rippleEditingEnabled: state.rippleEditingEnabled,
+				collapsedTrackIds: state.collapsedTrackIds,
 			}),
 		},
 	),

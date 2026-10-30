@@ -12,9 +12,8 @@ export const KEYFRAME_LANE_HEIGHT_PX = 20;
 export const KEYFRAME_DIAMOND_SIZE_PX = 14;
 export const EXPANDED_GROUP_HEADER_HEIGHT_PX = 18;
 
+export const TIMELINE_COLLAPSED_TRACK_HEIGHT_PX = 20;
 export const TIMELINE_TRACK_GAP_PX = 6;
-// Wide enough for the icon row (up to 4x16px icons + gaps + px-3) to leave
-// usable room for the track name — at 112px the name was crushed to 0px.
 export const TIMELINE_TRACK_LABELS_COLUMN_WIDTH_PX = 160;
 export const TIMELINE_RULER_HEIGHT_PX = 22;
 export const TIMELINE_BOOKMARK_ROW_HEIGHT_PX = 16;

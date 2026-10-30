@@ -19,6 +19,7 @@ import {
 import { TIMELINE_DRAG_THRESHOLD_PX } from "@/timeline/components/interaction";
 import type { FrameRate } from "opencut-wasm";
 import { computeDropTarget } from "@/timeline/components/drop-target";
+import { useTimelineStore } from "@/timeline/timeline-store";
 import { getMouseTimeFromClientX } from "@/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
 import {
@@ -59,6 +60,7 @@ export interface ViewportAdapter {
 	getTracksScrollEl: () => HTMLDivElement | null;
 	getTracksContainerEl: () => HTMLDivElement | null;
 	getHeaderEl: () => HTMLElement | null;
+	getTrackLayout: () => { offsets: readonly number[]; totalHeight: number };
 }
 
 export interface InputAdapter {
@@ -281,6 +283,8 @@ function resolveDropTarget({
 		verticalDragDirection,
 		rippleInsertEnabled,
 		allowOverlapClamp,
+		collapsedTrackIds: new Set(useTimelineStore.getState().collapsedTrackIds),
+		trackLayout: viewport.getTrackLayout(),
 	});
 }
 
@@ -762,7 +766,7 @@ export class ElementInteractionController {
 		drag.dropTarget =
 			anchorDropTarget && (anchorDropTarget.isNewTrack || !nextGroupMoveResult)
 				? { ...anchorDropTarget, isNewTrack: true }
-				: null;
+				: anchorDropTarget;
 		drag.previewTimeOffsets = new Map();
 		this.applyDropCursor(drag.dropTarget);
 	}
@@ -955,6 +959,17 @@ export class ElementInteractionController {
 			);
 			this.finishSession();
 			return;
+		}
+
+		const targetTrack =
+			drag.dropTarget && !drag.dropTarget.isNewTrack
+				? orderedTracks(this.deps.scene.getTracks())[drag.dropTarget.trackIndex]
+				: null;
+		if (targetTrack) {
+			const store = useTimelineStore.getState();
+			if (store.collapsedTrackIds.includes(targetTrack.id)) {
+				store.toggleTrackCollapsed(targetTrack.id);
+			}
 		}
 
 		// Dropped onto a visual element: the effect element is consumed and

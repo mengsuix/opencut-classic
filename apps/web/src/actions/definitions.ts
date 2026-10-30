@@ -236,6 +236,7 @@ const ACTION_DEFAULT_SHORTCUTS = [
 	["copy-selected", ["ctrl+c"]],
 	["paste-copied", ["ctrl+v"]],
 	["toggle-snapping", ["n"]],
+	["toggle-ripple-editing", ["r"]],
 	["select-all", ["ctrl+a"]],
 	["cancel-interaction", ["escape"]],
 	["duplicate-selected", ["ctrl+d"]],

@@ -82,6 +82,8 @@ export function resolveTimelineElementIntersections({
 	zoomLevel,
 	startPos,
 	currentPos,
+	collapsedTrackIds,
+	trackOffsets,
 }: {
 	container: HTMLElement;
 	scrollContainer: HTMLDivElement | null;
@@ -89,6 +91,8 @@ export function resolveTimelineElementIntersections({
 	zoomLevel: number;
 	startPos: { x: number; y: number };
 	currentPos: { x: number; y: number };
+	collapsedTrackIds?: ReadonlySet<string>;
+	trackOffsets?: readonly number[];
 }): TimelineElementRef[] {
 	const selectionRectangle = getSelectionRectangleInContent({
 		container,
@@ -99,10 +103,14 @@ export function resolveTimelineElementIntersections({
 	const selectedElements: TimelineElementRef[] = [];
 
 	for (const [trackIndex, track] of tracks.entries()) {
-		const trackTop = getCumulativeHeightBefore({
-			tracks,
-			trackIndex,
-		});
+		if (collapsedTrackIds?.has(track.id)) continue;
+		const trackTop =
+			trackOffsets?.[trackIndex] ??
+			getCumulativeHeightBefore({
+				tracks,
+				trackIndex,
+				collapsedTrackIds,
+			});
 		const trackHeight = getTrackHeight({ type: track.type });
 		const elementTop = TIMELINE_CONTENT_TOP_PADDING_PX + trackTop;
 		const elementBottom = elementTop + trackHeight;

@@ -19,6 +19,7 @@ interface UseElementInteractionProps {
 	headerRef?: RefObject<HTMLElement | null>;
 	snappingEnabled: boolean;
 	onSnapPointChange?: (snapPoint: SnapPoint | null) => void;
+	trackLayout: { offsets: readonly number[]; totalHeight: number };
 }
 
 export function useElementInteraction({
@@ -28,6 +29,7 @@ export function useElementInteraction({
 	headerRef,
 	snappingEnabled,
 	onSnapPointChange,
+	trackLayout,
 }: UseElementInteractionProps) {
 	const editor = useEditor();
 	const isShiftHeldRef = useShiftKey();
@@ -42,6 +44,7 @@ export function useElementInteraction({
 			getTracksScrollEl: () => tracksScrollRef.current,
 			getTracksContainerEl: () => tracksContainerRef.current,
 			getHeaderEl: () => headerRef?.current ?? null,
+			getTrackLayout: () => trackLayout,
 		},
 		input: {
 			isShiftHeld: () => isShiftHeldRef.current,

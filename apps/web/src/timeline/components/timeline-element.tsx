@@ -18,6 +18,7 @@ import { getElementKeyframes } from "@/animation";
 import {
 	canElementHaveAudio,
 	canElementBeHidden,
+	canTrackBeHidden,
 	hasElementEffects,
 	hasMediaId,
 	timelineTimeToPixels,
@@ -75,7 +76,7 @@ import {
 	VolumeOffIcon,
 	VolumeMute02Icon,
 	Search01Icon,
-	Exchange01Icon,
+	LockIcon,
 	KeyframeIcon,
 	MagicWand05Icon,
 } from "@hugeicons/core-free-icons";
@@ -508,13 +509,7 @@ export function TimelineElement({
 								}
 							>
 								{t("timeline.revealMedia")}
-								</ContextMenuItem>
-								<ContextMenuItem
-								icon={<HugeiconsIcon icon={Exchange01Icon} />}
-								disabled
-								>
-								{t("timeline.replaceMedia")}
-								</ContextMenuItem>
+							</ContextMenuItem>
 						</>
 					)}
 					<ContextMenuSeparator />
@@ -641,6 +636,22 @@ function ElementInner({
 						</div>
 						{expandedContent}
 					</button>
+					{(track.locked || (canTrackBeHidden(track) && track.hidden)) && (
+						<div className="pointer-events-none absolute top-1 right-1 z-10 flex gap-1">
+							{track.locked && (
+								<span className="bg-background/85 text-foreground rounded-xs p-0.5">
+									<HugeiconsIcon icon={LockIcon} className="size-3" />
+								</span>
+							)}
+							{canTrackBeHidden(track) &&
+								track.hidden &&
+								elementWidthPx >= (track.locked ? 48 : 24) && (
+									<span className="bg-background/85 text-foreground rounded-xs p-0.5">
+										<HugeiconsIcon icon={ViewOffSlashIcon} className="size-3" />
+									</span>
+								)}
+						</div>
+					)}
 				</div>
 				{isDropTarget && (
 					<div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
