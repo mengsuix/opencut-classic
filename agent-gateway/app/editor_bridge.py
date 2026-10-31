@@ -49,8 +49,8 @@ _editor_sockets: dict[str, WebSocket] = {}
 _editor_info: dict[str, dict] = {}
 # session_id -> 产物下载用对外 base url（从编辑器连接的 Host 头推导）
 _editor_base_urls: dict[str, str] = {}
-# request_id -> (future, timer, session_id)
-_pending: dict[str, tuple[asyncio.Future, asyncio.TimerHandle, str]] = {}
+# request_id -> (future, timer, 下发请求的那条编辑器 WS)
+_pending: dict[str, tuple[asyncio.Future, asyncio.TimerHandle, WebSocket]] = {}
 _request_seq = 0
 
 
@@ -94,7 +94,7 @@ async def call_editor(
     timer = loop.call_later(
         timeout or COMMAND_TIMEOUTS.get(command, DEFAULT_TIMEOUT_SECONDS), on_timeout
     )
-    _pending[request_id] = (fut, timer, session_id)
+    _pending[request_id] = (fut, timer, ws)
     await ws.send_json(
         {"type": "request", "id": request_id, "command": command, "args": args or {}}
     )
@@ -486,12 +486,11 @@ def build_editor_mcp_server(session_id: str):
         "返回渲染机（add_media HTML 里的 <video src>）可拉取的 URL。这是渲染机拿到"
         "原视频真实画面的唯一途径（剪辑窗口烘焙：转场/剪切）——mediaAssets 的 url 字段"
         "是浏览器本地 blob URL，渲染机访问不了，必须走本工具。窗口已预先切好，返回的 "
-        "URL 不需要 #t= 片段；它恰好播放请求的窗口，含原音轨（Opus）。start/end 用素材"
+        "URL 不需要 #t= 片段；它恰好播放请求的窗口。start/end 用素材"
         "自身时间轴的秒数（从时间线坐标经元素的 timeRange + 素材源偏移换算）。窗口保持 "
-        "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。窗口段自带原音轨"
-        "（Opus）——当烘焙片段是替换时间线区段时（split 出被覆盖范围、把片段插回原位），"
-        "在 add_media HTML 里用同一 src 单独挂一个 <audio> 元素接线音频（<video> 保持 "
-        "muted）。",
+        "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。烘焙产物无声"
+        "（渲染管线不支持音频）：HTML 里 <video> 保持 muted、不要加 <audio>；产物用 "
+        "timeline.replace_range 嵌回原轨道原位，会替换掉该窗口的原声。",
         {
             "type": "object",
             "properties": {
@@ -542,13 +541,10 @@ def build_editor_mcp_server(session_id: str):
         except Exception as e:
             return _error(str(e))
         return _text(
-            json.dumps(
-                {
-                    k: (result or {}).get(k)
-                    for k in ("id", "url", "duration", "width", "uploadedBytes")
-                },
-                ensure_ascii=False,
-            )
+            {
+                k: (result or {}).get(k)
+                for k in ("id", "url", "duration", "width", "uploadedBytes")
+            }
         )
 
     # ------------------------------------------------------------------
@@ -589,8 +585,9 @@ def build_editor_mcp_server(session_id: str):
         "（窗口已切好，不需要 #t=）。HyperFrames 托管媒体播放——绝不加 crossorigin、"
         "绝不调 play/pause/seek、也绝不自己把帧预解码进离屏 canvas；渲染机提取真实帧"
         "并合成。每个 video 包一层不带时间的 wrapper 做运动（lint 拒绝带时间的 video "
-        "嵌在带时间的祖先里；已实测的交叉淡化配方见 html-fx skill 的「视频帧源」一节）。"
-        "渲染出的片段是不透明满幅画面：它盖住所落的时间线窗口，所以剪切点处无需 split。",
+        "嵌在带时间的祖先里；已实测的交叉淡化配方见系统提示「HTML 特效写作规范」的「视频帧源」一节）。"
+        "渲染出的烘焙片段是不透明满幅画面且无声：用 timeline.replace_range 嵌回原轨道"
+        "原位（唯一落地方式，不要放叠加轨道盖住）。",
         {
             "type": "object",
             "properties": {
@@ -691,7 +688,9 @@ def build_editor_mcp_server(session_id: str):
                 "{type:'video', mediaId: assetId, startTime, duration}"
                 "（视频自带透明通道，无需混合模式），"
                 "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
-                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）"
+                "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）。"
+                "例外：烘焙转场片段（嵌入了 supply_media_window 真实画面的不透明满幅片段）不走"
+                "第二、三步，导入后用 timeline.replace_range 嵌回原轨道原位"
             )
         next_steps += (
             "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"
@@ -948,8 +947,9 @@ async def editor_websocket_endpoint(websocket: WebSocket) -> None:
             _editor_info.pop(session_id, None)
             _editor_base_urls.pop(session_id, None)
             logger.info(f"[bridge] 编辑器已断开: session={session_id[:8]}")
-        for req_id, (fut, timer, sid) in list(_pending.items()):
-            if sid == session_id:
+        # 只失败本连接上下发的请求：连接被新标签页顶替时，已发往新连接的请求不受影响
+        for req_id, (fut, timer, req_ws) in list(_pending.items()):
+            if req_ws is websocket:
                 timer.cancel()
                 if not fut.done():
                     fut.set_exception(EditorNotConnectedError("编辑器连接已断开"))

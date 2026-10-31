@@ -29,7 +29,7 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 ENV PATH="/opt/venv/bin:$PATH"
 
-# skills/ 被 agent_service 按相对路径(../skills)软链进会话工作区，目录层级不可变
+# skills/html-fx/SKILL.md 被 system_prompt 按相对路径(../skills)读入系统提示，目录层级不可变
 COPY agent-gateway/app ./app
 COPY agent-gateway/skills ./skills
 COPY agent-gateway/registry ./registry

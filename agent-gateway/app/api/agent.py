@@ -154,15 +154,25 @@ async def send_message_stream(
 
     async def event_generator():
         stream = agent_service.send_message_stream(session_id, req.message)
+        completed = False
         try:
             async for event in stream:
                 yield event.to_sse()
+            completed = True
         finally:
             # 客户端断流时显式关闭生成器：确保会话锁释放并触发断流收尾（清理残留结果）
             try:
                 await stream.aclose()
             except Exception:
                 pass
+            # 断流即打断：前端关面板/刷新时编辑器 WS 一并断开，后台继续跑只会空转，
+            # 且用户重开面板后会在看不到过程的情况下继续改工程。
+            # 打断前已产出的回复由消息泵落库，历史不丢
+            if not completed:
+                try:
+                    await agent_service.interrupt_session(session_id)
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_generator(),

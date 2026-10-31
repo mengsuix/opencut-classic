@@ -12,11 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import shutil
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -51,35 +49,11 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__get_preview_frame",
     "mcp__opencut__get_preview_sequence",
     "mcp__opencut__read_media",
+    "mcp__opencut__supply_media_window",
+    "mcp__opencut__judge_visual",
     "mcp__opencut__add_media",
     "mcp__opencut__fx_components",
 ]
-
-# agent-gateway/skills/ 下的裁剪版技能（html-fx），会话创建时软链进工作区
-SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
-SKILL_NAMES = (
-    [d.name for d in sorted(SKILLS_DIR.iterdir()) if (d / "SKILL.md").is_file()]
-    if SKILLS_DIR.is_dir()
-    else []
-)
-
-
-def _provision_skills(data_dir: Path) -> None:
-    """把 vendored skills 软链进会话工作区的 .claude/skills/（project source），
-    不支持软链的环境退化为复制；已存在则跳过"""
-    if not SKILL_NAMES:
-        return
-    skills_link_dir = data_dir / ".claude" / "skills"
-    skills_link_dir.mkdir(parents=True, exist_ok=True)
-    for name in SKILL_NAMES:
-        src = (SKILLS_DIR / name).resolve()
-        link = skills_link_dir / name
-        if link.is_symlink() or link.exists():
-            continue
-        try:
-            link.symlink_to(src)
-        except OSError:
-            shutil.copytree(src, link)
 
 
 @dataclass
@@ -120,7 +94,9 @@ class _SessionState:
     # 不会像直接迭代 receive_response() 那样被下一轮误当成自己的结果。
     messages: asyncio.Queue = field(default_factory=asyncio.Queue)
     pump_task: asyncio.Task | None = None
-
+    # 是否有已发出 query、尚未收到 ResultMessage 的回合（由消息泵在 Result 入队后清除）。
+    # 断流回合可能正卡在长工具调用上、队列暂时为空，残留判断必须看它而不是看队列。
+    turn_open: bool = False
     def __post_init__(self):
         if self.last_activity == 0.0:
             self.last_activity = self.created_at or time.time()
@@ -153,13 +129,15 @@ class AgentService:
     ) -> str:
         """创建（或恢复）一个 Agent session，启动常驻 Claude CLI 子进程"""
         existing = self._sessions.get(session_id)
-        if existing and existing.is_active:
-            return session_id
+        if existing:
+            if existing.is_active:
+                return session_id
+            # 失活会话重建前先关闭旧 client：消息泵异常退出时 CLI 子进程可能仍存活
+            await self.close_session(session_id)
 
         data_dir = config.AGENT_DATA_DIR / session_id
         config_dir = data_dir / "claude-config"
         config_dir.mkdir(parents=True, exist_ok=True)
-        _provision_skills(data_dir)
         settings_path = config_dir / "settings.json"
         if not settings_path.exists():
             settings_path.write_text(
@@ -177,7 +155,6 @@ class AgentService:
             cwd=str(data_dir),
             model=config.AGENT_MODEL,
             tools=OPENCUT_MCP_TOOLS,
-            skills=SKILL_NAMES or None,
             mcp_servers={"opencut": build_editor_mcp_server(session_id)},
             env=agent_env,
             # 服务端自动化场景无确认通道，工具面已由 tools 限定为编辑器 MCP 工具
@@ -304,6 +281,7 @@ class AgentService:
                 if dropped:
                     logger.info(f"[Agent] [{session_id[:8]}] 丢弃上一轮残留消息: {dropped} 条")
 
+                state.turn_open = True
                 await state.client.query(message)
 
                 cost_usd = 0.0
@@ -490,11 +468,13 @@ class AgentService:
                         # 与 SSE 生成器同口径：有增量文本时跳过完整消息块，避免重复
                         if isinstance(block, TextBlock) and not saw_delta:
                             turn_text.append(block.text)
-                elif isinstance(msg, ResultMessage):
+                # 先入队再清 turn_open：保证残留清理看到 turn_open=False 时 Result 已在队列里
+                await state.messages.put(msg)
+                if isinstance(msg, ResultMessage):
+                    state.turn_open = False
                     await self._persist_turn(session_id, "".join(turn_text))
                     turn_text = []
                     saw_delta = False
-                await state.messages.put(msg)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -503,6 +483,7 @@ class AgentService:
             # 泵退出兜底：进程崩溃/会话关闭时写入残稿，保证已产生的回复不丢
             await self._persist_turn(session_id, "".join(turn_text))
             state.pump_task = None
+            state.turn_open = False
             try:
                 state.messages.put_nowait(None)  # 唤醒等待中的消费者
             except Exception:
@@ -511,44 +492,42 @@ class AgentService:
     async def _discard_pending_messages(self, state: _SessionState) -> int:
         """丢弃上一轮残留消息。
 
-        - 队列为空：短暂探测后返回 0（正常无残留的快速路径）
-        - 有残留：丢弃到上一轮的 ResultMessage 为止，确保上一轮彻底结束；
-          上一轮迟迟不结束时主动 interrupt，避免新轮次被旧消息污染
+        - 上一轮已结束（turn_open=False）：清空队列里已到的残留即返回
+        - 上一轮未结束（断流回合可能卡在长工具调用上、队列暂时为空）：主动 interrupt
+          （用户已发新消息，旧轮次已无人接收），等到它的 ResultMessage 再返回，
+          避免新一轮把旧轮次的 Result 当成自己的结果
         """
         dropped = 0
+        if not state.turn_open:
+            while True:
+                try:
+                    msg = state.messages.get_nowait()
+                except asyncio.QueueEmpty:
+                    return dropped
+                dropped += 1
+                if msg is None:
+                    return dropped
+
+        if state.client:
+            try:
+                await state.client.interrupt()
+            except Exception:
+                pass
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 20.0
-        interrupted = False
         while True:
-            if dropped == 0:
-                try:
-                    msg = await asyncio.wait_for(state.messages.get(), timeout=0.3)
-                except TimeoutError:
-                    return 0
-            else:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    logger.warning(
-                        f"[Agent] [{state.session_id[:8]}] 残留消息清理超时，可能有旧消息混入本轮"
-                    )
-                    return dropped
-                try:
-                    msg = await asyncio.wait_for(
-                        state.messages.get(), timeout=min(remaining, 1.0)
-                    )
-                except TimeoutError:
-                    # 上一轮迟迟不结束：主动打断一次（用户已发新消息，旧轮次已无人接收）
-                    if not interrupted and state.client:
-                        interrupted = True
-                        try:
-                            await state.client.interrupt()
-                        except Exception:
-                            pass
-                    continue
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                logger.warning(
+                    f"[Agent] [{state.session_id[:8]}] 上一轮打断后未结束，可能有旧消息混入本轮"
+                )
+                return dropped
+            try:
+                msg = await asyncio.wait_for(state.messages.get(), timeout=remaining)
+            except TimeoutError:
+                continue
             dropped += 1
-            if msg is None:
-                return dropped  # 消息泵已退出，无需继续等待
-            if isinstance(msg, ResultMessage):
+            if msg is None or isinstance(msg, ResultMessage):
                 return dropped
 
     async def close_session(self, session_id: str) -> None:
