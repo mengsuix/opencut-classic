@@ -489,8 +489,8 @@ def build_editor_mcp_server(session_id: str):
         "URL 不需要 #t= 片段；它恰好播放请求的窗口。start/end 用素材"
         "自身时间轴的秒数（从时间线坐标经元素的 timeRange + 素材源偏移换算）。窗口保持 "
         "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。烘焙产物无声"
-        "（渲染管线不支持音频）：HTML 里 <video> 保持 muted、不要加 <audio>；产物用 "
-        "timeline.replace_range 嵌回原轨道原位，会替换掉该窗口的原声。",
+        "（渲染管线不支持音频）：HTML 里 <video> 保持 muted、不要加 <audio>；产物嵌回"
+        "原轨道原位（落位做法见系统提示「转场 / 切换」），会替换掉该窗口的原声。",
         {
             "type": "object",
             "properties": {
@@ -575,6 +575,8 @@ def build_editor_mcp_server(session_id: str):
         "禁 Math.random/Date.now）。data-width/data-height 设为项目画布尺寸（见 "
         "get_editor_state），内容摆在它应出现在画面的位置——渲染产物 1:1 落到时间线；"
         "小画布（如 520x152 徽标）插入时会被 contain 放大。"
+        "例外：为 timeline.add_html 交付做的 frames/image 预览迭代，直接按 add_html 的"
+        "声明框（特效自身尺寸）渲染，通过后同一份 HTML 原样交付 add_html。"
         "格式：\"frames\"——默认取时长 0.2/0.5/0.8 处的关键帧，或显式 \"timestamps\""
         "（最多 12 个；避开 t=0 与 t==duration，两者可能是空白帧），超过 4 帧拼成一张"
         "联系表返回；\"image\"——t=0 的静态 PNG；\"video\"（默认）——动画透明背景 "
@@ -586,8 +588,8 @@ def build_editor_mcp_server(session_id: str):
         "绝不调 play/pause/seek、也绝不自己把帧预解码进离屏 canvas；渲染机提取真实帧"
         "并合成。每个 video 包一层不带时间的 wrapper 做运动（lint 拒绝带时间的 video "
         "嵌在带时间的祖先里；已实测的交叉淡化配方见系统提示「HTML 特效写作规范」的「视频帧源」一节）。"
-        "渲染出的烘焙片段是不透明满幅画面且无声：用 timeline.replace_range 嵌回原轨道"
-        "原位（唯一落地方式，不要放叠加轨道盖住）。",
+        "渲染出的烘焙片段是不透明满幅画面且无声：必须嵌回原轨道原位（落位做法见系统提示"
+        "「转场 / 切换」），不要放叠加轨道盖住。",
         {
             "type": "object",
             "properties": {
@@ -690,7 +692,7 @@ def build_editor_mcp_server(session_id: str):
                 "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
                 "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）。"
                 "例外：烘焙转场片段（嵌入了 supply_media_window 真实画面的不透明满幅片段）不走"
-                "第二、三步，导入后用 timeline.replace_range 嵌回原轨道原位"
+                "第二、三步，导入后嵌回原轨道原位（落位做法见系统提示「转场 / 切换」）"
             )
         next_steps += (
             "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"
