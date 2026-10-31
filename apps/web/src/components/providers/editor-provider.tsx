@@ -22,7 +22,9 @@ interface EditorProviderProps {
 }
 
 export function EditorProvider({ projectId, children }: EditorProviderProps) {
-	const activeProject = useEditor((e) => e.project.getActiveOrNull());
+	const hasActiveProject = useEditor(
+		(e) => e.project.getActiveOrNull() !== null,
+	);
 	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 		);
 	}
 
-	if (!activeProject) {
+	if (!hasActiveProject) {
 		return (
 			<div className="bg-background flex h-screen w-screen items-center justify-center">
 				<div className="flex flex-col items-center gap-4">

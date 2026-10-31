@@ -95,49 +95,6 @@ function EditorLayout() {
 	usePasteMedia();
 	const { panels, setPanel } = usePanelStore();
 	const aiChatOpen = useAiChatStore((state) => state.isOpen);
-	const activeScene = useEditor((editor) =>
-		editor.scenes.getActiveSceneOrNull(),
-	);
-	const currentTime = useEditor((editor) => editor.playback.getCurrentTime());
-	const activeGuide = usePreviewStore((state) => state.activeGuide);
-	const overlays = usePreviewStore((state) => state.overlays);
-	const setOverlayVisibility = usePreviewStore(
-		(state) => state.setOverlayVisibility,
-	);
-	const showBookmarkNotes = isPreviewOverlayVisible({
-		overlay: bookmarkNotesPreviewOverlay,
-		overlays,
-	});
-
-	const overlaySource = useMemo(
-		() =>
-			mergePreviewOverlaySources({
-				sources: [
-					getGuidePreviewOverlaySource({
-						guideId: activeGuide,
-					}),
-					activeScene
-						? getBookmarkPreviewOverlaySource({
-								bookmarks: activeScene.bookmarks,
-								time: currentTime,
-								isVisible: showBookmarkNotes,
-							})
-						: {
-								definitions: [bookmarkNotesPreviewOverlay],
-								instances: [],
-							},
-				],
-			}),
-		[activeGuide, activeScene, currentTime, showBookmarkNotes],
-	);
-
-	const overlayControls = useMemo(
-		() =>
-			overlaySource.definitions.map((overlay) =>
-				createPreviewOverlayControl({ overlay, overlays }),
-			),
-		[overlaySource.definitions, overlays],
-	);
 
 	return (
 		<ResizablePanelGroup
@@ -191,11 +148,7 @@ function EditorLayout() {
 						minSize={30}
 						className="min-h-0 min-w-0 flex-1"
 					>
-						<PreviewPanel
-							overlayControls={overlayControls}
-							overlayInstances={overlaySource.instances}
-							onOverlayVisibilityChange={setOverlayVisibility}
-						/>
+						<PreviewWithOverlays />
 					</ResizablePanel>
 
 					<ResizableHandle withHandle />
@@ -236,5 +189,59 @@ function EditorLayout() {
 				<Timeline />
 			</ResizablePanel>
 		</ResizablePanelGroup>
+	);
+}
+
+function PreviewWithOverlays() {
+	const activeScene = useEditor((editor) =>
+		editor.scenes.getActiveSceneOrNull(),
+	);
+	const currentTime = useEditor((editor) => editor.playback.getCurrentTime());
+	const activeGuide = usePreviewStore((state) => state.activeGuide);
+	const overlays = usePreviewStore((state) => state.overlays);
+	const setOverlayVisibility = usePreviewStore(
+		(state) => state.setOverlayVisibility,
+	);
+	const showBookmarkNotes = isPreviewOverlayVisible({
+		overlay: bookmarkNotesPreviewOverlay,
+		overlays,
+	});
+
+	const overlaySource = useMemo(
+		() =>
+			mergePreviewOverlaySources({
+				sources: [
+					getGuidePreviewOverlaySource({
+						guideId: activeGuide,
+					}),
+					activeScene
+						? getBookmarkPreviewOverlaySource({
+								bookmarks: activeScene.bookmarks,
+								time: currentTime,
+								isVisible: showBookmarkNotes,
+							})
+						: {
+								definitions: [bookmarkNotesPreviewOverlay],
+								instances: [],
+							},
+				],
+			}),
+		[activeGuide, activeScene, currentTime, showBookmarkNotes],
+	);
+
+	const overlayControls = useMemo(
+		() =>
+			overlaySource.definitions.map((overlay) =>
+				createPreviewOverlayControl({ overlay, overlays }),
+			),
+		[overlaySource.definitions, overlays],
+	);
+
+	return (
+		<PreviewPanel
+			overlayControls={overlayControls}
+			overlayInstances={overlaySource.instances}
+			onOverlayVisibilityChange={setOverlayVisibility}
+		/>
 	);
 }

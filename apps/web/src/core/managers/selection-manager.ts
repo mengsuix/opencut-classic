@@ -64,8 +64,7 @@ export class SelectionManager {
 
 	setSelectedElements({ elements }: { elements: ElementRef[] }): void {
 		this.selectedElements = elements;
-		this.selectedKeyframes = [];
-		this.keyframeSelectionAnchor = null;
+		this.resetKeyframeSelection();
 		this.selectedMaskPoints = null;
 		this.notify();
 	}
@@ -99,23 +98,41 @@ export class SelectionManager {
 						pointIds: [...selection.pointIds],
 					}
 				: null;
-		this.selectedKeyframes = [];
-		this.keyframeSelectionAnchor = null;
+		this.resetKeyframeSelection();
 		this.notify();
 	}
 
 	clearSelection(): void {
+		// Every click on empty timeline space clears the selection. When there
+		// is nothing selected, notifying anyway re-rendered every subscriber —
+		// including each visible timeline clip (keyframe selection consumers
+		// compare the array by identity).
+		if (
+			this.selectedElements.length === 0 &&
+			this.selectedKeyframes.length === 0 &&
+			this.keyframeSelectionAnchor === null &&
+			this.selectedMaskPoints === null
+		) {
+			return;
+		}
 		this.selectedElements = [];
-		this.selectedKeyframes = [];
-		this.keyframeSelectionAnchor = null;
+		this.resetKeyframeSelection();
 		this.selectedMaskPoints = null;
 		this.notify();
 	}
 
 	clearKeyframeSelection(): void {
-		this.selectedKeyframes = [];
-		this.keyframeSelectionAnchor = null;
+		this.resetKeyframeSelection();
 		this.notify();
+	}
+
+	/** Clears keyframes without replacing an already-empty array, so identity-
+	 *  comparing subscribers don't re-render for a no-op. */
+	private resetKeyframeSelection(): void {
+		if (this.selectedKeyframes.length > 0) {
+			this.selectedKeyframes = [];
+		}
+		this.keyframeSelectionAnchor = null;
 	}
 
 	clearMaskPointSelection(): void {

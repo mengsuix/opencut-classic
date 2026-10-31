@@ -464,21 +464,37 @@ impl GpuContext {
         label: &'static str,
     ) {
         let source_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = self.create_texture_sampler_bind_group(&source_view);
+        self.encode_bind_group_blit_to_view(encoder, &bind_group, target_view, label);
+    }
+
+    /// Bind group for `texture_sampler_bind_group_layout` (view + linear sampler).
+    pub fn create_texture_sampler_bind_group(&self, view: &wgpu::TextureView) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("gpu-blit-bind-group"),
             layout: &self.texture_sampler_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&source_view),
+                    resource: wgpu::BindingResource::TextureView(view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&self.linear_sampler),
                 },
             ],
-        });
+        })
+    }
 
+    /// Blit using a caller-owned (typically cached) texture/sampler bind group,
+    /// so per-frame callers don't recreate the view and bind group every pass.
+    pub fn encode_bind_group_blit_to_view(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        source_bind_group: &wgpu::BindGroup,
+        target_view: &wgpu::TextureView,
+        label: &'static str,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(label),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -497,7 +513,7 @@ impl GpuContext {
         });
         render_pass.set_pipeline(&self.blit_pipeline);
         render_pass.set_vertex_buffer(0, self.fullscreen_quad.slice(..));
-        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.set_bind_group(0, source_bind_group, &[]);
         render_pass.draw(0..6, 0..1);
     }
 
@@ -510,7 +526,22 @@ impl GpuContext {
         label: &'static str,
     ) -> wgpu::Texture {
         let texture = self.create_render_texture(width, height, label);
+        self.write_offscreen_canvas_to_texture(canvas, &texture, width, height);
+        texture
+    }
 
+    /// Uploads `canvas` into an existing texture of the same size. Lets callers
+    /// that re-upload the same slot every frame (video layers) keep one texture
+    /// instead of allocating a fresh one per frame. Queue operations are ordered,
+    /// so overwriting a texture read by an earlier submit is safe.
+    #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+    pub fn write_offscreen_canvas_to_texture(
+        &self,
+        canvas: &wgpu::web_sys::OffscreenCanvas,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) {
         if self.supports_external_texture_copies {
             self.queue.copy_external_image_to_texture(
                 &wgpu::CopyExternalImageSourceInfo {
@@ -519,7 +550,7 @@ impl GpuContext {
                     flip_y: false,
                 },
                 wgpu::CopyExternalImageDestInfo {
-                    texture: &texture,
+                    texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
@@ -556,7 +587,7 @@ impl GpuContext {
 
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
+                    texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
@@ -574,8 +605,6 @@ impl GpuContext {
                 },
             );
         }
-
-        texture
     }
 
     #[cfg(all(feature = "wasm", target_arch = "wasm32"))]

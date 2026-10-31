@@ -3,7 +3,6 @@ import { useEditor } from "@/editor/use-editor";
 import { useCommittedRef } from "@/hooks/use-committed-ref";
 import { useShiftKey } from "@/hooks/use-shift-key";
 import { useEdgeAutoScroll } from "@/timeline/hooks/use-edge-auto-scroll";
-import { timelineTimeToPixels } from "@/timeline";
 import {
 	PlayheadController,
 	type PlayheadConfig,
@@ -36,9 +35,6 @@ export function useTimelinePlayhead({
 }: UseTimelinePlayheadProps) {
 	const editor = useEditor();
 	const isShiftHeldRef = useShiftKey();
-	// isScrubbing drives useEdgeAutoScroll — the controller sets it on the editor,
-	// so this reactive read naturally reflects whether scrubbing is active.
-	const isScrubbing = useEditor((e) => e.playback.getIsScrubbing());
 
 	const config: PlayheadConfig = {
 		zoomLevel,
@@ -94,21 +90,38 @@ export function useTimelinePlayhead({
 		ctrl.syncToCurrentTime(editor.playback.getCurrentTime());
 	}, [ctrl, editor.playback, zoomLevel]);
 
-	useEdgeAutoScroll({
-		isActive: isScrubbing,
-		getMouseClientX: () => ctrl.getLastMouseClientX(),
-		rulerScrollRef,
-		tracksScrollRef,
-		contentWidth: timelineTimeToPixels({
-			time: editor.timeline.getTotalDuration(),
-			zoomLevel,
-		}),
-	});
-
 	useEffect(() => () => ctrl.destroy(), [ctrl]);
 
 	return {
 		handlePlayheadMouseDown: ctrl.onPlayheadMouseDown,
 		handleRulerMouseDown: ctrl.onRulerMouseDown,
+		getLastMouseClientX: ctrl.getLastMouseClientX,
 	};
+}
+
+/**
+ * Edge auto-scroll while scrubbing the playhead. Kept out of
+ * `useTimelinePlayhead` on purpose: reading `isScrubbing` reactively in the
+ * Timeline root re-rendered the whole timeline at the start and end of every
+ * scrub. Render this from a leaf component so only that leaf re-renders.
+ */
+export function usePlayheadScrubAutoScroll({
+	getMouseClientX,
+	rulerScrollRef,
+	tracksScrollRef,
+	contentWidth,
+}: {
+	getMouseClientX: () => number;
+	rulerScrollRef: React.RefObject<HTMLDivElement | null>;
+	tracksScrollRef: React.RefObject<HTMLDivElement | null>;
+	contentWidth: number;
+}) {
+	const isScrubbing = useEditor((e) => e.playback.getIsScrubbing());
+	useEdgeAutoScroll({
+		isActive: isScrubbing,
+		getMouseClientX,
+		rulerScrollRef,
+		tracksScrollRef,
+		contentWidth,
+	});
 }

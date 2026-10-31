@@ -37,6 +37,23 @@ export function useQuantizedTimelineViewport(): TimelineViewport {
 }
 
 /**
+ * Viewport width only. The snapshot is a primitive, so scrolling (which fires
+ * the raw channel every frame) never re-renders the caller — only an actual
+ * width change does. Use this instead of `useQuantizedTimelineViewport` when
+ * the component doesn't window by scroll position.
+ */
+export function useTimelineViewportWidth(): number {
+	return useSyncExternalStore(
+		useCallback(
+			(onChange: () => void) => timelineViewport.subscribeRaw(onChange),
+			[],
+		),
+		() => timelineViewport.cached.viewportWidth,
+		() => timelineViewport.cached.viewportWidth,
+	);
+}
+
+/**
  * Subscribes an imperative callback to every rAF-batched viewport change.
  * The callback must only touch the DOM — never trigger a React update from it.
  */

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { FrameRate } from "opencut-wasm";
 import { timelineTimeToSnappedPixels } from "@/timeline";
 import { formatRulerLabel } from "@/timeline/ruler-utils";
@@ -12,7 +13,10 @@ interface TimelineTickProps {
 	showLabel: boolean;
 }
 
-export function TimelineTick({
+// Memoized: scrolling across a viewport bucket re-renders the ruler, but most
+// ticks in the new window are the same ones (keyed by index) with identical
+// props — re-formatting ~140 labels per bucket was most of the ruler's cost.
+export const TimelineTick = memo(function TimelineTick({
 	time,
 	timeInSeconds,
 	zoomLevel,
@@ -39,4 +43,4 @@ export function TimelineTick({
 			style={{ left: `${leftPosition}px` }}
 		/>
 	);
-}
+});

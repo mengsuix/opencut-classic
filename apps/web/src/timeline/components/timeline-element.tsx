@@ -82,7 +82,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { uppercase } from "@/utils/string";
-import { useMemo, type ComponentProps, type ReactNode } from "react";
+import { memo, useMemo, type ComponentProps, type ReactNode } from "react";
 import type { SelectedKeyframeRef, ElementKeyframe } from "@/animation/types";
 import { cn } from "@/utils/ui";
 import { usePropertiesStore } from "@/components/editor/panels/properties/stores/properties-store";
@@ -225,7 +225,7 @@ interface TimelineElementProps {
 	isDropTarget?: boolean;
 }
 
-export function TimelineElement({
+export const TimelineElement = memo(function TimelineElement({
 	element,
 	track,
 	zoomLevel,
@@ -532,7 +532,7 @@ export function TimelineElement({
 			</ContextMenu>
 		</PixelsPerSecondContext.Provider>
 	);
-}
+});
 
 function ElementInner({
 	element,

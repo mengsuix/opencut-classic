@@ -110,6 +110,7 @@ export class PlayheadController {
 		this.configRef = deps.configRef;
 		this.onPlayheadMouseDown = this.onPlayheadMouseDown.bind(this);
 		this.onRulerMouseDown = this.onRulerMouseDown.bind(this);
+		this.getLastMouseClientX = this.getLastMouseClientX.bind(this);
 		this.handleMouseMove = this.handleMouseMove.bind(this);
 		this.handleMouseUp = this.handleMouseUp.bind(this);
 	}

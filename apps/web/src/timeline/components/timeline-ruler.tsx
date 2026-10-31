@@ -1,4 +1,4 @@
-import { type JSX } from "react";
+import { memo, type JSX } from "react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
@@ -32,7 +32,7 @@ interface TimelineRulerProps {
 	handleRulerMouseDown: (e: React.MouseEvent) => void;
 }
 
-export function TimelineRuler({
+export const TimelineRuler = memo(function TimelineRuler({
 	zoomLevel,
 	dynamicTimelineWidth,
 	rulerRef,
@@ -200,4 +200,4 @@ export function TimelineRuler({
 			</div>
 		</div>
 	);
-}
+});

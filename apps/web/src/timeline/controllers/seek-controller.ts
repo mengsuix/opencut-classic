@@ -266,6 +266,12 @@ export class SeekController {
 					})
 				: rawTime;
 
+		// Track clicks seek on mousedown and again on click; ruler clicks scrub on
+		// mousedown and land here on click. Re-seeking to the frame we're already
+		// on is not free — every seek bumps the preview's seek revision and costs
+		// a full extra render — so skip it.
+		if (time === this.config.getCurrentTime()) return;
+
 		this.config.seek(time);
 		this.config.setTimelineViewState({
 			zoomLevel: this.config.zoomLevel,

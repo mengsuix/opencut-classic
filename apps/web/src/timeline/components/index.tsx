@@ -43,7 +43,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTimelineZoom } from "@/timeline/hooks/use-timeline-zoom";
 import {
+	memo,
 	useCallback,
+	useDeferredValue,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
@@ -55,7 +57,7 @@ import {
 import { useContainerSize } from "@/hooks/use-container-size";
 import type { MediaTime } from "@/wasm";
 import type { ElementDragView, DropTarget } from "@/timeline";
-import { TimelineTrackContent } from "./timeline-track";
+import { TimelineLiveZoomContext, TimelineTrackContent } from "./timeline-track";
 import { TimelinePlayhead } from "./timeline-playhead";
 import { SelectionBox } from "@/selection/selection-box";
 import { useBoxSelect } from "@/selection/hooks/use-box-select";
@@ -104,10 +106,13 @@ import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditor } from "@/editor/use-editor";
 import {
 	useBindTimelineViewport,
-	useQuantizedTimelineViewport,
+	useTimelineViewportWidth,
 } from "@/timeline/hooks/use-timeline-viewport";
 import { timelineViewport } from "@/timeline/viewport-store";
-import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
+import {
+	usePlayheadScrubAutoScroll,
+	useTimelinePlayhead,
+} from "@/timeline/hooks/use-timeline-playhead";
 import { useTimelineRangeSelect } from "@/timeline/hooks/use-timeline-range-select";
 import { useUserMarksStore } from "@/editor/user-marks-store";
 import { DragLine } from "./drag-line";
@@ -221,7 +226,10 @@ export function Timeline() {
 	// Single rAF-batched source of truth for scroll offset / viewport size. Every
 	// consumer reads from here instead of attaching its own scroll listener.
 	useBindTimelineViewport({ scrollRef: tracksScrollRef });
-	const { viewportWidth: tracksViewportWidth } = useQuantizedTimelineViewport();
+	// Width only: subscribing to the quantized window here re-rendered the whole
+	// timeline every time a scroll crossed a 256px bucket (playback auto-scroll,
+	// panning). The windowed children subscribe to it themselves.
+	const tracksViewportWidth = useTimelineViewportWidth();
 
 	const handleSnapPointChange = useCallback((snapPoint: SnapPoint | null) => {
 		setCurrentSnapPoint(snapPoint);
@@ -249,6 +257,14 @@ export function Timeline() {
 		tracksScrollRef,
 		rulerScrollRef,
 	});
+	// Clips are laid out at a *deferred* zoom. During a zoom gesture the urgent
+	// render only touches the ruler, content width and per-track windowing; each
+	// track's clip layer is stretched by `scaleX(live / deferred)` (see
+	// TimelineTrackContent) so clips stay aligned with the ruler, and the full
+	// clip re-layout runs as an interruptible background render once the
+	// gesture settles. Re-laying out every clip synchronously on each wheel
+	// frame cost 80–150ms per step.
+	const deferredZoomLevel = useDeferredValue(zoomLevel);
 	const { isResizing, handleResizeStart } = useTimelineResize({
 		zoomLevel,
 		onSnapPointChange: handleSnapPointChange,
@@ -543,6 +559,7 @@ export function Timeline() {
 	const {
 		handlePlayheadMouseDown,
 		handleRulerMouseDown: handlePlayheadRulerMouseDown,
+		getLastMouseClientX: getPlayheadLastMouseClientX,
 	} = useTimelinePlayhead({
 		zoomLevel,
 		rulerRef,
@@ -680,6 +697,27 @@ export function Timeline() {
 	const timelineHeaderHeight =
 		timelineHeaderHeightValue + TIMELINE_CONTENT_TOP_PADDING_PX;
 
+	// Stable identities so the memoized children below only re-render when
+	// their data actually changes.
+	const handleToolbarZoomChange = useCallback(
+		({ zoom }: { zoom: number }) => setZoomLevel(zoom),
+		[setZoomLevel],
+	);
+	const handleTrackRowMouseDown = useCallback(
+		(event: React.MouseEvent) => {
+			handleSelectionMouseDown(event);
+			handleTracksMouseDown(event);
+		},
+		[handleSelectionMouseDown, handleTracksMouseDown],
+	);
+	const handleGutterMouseDown = useCallback(
+		(event: React.MouseEvent) => {
+			handleTracksMouseDown(event);
+			handleSelectionMouseDown(event);
+		},
+		[handleSelectionMouseDown, handleTracksMouseDown],
+	);
+
 	return (
 		<section
 			className={
@@ -691,8 +729,14 @@ export function Timeline() {
 			<TimelineToolbar
 				zoomLevel={zoomLevel}
 				minZoom={minZoomLevel}
-				setZoomLevel={({ zoom }) => setZoomLevel(zoom)}
+				setZoomLevel={handleToolbarZoomChange}
 				onAddTrack={handleAddTrack}
+			/>
+			<PlayheadScrubAutoScroll
+				getMouseClientX={getPlayheadLastMouseClientX}
+				rulerScrollRef={rulerScrollRef}
+				tracksScrollRef={tracksScrollRef}
+				contentWidth={contentWidth}
 			/>
 
 			<div className="relative flex flex-1 overflow-hidden" ref={timelineRef}>
@@ -814,31 +858,27 @@ export function Timeline() {
 								}}
 							>
 								{tracks.length > 0 && (
-									<TimelineTrackRows
-										mainTrackId={mainTrackId}
-										zoomLevel={zoomLevel}
-										dragView={dragView}
-										onResizeStart={handleResizeStart}
-										onElementMouseDown={handleElementMouseDown}
-										onElementClick={handleElementClick}
-										onTrackMouseDown={(event) => {
-											handleSelectionMouseDown(event);
-											handleTracksMouseDown(event);
-										}}
-										onTrackMouseUp={handleTracksClick}
-										shouldIgnoreClick={shouldIgnoreClick}
-										isDragOver={isDragOver}
-										dropTarget={dropTarget}
-										elementDragTargetId={elementDragTargetId}
-										highlightedTrackId={highlightedTrackId}
-									/>
+									<TimelineLiveZoomContext.Provider value={zoomLevel}>
+										<TimelineTrackRows
+											mainTrackId={mainTrackId}
+											zoomLevel={deferredZoomLevel}
+											dragView={dragView}
+											onResizeStart={handleResizeStart}
+											onElementMouseDown={handleElementMouseDown}
+											onElementClick={handleElementClick}
+											onTrackMouseDown={handleTrackRowMouseDown}
+											onTrackMouseUp={handleTracksClick}
+											shouldIgnoreClick={shouldIgnoreClick}
+											isDragOver={isDragOver}
+											dropTarget={dropTarget}
+											elementDragTargetId={elementDragTargetId}
+											highlightedTrackId={highlightedTrackId}
+										/>
+									</TimelineLiveZoomContext.Provider>
 								)}
 							</div>
 							<TimelineGutter
-								onMouseDown={(event) => {
-									handleTracksMouseDown(event);
-									handleSelectionMouseDown(event);
-								}}
+								onMouseDown={handleGutterMouseDown}
 								onClick={handleTracksClick}
 								onAddTrack={handleAddTrack}
 							/>
@@ -867,7 +907,14 @@ export function Timeline() {
 	);
 }
 
-function TrackLabelsPanel({
+function PlayheadScrubAutoScroll(
+	props: Parameters<typeof usePlayheadScrubAutoScroll>[0],
+) {
+	usePlayheadScrubAutoScroll(props);
+	return null;
+}
+
+const TrackLabelsPanel = memo(function TrackLabelsPanel({
 	trackLabelsRef,
 	trackLabelsScrollRef,
 	timelineHeaderHeight,
@@ -1142,9 +1189,9 @@ function TrackLabelsPanel({
 			/>
 		</div>
 	);
-}
+});
 
-function TimelineTrackRows({
+const TimelineTrackRows = memo(function TimelineTrackRows({
 	mainTrackId,
 	zoomLevel,
 	dragView,
@@ -1301,7 +1348,7 @@ function TimelineTrackRows({
 			})}
 		</>
 	);
-}
+});
 
 type TrackMenuItemComponent = React.ComponentType<{
 	children: ReactNode;
@@ -1505,7 +1552,7 @@ function TrackOptionsMenu(props: TrackMenuProps) {
 	);
 }
 
-function TimelineGutter({
+const TimelineGutter = memo(function TimelineGutter({
 	onMouseDown,
 	onClick,
 	onAddTrack,
@@ -1554,7 +1601,7 @@ function TimelineGutter({
 			</ContextMenuContent>
 		</ContextMenu>
 	);
-}
+});
 
 function TrackToggleIcon({
 	isOff,

@@ -211,19 +211,33 @@ impl EffectPipeline {
         &self,
         context: &GpuContext,
         encoder: &mut wgpu::CommandEncoder,
+        options: ApplyEffectsOptions<'_>,
+    ) -> Result<wgpu::Texture, EffectsError> {
+        self.apply_with_encoder_using(context, encoder, options, &mut |width, height| {
+            context.create_render_texture(width, height, "effects-pass-output")
+        })
+    }
+
+    /// Same as [`Self::apply_with_encoder`], but pass outputs come from
+    /// `acquire_output` so a per-frame caller can hand out pooled textures
+    /// instead of allocating a full-frame texture for every pass of every frame.
+    pub fn apply_with_encoder_using(
+        &self,
+        context: &GpuContext,
+        encoder: &mut wgpu::CommandEncoder,
         ApplyEffectsOptions {
             source,
             width,
             height,
             passes,
         }: ApplyEffectsOptions<'_>,
+        acquire_output: &mut dyn FnMut(u32, u32) -> wgpu::Texture,
     ) -> Result<wgpu::Texture, EffectsError> {
         let mut current_texture: Option<wgpu::Texture> = None;
 
         for pass in passes {
             let input_texture = current_texture.as_ref().unwrap_or(source);
-            let output_texture =
-                context.create_render_texture(width, height, "effects-pass-output");
+            let output_texture = acquire_output(width, height);
             let input_view = input_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let texture_bind_group =

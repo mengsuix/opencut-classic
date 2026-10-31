@@ -150,6 +150,15 @@ function PreviewCanvas({
 		null,
 	);
 	const renderRef = useRef<(() => void) | null>(null);
+	// Set when a seek render finished with decode cancellation on: the follow-up
+	// pass only has to re-run resolve with prefetch enabled. The frame it would
+	// present is identical (decoded frames are exact either way), so presenting
+	// it again was a wasted upload + composite + present on every seek.
+	const prefetchPassRef = useRef<{
+		frame: number;
+		seekRevision: number;
+		renderTree: RootNode;
+	} | null>(null);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -228,6 +237,13 @@ function PreviewCanvas({
 		}
 
 		const controller = new AbortController();
+		const prefetchPass = prefetchPassRef.current;
+		prefetchPassRef.current = null;
+		const isPrefetchOnly =
+			prefetchPass !== null &&
+			prefetchPass.frame === frame &&
+			prefetchPass.seekRevision === seekRevision &&
+			prefetchPass.renderTree === renderTree;
 		// Any render that is behind the latest seek drops prefetching and
 		// cancels pending decodes, so the seek target frame gets decoded first.
 		const cancelVideoDecode =
@@ -239,7 +255,7 @@ function PreviewCanvas({
 				time: renderTime,
 				signal: controller.signal,
 				cancelVideoDecode,
-				shouldRender: () => !controller.signal.aborted,
+				shouldRender: () => !controller.signal.aborted && !isPrefetchOnly,
 			})
 			.then(() => {
 				const isStale =
@@ -283,6 +299,7 @@ function PreviewCanvas({
 				if (seekRevision !== seekRevisionRef.current) {
 					queueMicrotask(() => renderRef.current?.());
 				} else if (cancelVideoDecode && !editor.playback.getIsScrubbing()) {
+					prefetchPassRef.current = { frame, seekRevision, renderTree };
 					lastFrameRef.current = -1;
 					queueMicrotask(() => renderRef.current?.());
 				}

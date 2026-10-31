@@ -618,12 +618,14 @@ export class ProjectManager {
 
 	setTimelineViewState({ viewState }: { viewState: TTimelineViewState }): void {
 		if (!this.active) return;
-		this.active = {
-			...this.active,
-			timelineViewState: viewState ?? undefined,
-		};
+		// Updated in place and without notifying, on purpose. The view state is
+		// persistence-only (nothing renders from it reactively) and zoom /
+		// scroll / seek write it at interaction rate. Replacing `active` made
+		// every `useEditor((e) => e.project.getActive())` consumer (header,
+		// assets panel, export…) re-render on the next unrelated notification —
+		// a ~60ms commit on every timeline click; notifying did it immediately.
+		this.active.timelineViewState = viewState ?? undefined;
 		this.editor.save.markDirty();
-		this.notify();
 	}
 
 	getHtmlPresets(): HtmlPreset[] {

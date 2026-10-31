@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useEditor } from "@/editor/use-editor";
 import { registerCanceller } from "@/editor/cancel-interaction";
 import { useElementSelection } from "@/timeline/hooks/element/use-element-selection";
@@ -75,7 +75,7 @@ export const ADDABLE_TRACK_TYPES = [
 
 export type AddableTrackType = (typeof ADDABLE_TRACK_TYPES)[number]["type"];
 
-export function TimelineToolbar({
+export const TimelineToolbar = memo(function TimelineToolbar({
 	zoomLevel,
 	minZoom,
 	setZoomLevel,
@@ -110,9 +110,11 @@ export function TimelineToolbar({
 			</div>
 		</ScrollArea>
 	);
-}
+});
 
-function ToolbarLeftSection({
+// Neither section depends on zoom; memoized so a zoom step (which re-renders
+// the toolbar for the slider) doesn't re-render dozens of tooltip/popover roots.
+const ToolbarLeftSection = memo(function ToolbarLeftSection({
 	onAddTrack,
 }: {
 	onAddTrack: (type: AddableTrackType) => void;
@@ -350,18 +352,21 @@ function ToolbarLeftSection({
 			</TooltipProvider>
 		</div>
 	);
-}
+});
 
-function SceneSelector() {
+const SceneSelector = memo(function SceneSelector() {
 	const t = useT();
-	const editor = useEditor();
-	const currentScene = editor.scenes.getActiveScene();
+	// Subscribed explicitly: this component is memoized, so it can no longer
+	// rely on a parent re-render to pick up a scene switch or rename.
+	const currentSceneName = useEditor(
+		(e) => e.scenes.getActiveSceneOrNull()?.name,
+	);
 
 	return (
 		<div>
 			<SplitButton className="border-foreground/10 border">
 				<SplitButtonLeft>
-					{currentScene?.name || t("timeline.noScene")}
+					{currentSceneName || t("timeline.noScene")}
 				</SplitButtonLeft>
 				<SplitButtonSeparator />
 				<ScenesView>
@@ -375,7 +380,7 @@ function SceneSelector() {
 			</SplitButton>
 		</div>
 	);
-}
+});
 
 function ToolbarRightSection({
 	zoomLevel,

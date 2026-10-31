@@ -124,6 +124,15 @@ pub fn upload_texture(options: JsValue) -> Result<(), JsValue> {
                 ));
             };
 
+            // Video layers re-upload the same slot every frame; overwrite the
+            // existing texture in place instead of allocating a new one.
+            if let Some(texture) = runtime.compositor.reusable_texture(&id, width, height) {
+                gpu_runtime
+                    .context
+                    .write_offscreen_canvas_to_texture(&source, &texture, width, height);
+                return Ok(());
+            }
+
             let texture = import_canvas_texture(
                 &gpu_runtime.context,
                 &source,
