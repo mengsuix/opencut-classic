@@ -7,6 +7,7 @@
 - DELETE /sessions/{id}                 — 关闭会话（新建对话前端先删旧会话）
 """
 
+import asyncio
 import time
 import uuid
 
@@ -19,6 +20,16 @@ from ..agent_service import agent_service
 from ..auth import bearer_token, resolve_user_id
 
 router = APIRouter()
+
+# 断流打断的后台 task 强引用（asyncio 只持弱引用，不保存会被 GC 提前回收）
+_background_tasks: set[asyncio.Task] = set()
+
+
+async def _interrupt_quietly(session_id: str) -> None:
+    try:
+        await agent_service.interrupt_session(session_id)
+    except Exception:
+        pass
 
 
 class OpenSessionRequest(BaseModel):
@@ -167,12 +178,13 @@ async def send_message_stream(
                 pass
             # 断流即打断：前端关面板/刷新时编辑器 WS 一并断开，后台继续跑只会空转，
             # 且用户重开面板后会在看不到过程的情况下继续改工程。
-            # 打断前已产出的回复由消息泵落库，历史不丢
+            # 打断前已产出的回复由消息泵落库，历史不丢。
+            # 必须放进独立 task：断流时 Starlette 取消本流（anyio 取消域），
+            # 在 finally 里直接 await 会在向 CLI 写控制请求前就被取消，打断发不出去
             if not completed:
-                try:
-                    await agent_service.interrupt_session(session_id)
-                except Exception:
-                    pass
+                task = asyncio.create_task(_interrupt_quietly(session_id))
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
 
     return StreamingResponse(
         event_generator(),

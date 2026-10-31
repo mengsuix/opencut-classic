@@ -488,9 +488,11 @@ def build_editor_mcp_server(session_id: str):
         "是浏览器本地 blob URL，渲染机访问不了，必须走本工具。窗口已预先切好，返回的 "
         "URL 不需要 #t= 片段；它恰好播放请求的窗口。start/end 用素材"
         "自身时间轴的秒数（从时间线坐标经元素的 timeRange + 素材源偏移换算）。窗口保持 "
-        "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。烘焙产物无声"
-        "（渲染管线不支持音频）：HTML 里 <video> 保持 muted、不要加 <audio>；产物嵌回"
-        "原轨道原位（落位做法见系统提示「转场 / 切换」），会替换掉该窗口的原声。",
+        "≤1.5s（转场的前后两半各一段），以限制烘焙 HTML 的帧缓存内存。音频看返回的 "
+        "hasAudio：true 表示窗口段带原音轨（Opus），烘焙片段要嵌回原位替换时间线区段时，"
+        "HTML 里 <video> 保持 muted、另加一个同 src 的 <audio data-start data-duration> "
+        "接上原声；false 表示源素材无声，不要加 <audio>（渲染机会拒收无音轨的 audio）。"
+        "产物落位做法见系统提示「转场 / 切换」。",
         {
             "type": "object",
             "properties": {
@@ -543,7 +545,7 @@ def build_editor_mcp_server(session_id: str):
         return _text(
             {
                 k: (result or {}).get(k)
-                for k in ("id", "url", "duration", "width", "uploadedBytes")
+                for k in ("id", "url", "duration", "width", "uploadedBytes", "hasAudio")
             }
         )
 
@@ -588,7 +590,7 @@ def build_editor_mcp_server(session_id: str):
         "绝不调 play/pause/seek、也绝不自己把帧预解码进离屏 canvas；渲染机提取真实帧"
         "并合成。每个 video 包一层不带时间的 wrapper 做运动（lint 拒绝带时间的 video "
         "嵌在带时间的祖先里；已实测的交叉淡化配方见系统提示「HTML 特效写作规范」的「视频帧源」一节）。"
-        "渲染出的烘焙片段是不透明满幅画面且无声：必须嵌回原轨道原位（落位做法见系统提示"
+        "渲染出的烘焙片段是不透明满幅画面：必须嵌回原轨道原位（落位做法见系统提示"
         "「转场 / 切换」），不要放叠加轨道盖住。",
         {
             "type": "object",

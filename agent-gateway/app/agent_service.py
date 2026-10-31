@@ -442,20 +442,32 @@ class AgentService:
 
         客户端断流后仍继续消费：本轮剩余消息会堆积在队列里，
         由下一轮开始前的 _discard_pending_messages 统一丢弃。
-        同时负责回合文本落库（ResultMessage 时写入完整回复，
-        泵退出前兜底写入残稿），避免断流/异常回合丢失历史。
+        同时负责回复文本落库：按与前端实时展示相同的边界分段——遇到工具调用/思考块
+        就把之前的文字落成一条消息（前端在 tool_use/thinking 事件时同样切段），
+        回合结束落最后一段，泵退出前兜底写入残稿，避免断流/异常回合丢失历史。
         """
         state = self._sessions.get(session_id)
         if not state or not state.client:
             return
         turn_text: list[str] = []
         saw_delta = False
+
+        async def flush_segment() -> None:
+            nonlocal turn_text
+            text = "".join(turn_text)
+            turn_text = []
+            await self._persist_turn(session_id, text)
+
         try:
             async for msg in state.client.receive_messages():
                 if isinstance(msg, SDKStreamEvent):
                     event = msg.event or {}
                     delta = event.get("delta") or {}
-                    if event.get("type") == "content_block_delta":
+                    if event.get("type") == "content_block_start":
+                        block_type = (event.get("content_block") or {}).get("type")
+                        if block_type and block_type != "text":
+                            await flush_segment()
+                    elif event.get("type") == "content_block_delta":
                         if delta.get("type") == "text_delta":
                             text = delta.get("text") or ""
                             if text:
@@ -466,14 +478,16 @@ class AgentService:
                 elif isinstance(msg, AssistantMessage):
                     for block in msg.content:
                         # 与 SSE 生成器同口径：有增量文本时跳过完整消息块，避免重复
-                        if isinstance(block, TextBlock) and not saw_delta:
-                            turn_text.append(block.text)
+                        if isinstance(block, TextBlock):
+                            if not saw_delta:
+                                turn_text.append(block.text)
+                        elif isinstance(block, (ToolUseBlock, ThinkingBlock)):
+                            await flush_segment()
                 # 先入队再清 turn_open：保证残留清理看到 turn_open=False 时 Result 已在队列里
                 await state.messages.put(msg)
                 if isinstance(msg, ResultMessage):
                     state.turn_open = False
-                    await self._persist_turn(session_id, "".join(turn_text))
-                    turn_text = []
+                    await flush_segment()
                     saw_delta = False
         except asyncio.CancelledError:
             raise
@@ -481,7 +495,7 @@ class AgentService:
             logger.warning(f"[Agent] [{session_id[:8]}] 消息泵退出: {type(e).__name__}: {e}")
         finally:
             # 泵退出兜底：进程崩溃/会话关闭时写入残稿，保证已产生的回复不丢
-            await self._persist_turn(session_id, "".join(turn_text))
+            await flush_segment()
             state.pump_task = None
             state.turn_open = False
             try:
