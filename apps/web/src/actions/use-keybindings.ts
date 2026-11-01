@@ -50,6 +50,9 @@ export function useKeybindingsListener() {
 			if (!boundAction) return;
 
 			if (isTextInput) return;
+			if (boundAction === "copy-selected" && window.getSelection()?.toString()) {
+				return;
+			}
 			if (boundAction === "paste-copied") {
 				if (!editor.clipboard.hasEntry()) return;
 				ev.preventDefault();

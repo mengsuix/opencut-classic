@@ -358,9 +358,10 @@ const SceneSelector = memo(function SceneSelector() {
 	const t = useT();
 	// Subscribed explicitly: this component is memoized, so it can no longer
 	// rely on a parent re-render to pick up a scene switch or rename.
-	const currentSceneName = useEditor(
-		(e) => e.scenes.getActiveSceneOrNull()?.name,
-	);
+	const currentSceneName = useEditor((e) => {
+		const scene = e.scenes.getActiveSceneOrNull();
+		return scene?.isMain ? t("timeline.mainScene") : scene?.name;
+	});
 
 	return (
 		<div>

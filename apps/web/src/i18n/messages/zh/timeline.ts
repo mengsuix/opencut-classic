@@ -112,7 +112,7 @@ export const timeline = {
 	"timeline.propertyBgOffsetX": "背景横向偏移",
 	"timeline.propertyBgOffsetY": "背景纵向偏移",
 	"timeline.propertyCornerRadius": "圆角半径",
-	"timeline.mainScene": "主场景",
+	"timeline.mainScene": "场景一",
 	"timeline.cannotDeleteMainScene": "无法删除主场景",
 	"timeline.mainTrack": "主轨道",
 	"timeline.trackOptions": "轨道操作",

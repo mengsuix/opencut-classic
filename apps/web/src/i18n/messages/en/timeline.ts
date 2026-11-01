@@ -124,7 +124,7 @@ export const timeline = {
 	"timeline.propertyBgOffsetX": "BG Offset X",
 	"timeline.propertyBgOffsetY": "BG Offset Y",
 	"timeline.propertyCornerRadius": "Corner Radius",
-	"timeline.mainScene": "Main scene",
+	"timeline.mainScene": "Scene 1",
 	"timeline.cannotDeleteMainScene": "Cannot delete main scene",
 	"timeline.mainTrack": "Main Track",
 	"timeline.trackOptions": "Track options",

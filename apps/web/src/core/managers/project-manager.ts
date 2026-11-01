@@ -85,7 +85,10 @@ export class ProjectManager {
 	}
 
 	async createNewProject({ name }: { name: string }): Promise<string> {
-		const mainScene = buildDefaultScene({ name: "Main scene", isMain: true });
+		const mainScene = buildDefaultScene({
+			name: t("timeline.mainScene"),
+			isMain: true,
+		});
 		const newProject: TProject = {
 			metadata: {
 				id: generateUUID(),

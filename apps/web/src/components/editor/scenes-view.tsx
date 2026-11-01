@@ -9,7 +9,7 @@ import {
 	SheetTrigger,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Check, ListCheck, Trash2 } from "lucide-react";
+import { Check, ListCheck, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/utils/ui";
 import { useState } from "react";
 import {
@@ -24,7 +24,31 @@ import {
 import { canDeleteScene, getMainScene } from "@/timeline/scenes";
 import { toast } from "sonner";
 import { useEditor } from "@/editor/use-editor";
-import { useT } from "@/i18n";
+import { getLocale, useT } from "@/i18n";
+
+function toChineseNumeral(value: number): string {
+	const digits = "零一二三四五六七八九";
+	const units = ["", "十", "百", "千"];
+	if (value >= 10000) return String(value);
+
+	const numbers = String(value).split("").map(Number);
+	let result = "";
+	let pendingZero = false;
+	for (const [index, digit] of numbers.entries()) {
+		const unit = units[numbers.length - index - 1];
+		if (digit === 0) {
+			pendingZero = result.length > 0;
+			continue;
+		}
+		if (pendingZero) result += "零";
+		if (digit !== 1 || unit !== "十" || result.length > 0) {
+			result += digits[digit];
+		}
+		result += unit;
+		pendingZero = false;
+	}
+	return result;
+}
 
 export function ScenesView({ children }: { children: React.ReactNode }) {
 	const t = useT();
@@ -62,6 +86,22 @@ export function ScenesView({ children }: { children: React.ReactNode }) {
 	const handleSelectMode = () => {
 		setIsSelectMode(!isSelectMode);
 		setSelectedScenes(new Set());
+	};
+
+	const handleCreateScene = async () => {
+		try {
+			const count = scenes.length + 1;
+			const sceneId = await editor.scenes.createScene({
+				name: t("scenes.newName", {
+					count: getLocale() === "zh" ? toChineseNumeral(count) : count,
+				}),
+				isMain: false,
+			});
+			await editor.scenes.switchToScene({ sceneId });
+		} catch (error) {
+			console.error("Failed to create scene:", error);
+			toast.error(t("scenes.createFailed"));
+		}
 	};
 
 	const handleDeleteSelected = async () => {
@@ -112,6 +152,16 @@ export function ScenesView({ children }: { children: React.ReactNode }) {
 					<div className="flex items-center gap-2">
 						<Button
 							className="rounded-md"
+							variant="outline"
+							size="sm"
+							onClick={handleCreateScene}
+							disabled={isSelectMode}
+						>
+							<Plus />
+							{t("scenes.create")}
+						</Button>
+						<Button
+							className="rounded-md"
 							variant={isSelectMode ? "default" : "outline"}
 							size="sm"
 							onClick={handleSelectMode}
@@ -123,12 +173,12 @@ export function ScenesView({ children }: { children: React.ReactNode }) {
 							<DeleteDialog
 								count={selectedScenes.size}
 								onDelete={handleDeleteSelected}
-								disabled={isMainSceneSelected}
+								disabled={selectedScenes.size === 0 || isMainSceneSelected}
 								trigger={
 									<Button
 										className="rounded-md"
 										variant="destructive"
-										disabled={isMainSceneSelected}
+										disabled={selectedScenes.size === 0 || isMainSceneSelected}
 										size="sm"
 									>
 										<Trash2 />
@@ -158,8 +208,11 @@ export function ScenesView({ children }: { children: React.ReactNode }) {
 											"bg-accent border-foreground/30",
 									)}
 									onClick={() => handleSceneSwitch(scene.id)}
+									disabled={isSelectMode && scene.isMain}
 								>
-									<span>{scene.name}</span>
+									<span>
+										{scene.isMain ? t("timeline.mainScene") : scene.name}
+									</span>
 									<div className="flex items-center gap-2">
 										{((isSelectMode && selectedScenes.has(scene.id)) ||
 											(!isSelectMode && currentScene?.id === scene.id)) && (
