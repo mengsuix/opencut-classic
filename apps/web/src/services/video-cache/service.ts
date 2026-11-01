@@ -20,6 +20,45 @@ interface VideoSinkData {
 	prefetchRequestId: symbol | null;
 }
 
+interface VideoCachePerfSpan {
+	mediaId: string;
+	targetTime: number;
+	startedAt: number;
+	totalMs?: number;
+	queueMs?: number;
+	resolveMs?: number;
+	prefetchWaitMs?: number;
+	iteratorCloseMs?: number;
+	canvasesMs?: number;
+	firstFrameMs?: number;
+	iterateMs?: number;
+	path?: "current" | "iterate" | "seek";
+	aborted?: boolean;
+}
+
+declare global {
+	interface Window {
+		__videoCacheSpans?: VideoCachePerfSpan[];
+	}
+}
+
+function createPerfSpan({
+	mediaId,
+	time,
+}: {
+	mediaId: string;
+	time: number;
+}): VideoCachePerfSpan | null {
+	if (
+		process.env.NODE_ENV === "production" ||
+		typeof window === "undefined" ||
+		!window.__videoCacheSpans
+	) {
+		return null;
+	}
+	return { mediaId, targetTime: time, startedAt: performance.now() };
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
 	if (!signal?.aborted) return;
 	throw signal.reason ?? new DOMException("Video seek aborted", "AbortError");
@@ -45,6 +84,7 @@ export class VideoCache {
 		prefetch?: boolean;
 		requestId: symbol;
 	}): Promise<WrappedCanvas | null> {
+		const perf = createPerfSpan({ mediaId, time });
 		await this.ensureSink({ mediaId, file });
 		throwIfAborted(signal);
 
@@ -70,11 +110,13 @@ export class VideoCache {
 
 		const previous = this.frameChain.get(mediaId) ?? Promise.resolve();
 		const current = previous.then(async () => {
+			if (perf) perf.queueMs = performance.now() - perf.startedAt;
 			throwIfAborted(signal);
 			if (sinkData.latestRequestId !== requestId) {
 				return sinkData.currentFrame ?? null;
 			}
 			sinkData.activeRequestId = requestId;
+			const resolveStartedAt = performance.now();
 			try {
 				const frame = await this.resolveFrame({
 					sinkData,
@@ -82,9 +124,11 @@ export class VideoCache {
 					signal,
 					prefetch,
 					requestId,
+					perf,
 				});
 				return sinkData.latestRequestId === requestId ? frame : null;
 			} finally {
+				if (perf) perf.resolveMs = performance.now() - resolveStartedAt;
 				if (sinkData.activeRequestId === requestId) {
 					sinkData.activeRequestId = null;
 				}
@@ -99,6 +143,11 @@ export class VideoCache {
 			return await current;
 		} finally {
 			signal?.removeEventListener("abort", cancelPendingDecode);
+			if (perf && window.__videoCacheSpans) {
+				perf.totalMs = performance.now() - perf.startedAt;
+				perf.aborted = signal?.aborted;
+				window.__videoCacheSpans.push(perf);
+			}
 		}
 	}
 
@@ -108,12 +157,14 @@ export class VideoCache {
 		signal,
 		prefetch,
 		requestId,
+		perf,
 	}: {
 		sinkData: VideoSinkData;
 		time: number;
 		signal?: AbortSignal;
 		prefetch: boolean;
 		requestId: symbol;
+		perf: VideoCachePerfSpan | null;
 	}): Promise<WrappedCanvas | null> {
 		throwIfAborted(signal);
 		if (sinkData.latestRequestId !== requestId) {
@@ -129,6 +180,7 @@ export class VideoCache {
 			sinkData.currentFrame &&
 			this.isFrameValid({ frame: sinkData.currentFrame, time })
 		) {
+			if (perf) perf.path = "current";
 			if (prefetch && !sinkData.nextFrame && !sinkData.prefetching) {
 				this.startPrefetch({ sinkData, requestId });
 			}
@@ -141,12 +193,15 @@ export class VideoCache {
 			time >= sinkData.lastTime &&
 			time < sinkData.lastTime + 2.0
 		) {
+			if (perf) perf.path = "iterate";
+			const iterateStartedAt = performance.now();
 			const frame = await this.iterateToTime({
 				sinkData,
 				targetTime: time,
 				signal,
 				requestId,
 			});
+			if (perf) perf.iterateMs = performance.now() - iterateStartedAt;
 			if (sinkData.latestRequestId !== requestId) {
 				return null;
 			}
@@ -158,7 +213,7 @@ export class VideoCache {
 			}
 		}
 
-		return this.seekToTime({ sinkData, time, signal, requestId });
+		return this.seekToTime({ sinkData, time, signal, requestId, perf });
 	}
 
 	private isFrameValid({
@@ -237,37 +292,48 @@ export class VideoCache {
 		time,
 		signal,
 		requestId,
+		perf,
 	}: {
 		sinkData: VideoSinkData;
 		time: number;
 		signal?: AbortSignal;
 		requestId: symbol;
+		perf: VideoCachePerfSpan | null;
 	}): Promise<WrappedCanvas | null> {
 		try {
+			if (perf) perf.path = "seek";
 			throwIfAborted(signal);
 			if (sinkData.latestRequestId !== requestId) return null;
 			if (sinkData.prefetching && sinkData.prefetchPromise) {
+				const waitStartedAt = performance.now();
 				await sinkData.prefetchPromise;
+				if (perf) perf.prefetchWaitMs = performance.now() - waitStartedAt;
 				throwIfAborted(signal);
 				if (sinkData.latestRequestId !== requestId) return null;
 			}
 
 			if (sinkData.iterator) {
+				const closeStartedAt = performance.now();
 				await sinkData.iterator.return();
+				if (perf) perf.iteratorCloseMs = performance.now() - closeStartedAt;
 				throwIfAborted(signal);
 				if (sinkData.latestRequestId !== requestId) return null;
 				sinkData.iterator = null;
 			}
 
 			sinkData.nextFrame = null;
+			const canvasesStartedAt = performance.now();
 			sinkData.iterator = sinkData.sink.canvases(time);
+			if (perf) perf.canvasesMs = performance.now() - canvasesStartedAt;
 			sinkData.lastTime = time;
 			sinkData.prefetchRequestId = null;
 
 			// Fetch current frame
 			const iterator = sinkData.iterator;
 			if (!iterator) return null;
+			const firstFrameStartedAt = performance.now();
 			const { value: frame } = await iterator.next();
+			if (perf) perf.firstFrameMs = performance.now() - firstFrameStartedAt;
 			throwIfAborted(signal);
 			if (sinkData.latestRequestId !== requestId) return null;
 

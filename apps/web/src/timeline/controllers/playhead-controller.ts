@@ -102,6 +102,8 @@ function pixelToTime({
 
 export class PlayheadController {
 	private lastMouseClientX = 0;
+	private pendingScrubEvent: MouseEvent | null = null;
+	private scrubRafId: number | null = null;
 
 	private session: Session = { kind: "idle" };
 	private readonly configRef: PlayheadConfigRef;
@@ -243,6 +245,27 @@ export class PlayheadController {
 	private deactivate(): void {
 		window.removeEventListener("mousemove", this.handleMouseMove);
 		window.removeEventListener("mouseup", this.handleMouseUp);
+		this.cancelPendingScrub();
+	}
+
+	private cancelPendingScrub(): void {
+		if (this.scrubRafId !== null) {
+			cancelAnimationFrame(this.scrubRafId);
+			this.scrubRafId = null;
+		}
+		this.pendingScrubEvent = null;
+	}
+
+	private flushPendingScrub(): void {
+		if (this.scrubRafId !== null) {
+			cancelAnimationFrame(this.scrubRafId);
+			this.scrubRafId = null;
+		}
+		const event = this.pendingScrubEvent;
+		this.pendingScrubEvent = null;
+		if (event && this.session.kind === "scrubbing") {
+			this.scrub({ event, isElementSnappingEnabled: true });
+		}
 	}
 
 	private buildSnapPoints(): SnapPoint[] {
@@ -304,6 +327,13 @@ export class PlayheadController {
 			return result.snapPoint ? result.snappedTime : frameTime;
 		})();
 
+		if (
+			this.session.kind === "scrubbing" &&
+			this.session.currentTime === time
+		) {
+			this.lastMouseClientX = event.clientX;
+			return;
+		}
 		if (this.session.kind === "scrubbing") {
 			this.session.currentTime = time;
 		}
@@ -313,13 +343,23 @@ export class PlayheadController {
 
 	private handleMouseMove(event: MouseEvent): void {
 		if (this.session.kind !== "scrubbing") return;
-		this.scrub({ event, isElementSnappingEnabled: true });
+		this.pendingScrubEvent = event;
+		if (this.scrubRafId !== null) return;
+		this.scrubRafId = requestAnimationFrame(() => {
+			this.scrubRafId = null;
+			const pendingEvent = this.pendingScrubEvent;
+			this.pendingScrubEvent = null;
+			if (pendingEvent && this.session.kind === "scrubbing") {
+				this.scrub({ event: pendingEvent, isElementSnappingEnabled: true });
+			}
+		});
 	}
 
 	private handleMouseUp(event: MouseEvent): void {
 		if (this.session.kind !== "scrubbing") return;
 
 		const session = this.session;
+		this.flushPendingScrub();
 		this.config.setScrubbing(false);
 
 		// Keep the release-position behavior without issuing a duplicate seek when
