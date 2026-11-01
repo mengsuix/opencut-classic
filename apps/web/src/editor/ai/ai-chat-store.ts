@@ -18,13 +18,57 @@ export interface AiChatMessage {
 	timestamp: number;
 }
 
-/** 用户从素材面板引用的素材，发送时拼进消息文本 */
-export interface AiChatReference {
-	id: string;
+interface AiChatReferenceBase {
+	/** 会话内稳定且不复用的引用标识，同时作为用户可见编号。 */
+	refId: string;
 	name: string;
+}
+
+export interface MediaChatReference extends AiChatReferenceBase {
+	kind: "media";
+	mediaId: string;
 	type: string;
 	duration?: number | null;
 }
+
+export interface ElementChatReference extends AiChatReferenceBase {
+	kind: "element";
+	trackId: string;
+	elementId: string;
+	trackType: string;
+	type: string | null;
+	startTime: number;
+	duration: number;
+	mediaId?: string;
+	text?: string;
+}
+
+export interface CanvasChatReference extends AiChatReferenceBase {
+	kind: "canvas";
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+	time: number;
+}
+
+export interface TimeRangeChatReference extends AiChatReferenceBase {
+	kind: "time-range";
+	startTime: number;
+	endTime: number;
+}
+
+export type AiChatReference =
+	| MediaChatReference
+	| ElementChatReference
+	| CanvasChatReference
+	| TimeRangeChatReference;
+
+export type AiChatReferenceInput =
+	| Omit<MediaChatReference, "refId">
+	| Omit<ElementChatReference, "refId">
+	| Omit<CanvasChatReference, "refId">
+	| Omit<TimeRangeChatReference, "refId">;
 
 interface AiChatState {
 	isOpen: boolean;
@@ -41,8 +85,9 @@ interface AiChatState {
 
 	togglePanel: ({ projectId }: { projectId: string }) => void;
 	setInput: ({ value }: { value: string }) => void;
-	addReference: ({ reference }: { reference: AiChatReference }) => void;
-	removeReference: ({ id }: { id: string }) => void;
+	addReference: ({ reference }: { reference: AiChatReferenceInput }) => void;
+	removeReference: ({ refId }: { refId: string }) => void;
+	clearReferences: (options?: { resetNumbering?: boolean }) => void;
 	sendMessage: () => Promise<void>;
 	abort: () => void;
 	newSession: ({ projectId }: { projectId: string }) => void;
@@ -56,27 +101,89 @@ function nowSeconds(): number {
 	return Date.now() / 1000;
 }
 
-function formatReferenceLine({
-	reference,
-	index,
-}: {
-	reference: AiChatReference;
-	index: number;
-}): string {
-	const parts = [`「${reference.name}」`, reference.type];
-	if (reference.duration != null) {
-		parts.push(`${Math.round(reference.duration * 10) / 10}s`);
-	}
-	parts.push(`id:${reference.id}`);
-	return `${index + 1}. ${parts.join(" ")}`;
+const REFERENCE_PREFIXES: Record<AiChatReference["kind"], string> = {
+	media: "M",
+	element: "E",
+	canvas: "C",
+	"time-range": "T",
+};
+
+const nextReferenceNumbers: Record<AiChatReference["kind"], number> = {
+	media: 1,
+	element: 1,
+	canvas: 1,
+	"time-range": 1,
+};
+
+function resetReferenceNumbering() {
+	nextReferenceNumbers.media = 1;
+	nextReferenceNumbers.element = 1;
+	nextReferenceNumbers.canvas = 1;
+	nextReferenceNumbers["time-range"] = 1;
 }
 
-/** 引用块拼在用户消息开头；语义与查看方式由 system prompt 规则 12 承载，此处只留数据 */
-function buildReferencesBlock(references: AiChatReference[]): string {
-	const lines = references.map((reference, index) =>
-		formatReferenceLine({ reference, index }),
-	);
-	return ["我引用的素材：", ...lines].join("\n");
+/** 页面刷新恢复同一会话时，沿用历史消息中的最大编号，避免重复指代。 */
+function retainReferenceNumbering(contents: string[]) {
+	for (const content of contents) {
+		for (const match of content.matchAll(/^\[([MECT])(\d+)\]/gm)) {
+			const kind =
+				match[1] === "M"
+					? "media"
+					: match[1] === "E"
+						? "element"
+						: match[1] === "C"
+							? "canvas"
+							: "time-range";
+			nextReferenceNumbers[kind] = Math.max(
+				nextReferenceNumbers[kind],
+				Number(match[2]) + 1,
+			);
+		}
+	}
+}
+
+function formatSeconds(value: number): string {
+	return `${Number(value.toFixed(3))}s`;
+}
+
+function formatReferenceLine(reference: AiChatReference): string {
+	const name = reference.name.replace(/\s+/g, " ");
+	switch (reference.kind) {
+		case "media":
+			return [
+				`[${reference.refId}] 素材「${name}」`,
+				`type=${reference.type}`,
+				reference.duration != null
+					? `duration=${formatSeconds(reference.duration)}`
+					: null,
+				`mediaId=${reference.mediaId}`,
+			]
+				.filter(Boolean)
+				.join(" ");
+		case "element":
+			return [
+				`[${reference.refId}] 时间线元素「${name}」`,
+				`type=${reference.type ?? "unknown"}`,
+				`trackId=${reference.trackId}`,
+				`elementId=${reference.elementId}`,
+				`range=${formatSeconds(reference.startTime)}~${formatSeconds(reference.startTime + reference.duration)}`,
+				reference.mediaId ? `mediaId=${reference.mediaId}` : null,
+			]
+				.filter(Boolean)
+				.join(" ");
+		case "canvas":
+			return `[${reference.refId}] 画布区域 time=${formatSeconds(reference.time)} rect=[${[reference.left, reference.top, reference.right, reference.bottom].join(",")}]`;
+		case "time-range":
+			return `[${reference.refId}] 时间范围 start=${formatSeconds(reference.startTime)} end=${formatSeconds(reference.endTime)}`;
+	}
+}
+
+/** 引用块包含发送时的完整快照，后续选区或标记变化不会改变本轮指代。 */
+export function buildReferencesBlock(references: AiChatReference[]): string {
+	return [
+		"本次引用（编号是唯一指代，内容均为发送时快照）：",
+		...references.map(formatReferenceLine),
+	].join("\n");
 }
 
 export const useAiChatStore = create<AiChatState>()((set, get) => {
@@ -198,10 +305,14 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			streamingText: "",
 			input: "",
 			toolStatus: "",
-			references: [],
 		});
 		try {
 			const session = await openAgentSession({ projectId, forceNew });
+			retainReferenceNumbering(
+				session.history
+					.filter((message) => message.role === "user")
+					.map((message) => message.content),
+			);
 			set({
 				sessionId: session.sessionId,
 				messages: session.history.map((msg) => ({
@@ -263,22 +374,50 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 		newSession: ({ projectId }) => {
 			abortController?.abort();
 			abortController = null;
+			get().clearReferences({ resetNumbering: true });
 			void initSession({ projectId, forceNew: true });
 		},
 
 		setInput: ({ value }) => set({ input: value }),
 
 		addReference: ({ reference }) =>
-			set((state) =>
-				state.references.some((item) => item.id === reference.id)
-					? state
-					: { references: [...state.references, reference] },
-			),
+			set((state) => {
+				const existingIndex = state.references.findIndex((item) => {
+					if (item.kind !== reference.kind) return false;
+					if (reference.kind === "media" && item.kind === "media") {
+						return item.mediaId === reference.mediaId;
+					}
+					if (reference.kind === "element" && item.kind === "element") {
+						return (
+							item.trackId === reference.trackId &&
+							item.elementId === reference.elementId
+						);
+					}
+					return false;
+				});
+				if (existingIndex >= 0) {
+					const references = [...state.references];
+					references[existingIndex] = {
+						...reference,
+						refId: references[existingIndex].refId,
+					} as AiChatReference;
+					return { references };
+				}
+				const refId = `${REFERENCE_PREFIXES[reference.kind]}${nextReferenceNumbers[reference.kind]++}`;
+				return {
+					references: [...state.references, { ...reference, refId } as AiChatReference],
+				};
+			}),
 
-		removeReference: ({ id }) =>
+		removeReference: ({ refId }) =>
 			set((state) => ({
-				references: state.references.filter((item) => item.id !== id),
+				references: state.references.filter((item) => item.refId !== refId),
 			})),
+
+		clearReferences: ({ resetNumbering = false } = {}) => {
+			if (resetNumbering) resetReferenceNumbering();
+			set({ references: [] });
+		},
 
 		sendMessage: async () => {
 			const { input, sending, sessionId, references } = get();
@@ -286,7 +425,7 @@ export const useAiChatStore = create<AiChatState>()((set, get) => {
 			if (!message || sending || !sessionId) return;
 
 			const fullMessage = references.length
-				? `${buildReferencesBlock(references)}\n${message}`
+				? `${buildReferencesBlock(references)}\n\n用户指令：\n${message}`
 				: message;
 
 			pushMessage({

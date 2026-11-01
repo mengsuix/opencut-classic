@@ -2,6 +2,7 @@
 
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import { useUserMarksStore } from "@/editor/user-marks-store";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { TIMELINE_LAYERS } from "./layers";
 
 /**
@@ -15,7 +16,10 @@ import { TIMELINE_LAYERS } from "./layers";
  * rendering, which visibly split the highlight from the ruler band.
  */
 export function TimeRangeOverlay({ zoomLevel }: { zoomLevel: number }) {
-	const timeRanges = useUserMarksStore((s) => s.timeRanges);
+	const references = useAiChatStore((s) => s.references);
+	const timeRanges = references.filter(
+		(reference) => reference.kind === "time-range",
+	);
 	const draftTimeRange = useUserMarksStore((s) => s.draftTimeRange);
 
 	if (timeRanges.length === 0 && !draftTimeRange) {
@@ -24,7 +28,7 @@ export function TimeRangeOverlay({ zoomLevel }: { zoomLevel: number }) {
 
 	const pixelsPerSecond = BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
 	const bands = [
-		...timeRanges.map((range) => ({ key: String(range.id), ...range })),
+		...timeRanges.map((range) => ({ key: range.refId, ...range })),
 		...(draftTimeRange ? [{ key: "draft", ...draftTimeRange }] : []),
 	];
 

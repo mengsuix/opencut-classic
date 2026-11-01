@@ -6,9 +6,9 @@ import type { FrameRate } from "opencut-wasm";
 import { useEditor } from "@/editor/use-editor";
 import { frameRateToFloat } from "@/fps/utils";
 import {
-	useUserMarksStore,
-	type CanvasRectMark,
-} from "@/editor/user-marks-store";
+	useAiChatStore,
+	type CanvasChatReference,
+} from "@/editor/ai/ai-chat-store";
 import { useT } from "@/i18n";
 import { cn } from "@/utils/ui";
 import { usePreviewViewport } from "./preview-viewport";
@@ -58,8 +58,11 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 		(e) => e.project.getActiveOrNull()?.settings.canvasSize,
 	);
 	const fps = useEditor((e) => e.project.getActiveOrNull()?.settings.fps);
-	const canvasRects = useUserMarksStore((s) => s.canvasRects);
-	const removeCanvasRect = useUserMarksStore((s) => s.removeCanvasRect);
+	const references = useAiChatStore((s) => s.references);
+	const canvasRects = references.filter(
+		(reference) => reference.kind === "canvas",
+	);
+	const removeReference = useAiChatStore((s) => s.removeReference);
 
 	if (!canvasSize || !fps) {
 		return null;
@@ -81,8 +84,8 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 		};
 	};
 
-	const markBoxes = canvasRects.map((rect: CanvasRectMark) => ({
-		id: rect.id,
+	const markBoxes = canvasRects.map((rect: CanvasChatReference) => ({
+		id: rect.refId,
 		time: rect.time,
 		box: toOverlayBox(
 			rect.left * canvasSize.width,
@@ -145,7 +148,7 @@ export function RegionMarkOverlay({ draft }: { draft: RegionMarkDraft | null }) 
 							"bg-background text-foreground pointer-events-auto absolute top-0.5 flex size-4 cursor-pointer items-center justify-center rounded-sm border",
 							box.width >= 36 ? "right-0.5" : "-right-5",
 						)}
-						onClick={() => removeCanvasRect(id)}
+						onClick={() => removeReference({ refId: id })}
 					>
 						<HugeiconsIcon icon={Cancel01Icon} className="size-3" />
 					</button>

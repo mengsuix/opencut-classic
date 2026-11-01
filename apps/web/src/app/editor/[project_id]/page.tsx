@@ -41,16 +41,17 @@ import {
 export default function Editor() {
 	const params = useParams();
 	const projectId = params.project_id as string;
+	const activeProjectId = useEditor(
+		(e) => e.project.getActiveOrNull()?.metadata.id ?? null,
+	);
 
-	// User marks (canvas rects / time ranges) belong to the project context
-	// they were drawn in — switching projects must not carry them over.
+	// References belong to the project context — cover both route changes and project.open.
 	useEffect(() => {
+		useAiChatStore.getState().clearReferences({ resetNumbering: true });
 		const marks = useUserMarksStore.getState();
-		marks.clearCanvasRects();
-		marks.clearTimeRanges();
 		marks.setRegionMarking(false);
 		marks.setRangeMarking(false);
-	}, [projectId]);
+	}, [projectId, activeProjectId]);
 
 	return (
 		<MobileGate>

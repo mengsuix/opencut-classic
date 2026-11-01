@@ -10,6 +10,7 @@ import { RegionMarkOverlay, type RegionMarkDraft } from "./region-mark-overlay";
 import { usePropertiesStore } from "@/components/editor/panels/properties/stores/properties-store";
 import { useEditor } from "@/editor/use-editor";
 import { useUserMarksStore } from "@/editor/user-marks-store";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { mediaTimeToSeconds } from "@/wasm";
 import { clamp } from "@/utils/math";
 import { useT } from "@/i18n";
@@ -39,7 +40,7 @@ export function PreviewInteractionOverlay() {
 		: false;
 
 	const isRegionMarking = useUserMarksStore((s) => s.isRegionMarking);
-	const addCanvasRect = useUserMarksStore((s) => s.addCanvasRect);
+	const addReference = useAiChatStore((s) => s.addReference);
 	const setRegionMarking = useUserMarksStore((s) => s.setRegionMarking);
 	const canvasSize = useEditor(
 		(e) => e.project.getActiveOrNull()?.settings.canvasSize,
@@ -140,14 +141,18 @@ export function PreviewInteractionOverlay() {
 					right - left >= MIN_MARK_FRACTION &&
 					bottom - top >= MIN_MARK_FRACTION
 				) {
-					addCanvasRect({
-						left,
-						top,
-						right,
-						bottom,
-						time: mediaTimeToSeconds({
-							time: editor.playback.getCurrentTime(),
-						}),
+					addReference({
+						reference: {
+							kind: "canvas",
+							name: "画面区域",
+							left,
+							top,
+							right,
+							bottom,
+							time: mediaTimeToSeconds({
+								time: editor.playback.getCurrentTime(),
+							}),
+						},
 					});
 				}
 			}

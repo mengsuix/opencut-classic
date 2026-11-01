@@ -18,6 +18,12 @@ import {
 	type AiChatReference,
 } from "@/editor/ai/ai-chat-store";
 import { EditorCore } from "@/core";
+import { useEditor } from "@/editor/use-editor";
+import {
+	describeSelectedElements,
+	findTimelineElement,
+} from "@/editor/ai/reference-snapshot";
+import { toast } from "sonner";
 import { cn } from "@/utils/ui";
 import {
 	PlusIcon,
@@ -26,6 +32,9 @@ import {
 	Image as ImageIcon,
 	Video,
 	Music,
+	Film,
+	Scan,
+	Timer,
 	X,
 } from "lucide-react";
 
@@ -140,7 +149,7 @@ function MessageList() {
 					<p className="text-muted-foreground px-1 py-6 text-center text-xs">
 						用自然语言让我帮你剪辑，例如：
 						<br />
-						「把选中的片段从 5 秒处剪开」
+						「引用轨道片段后，把 E1 从 5 秒处剪开」
 						<br />
 						「给视频加一个字幕轨道」
 					</p>
@@ -175,27 +184,63 @@ const REFERENCE_TYPE_ICONS: Record<string, typeof ImageIcon> = {
 	audio: Music,
 };
 
+const REFERENCE_KIND_ICONS = {
+	element: Film,
+	canvas: Scan,
+	"time-range": Timer,
+};
+
 function ReferenceChips() {
+	const editor = useEditor();
+	const selectedElements = useEditor((e) => e.selection.getSelectedElements());
 	const references = useAiChatStore((s) => s.references);
 	const removeReference = useAiChatStore((s) => s.removeReference);
-	if (references.length === 0) return null;
+
+	useEffect(() => {
+		const selectedKeys = new Set(
+			selectedElements.map((ref) => `${ref.trackId}:${ref.elementId}`),
+		);
+		const store = useAiChatStore.getState();
+		for (const reference of store.references) {
+			if (
+				reference.kind === "element" &&
+				!selectedKeys.has(`${reference.trackId}:${reference.elementId}`)
+			) {
+				store.removeReference({ refId: reference.refId });
+			}
+		}
+		for (const element of describeSelectedElements(editor)) {
+			if ("error" in element) continue;
+			store.addReference({
+				reference: {
+					kind: "element",
+					...element,
+					name: element.name ?? element.elementId,
+				},
+			});
+		}
+	}, [editor, selectedElements]);
 
 	return (
-		<div className="flex flex-wrap gap-1 pb-2">
+		<div className="flex flex-wrap items-center gap-1 pb-2">
 			{references.map((reference: AiChatReference) => {
-				const Icon = REFERENCE_TYPE_ICONS[reference.type] ?? ImageIcon;
+				const Icon =
+					reference.kind === "media"
+						? (REFERENCE_TYPE_ICONS[reference.type] ?? ImageIcon)
+						: REFERENCE_KIND_ICONS[reference.kind];
 				return (
 					<span
-						key={reference.id}
-						className="bg-muted flex max-w-32 items-center gap-1 rounded px-1.5 py-0.5 text-xs"
-						title={reference.name}
+						key={reference.refId}
+						className="bg-muted flex max-w-40 items-center gap-1 rounded px-1.5 py-0.5 text-xs"
+						title={`${reference.refId} ${reference.name}`}
 					>
 						<Icon className="size-3 shrink-0" />
+						<span className="shrink-0 font-medium">[{reference.refId}]</span>
 						<span className="truncate">{reference.name}</span>
 						<button
 							type="button"
-							onClick={() => removeReference({ id: reference.id })}
-							aria-label="移除引用"
+							onClick={() => removeReference({ refId: reference.refId })}
+							aria-label={`移除引用 ${reference.refId}`}
 						>
 							<X className="size-3 shrink-0 opacity-60 hover:opacity-100" />
 						</button>
@@ -213,6 +258,25 @@ function InputArea() {
 	const abort = useAiChatStore((s) => s.abort);
 	const sending = useAiChatStore((s) => s.sending);
 	const sessionId = useAiChatStore((s) => s.sessionId);
+	const references = useAiChatStore((s) => s.references);
+	const editor = useEditor();
+
+	const sendWithValidation = () => {
+		const staleReference = references.find(
+			(reference) =>
+				reference.kind === "element" &&
+				!findTimelineElement({
+					editor,
+					trackId: reference.trackId,
+					elementId: reference.elementId,
+				}),
+		);
+		if (staleReference) {
+			toast.error(`引用 ${staleReference.refId} 已失效，请移除后重新引用`);
+			return;
+		}
+		void sendMessage();
+	};
 
 	return (
 		<div className="shrink-0 border-t p-2">
@@ -228,7 +292,7 @@ function InputArea() {
 							!e.nativeEvent.isComposing
 						) {
 							e.preventDefault();
-							void sendMessage();
+							sendWithValidation();
 						}
 					}}
 					placeholder="描述你想做的剪辑..."
@@ -250,7 +314,7 @@ function InputArea() {
 						size="icon"
 						className="h-9 w-9 shrink-0"
 						disabled={!input.trim() || !sessionId}
-						onClick={() => void sendMessage()}
+						onClick={sendWithValidation}
 						aria-label="发送"
 					>
 						<SendHorizonal className="size-4" />

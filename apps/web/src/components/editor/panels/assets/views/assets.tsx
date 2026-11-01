@@ -272,7 +272,8 @@ function MediaAssetDraggable({
 		}
 		addReference({
 			reference: {
-				id: item.id,
+				kind: "media",
+				mediaId: item.id,
 				name: item.name,
 				type: item.type,
 				duration: item.duration ?? null,

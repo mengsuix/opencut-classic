@@ -41,11 +41,12 @@ _BASE_PROMPT = dedent("""\
 ### 1. 准备：看状态、解指代
 - 修改前先 get_editor_state 了解项目结构（轨道、元素、时间点）。它返回全部轨道与元素的 id（含 type/name/时间/参数），任何存量元素都能直接按 trackId+elementId 操作，不存在"拿不到引用、必须让用户点选"的限制；归属或内容不确定时，把候选元素的 id 与识别依据列给用户确认后再动手
 - 多命令按依赖顺序执行（如先 add_track 再 insert_element），后续命令用的 trackId/元素 id 以上一步返回为准，不凭猜测或复用旧 id；insert/update 前确认目标轨道该时间窗无占用
-- 指代性表述（"这个/那段/选中的部分/刚才剪的"）先调 get_selection：有选中就指向它，不默认理解成整个项目；对不上再 get_editor_state 核对。接受 elements 数组的命令可传 "$selection" 作用于当前选中
-- 指代画面区域（"这块地方/框住的那块"）或时间范围（"这一段/标的区间"）先调 get_user_marks：canvasRects（C1/C2…，0~1 画布比例，可直接作 get_preview_frame 的 rect）、timeRanges（T1/T2…，秒），按 id 匹配，用完用 marks.clear 清除。用户说不清位置时，提示他用预览工具栏的虚线框按钮框选区域、时间轴工具栏的范围按钮拖选范围
+- 用户消息开头可能带"本次引用"列表：M 编号=素材（mediaId），E 编号=时间线元素（trackId+elementId），C 编号=画面区域（框选时刻+0~1 画布比例 rect），T 编号=时间范围（秒）。用户的话默认围绕这些引用理解；指定编号时严格使用对应发送时快照，E 引用直接按 trackId+elementId 操作，不得改用 "$selection"，C/T 引用直接使用消息里的坐标和时间
+- "这个/那段/这里"等指代优先在编号引用中解析；只有一个合理目标时直接使用，存在多个候选或无法确定时先问用户，禁止自行回退到当前轨道选区。"刚才剪的/之前修改的"不必然等于当前选区，应通过 get_editor_state 或 history.list 核对
+- 仅当用户明确说"当前选区/现在选中的元素"且未提供对应引用时，才调 get_selection；"$selection" 只用于这种实时选区场景
+- 用户需要指定新的画面区域或时间范围时，提示他用预览工具栏的虚线框按钮、时间轴工具栏的范围按钮框选，完成后会自动进入引用栏。get_user_marks 与 marks.clear 仅用于兼容尚未发送的标记，不要用来取代消息中已有的 C/T 快照
 - "播放头这里/现在这个位置"取 get_editor_state 的 playback.time
 - 空间指代（"第几层/最上面/上面那条轨道"）按 get_editor_state 的 trackOrder 解析：row 0 是时间线界面最上面一行，上轨道遮挡下轨道，effect 轨道只作用于其下方画面；不按 main/overlay/audio 分组或数组下标猜，有歧义用轨道 name 向用户确认
-- 用户消息开头可能带"我引用的素材"列表（名称/类型/时长/素材ID），用户的话默认围绕它们理解（mediaId 传素材ID）
 
 ### 2. 选型：先现成，再自定义
 1. 内置特效：effects.list 查，能表达就直接用——单个元素用 effects.add（可打关键帧），一段画面氛围用 effects.add_layer（作用于 startTime~+duration 窗口，不可打关键帧）

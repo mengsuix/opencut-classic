@@ -83,7 +83,8 @@ import { getBuiltInElementParams } from "@/params/registry";
 import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
-import { useUserMarksStore } from "@/editor/user-marks-store";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
+import { describeSelectedElements } from "@/editor/ai/reference-snapshot";
 
 export interface BridgeElementRef {
 	trackId: string;
@@ -1027,36 +1028,9 @@ function buildSelectionState(editor: EditorCore) {
 }
 
 function describeSelection(editor: EditorCore) {
-	const elements = editor.selection.getSelectedElements().map((ref) => {
-		const found = findTrackAndElement(editor, ref.trackId, ref.elementId);
-		if (!found) {
-			return { ...ref, error: "element not found" };
-		}
-		const { element } = found;
-		const params = (element.params ?? {}) as Record<string, unknown>;
-		return {
-			trackId: ref.trackId,
-			elementId: ref.elementId,
-			trackType: found.trackType,
-			type: (element.type as string | undefined) ?? null,
-			name: (element.name as string | undefined) ?? null,
-			startTime: toSeconds(element.startTime as MediaTime),
-			duration: toSeconds(element.duration as MediaTime),
-			...(typeof params.content === "string" ? { text: params.content } : {}),
-			...(typeof element.mediaId === "string"
-				? { mediaId: element.mediaId }
-				: {}),
-			...(typeof element.muted === "boolean" ? { muted: element.muted } : {}),
-			...(typeof element.hidden === "boolean"
-				? { hidden: element.hidden }
-				: {}),
-			effectCount: Array.isArray(element.effects) ? element.effects.length : 0,
-			maskCount: Array.isArray(element.masks) ? element.masks.length : 0,
-		};
-	});
 	return {
 		...buildSelectionState(editor),
-		elements,
+		elements: describeSelectedElements(editor),
 	};
 }
 
@@ -2351,7 +2325,28 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		description:
 			"Get the user's visual marks for pointing at regions: canvasRects = rects the user drew on the preview (each with a label id like \"C1\", \"C2\", … shown on the rect, plus canvas fractions 0~1, top-left origin — the same coordinate system as masks.set_canvas_rect, usable directly as its rect; includes the playhead time in seconds it was drawn at), timeRanges = time ranges the user marked on the timeline (each with a label id like \"T1\", \"T2\", … shown on the band; seconds). The user can mark several of each and points at one by its label (e.g. \"C1\"); both are empty arrays when nothing is marked.",
 		run: () => {
-			const { canvasRects, timeRanges } = useUserMarksStore.getState();
+			const { references } = useAiChatStore.getState();
+			const canvasRects = references.flatMap((reference) =>
+				reference.kind === "canvas"
+					? [{
+							id: reference.refId,
+							left: reference.left,
+							top: reference.top,
+							right: reference.right,
+							bottom: reference.bottom,
+							time: reference.time,
+						}]
+					: [],
+			);
+			const timeRanges = references.flatMap((reference) =>
+				reference.kind === "time-range"
+					? [{
+							id: reference.refId,
+							startTime: reference.startTime,
+							endTime: reference.endTime,
+						}]
+					: [],
+			);
 			return { canvasRects, timeRanges };
 		},
 	},
@@ -2363,18 +2358,21 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 		run: ({ args }) => {
 			const target =
 				typeof args.target === "string" && args.target ? args.target : "all";
-			const store = useUserMarksStore.getState();
-			if (target === "all") {
-				store.clearCanvasRects();
-				store.clearTimeRanges();
-			} else if (target === "canvasRects") {
-				store.clearCanvasRects();
-			} else if (target === "timeRanges") {
-				store.clearTimeRanges();
-			} else {
+			if (!["all", "canvasRects", "timeRanges"].includes(target)) {
 				throw new Error(
 					`Invalid target: ${target}. Use 'canvasRects', 'timeRanges' or 'all'.`,
 				);
+			}
+			const store = useAiChatStore.getState();
+			const kind = target === "canvasRects" ? "canvas" : "time-range";
+			for (const reference of store.references) {
+				if (
+					(target === "all" &&
+						(reference.kind === "canvas" || reference.kind === "time-range")) ||
+					reference.kind === kind
+				) {
+					store.removeReference({ refId: reference.refId });
+				}
 			}
 			return { cleared: target };
 		},

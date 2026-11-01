@@ -8,6 +8,7 @@ import { TIMELINE_RULER_HEIGHT_PX } from "./layout";
 import { DEFAULT_FPS } from "@/fps/defaults";
 import { useEditor } from "@/editor/use-editor";
 import { useUserMarksStore } from "@/editor/user-marks-store";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { getRulerConfig, shouldShowLabel } from "@/timeline/ruler-utils";
 import { useQuantizedTimelineViewport } from "@/timeline/hooks/use-timeline-viewport";
 import { TimelineTick } from "./timeline-tick";
@@ -44,9 +45,12 @@ export const TimelineRuler = memo(function TimelineRuler({
 	const durationTicks = useEditor((e) => e.timeline.getTotalDuration());
 	const durationSeconds = mediaTimeToSeconds({ time: durationTicks });
 	const pixelsPerSecond = BASE_TIMELINE_PIXELS_PER_SECOND * zoomLevel;
-	const timeRanges = useUserMarksStore((s) => s.timeRanges);
+	const references = useAiChatStore((s) => s.references);
+	const timeRanges = references.filter(
+		(reference) => reference.kind === "time-range",
+	);
 	const draftTimeRange = useUserMarksStore((s) => s.draftTimeRange);
-	const removeTimeRange = useUserMarksStore((s) => s.removeTimeRange);
+	const removeReference = useAiChatStore((s) => s.removeReference);
 	const isRangeMarking = useUserMarksStore((s) => s.isRangeMarking);
 	const visibleDurationSeconds = dynamicTimelineWidth / pixelsPerSecond;
 	const effectiveDurationSeconds = Math.max(
@@ -143,7 +147,7 @@ export const TimelineRuler = memo(function TimelineRuler({
 					const width = (range.endTime - range.startTime) * pixelsPerSecond;
 					return (
 						<div
-							key={range.id}
+							key={range.refId}
 							className="bg-primary/25 pointer-events-none absolute inset-y-0 border-x border-primary/60"
 							title={`${range.startTime.toFixed(2)}s – ${range.endTime.toFixed(2)}s`}
 							style={{
@@ -170,7 +174,7 @@ export const TimelineRuler = memo(function TimelineRuler({
 									zIndex: TIMELINE_LAYERS.playhead + 1,
 								}}
 								onMouseDown={(event) => event.stopPropagation()}
-								onClick={() => removeTimeRange(range.id)}
+								onClick={() => removeReference({ refId: range.refId })}
 							>
 								<HugeiconsIcon icon={Cancel01Icon} className="size-2.5" />
 							</button>
@@ -182,7 +186,7 @@ export const TimelineRuler = memo(function TimelineRuler({
 									width >= 36 ? "left-0.5" : "-left-4",
 								)}
 							>
-								{range.id}
+								{range.refId}
 							</span>
 						</div>
 					);

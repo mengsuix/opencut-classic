@@ -3,6 +3,7 @@ import { mediaTimeToSeconds } from "opencut-wasm";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import { useEditor } from "@/editor/use-editor";
 import { useUserMarksStore } from "@/editor/user-marks-store";
+import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { clamp } from "@/utils/math";
 
 const MIN_RANGE_PX = 2;
@@ -30,7 +31,7 @@ export function useTimelineRangeSelect({
 }) {
 	const editor = useEditor();
 	const setDraftTimeRange = useUserMarksStore((s) => s.setDraftTimeRange);
-	const addTimeRange = useUserMarksStore((s) => s.addTimeRange);
+	const addReference = useAiChatStore((s) => s.addReference);
 	const setRangeMarking = useUserMarksStore((s) => s.setRangeMarking);
 
 	const sessionRef = useRef<DragSession | null>(null);
@@ -115,7 +116,9 @@ export function useTimelineRangeSelect({
 			};
 			setDraftTimeRange(null);
 			if ((range.endTime - range.startTime) * pixelsPerSecond >= MIN_RANGE_PX) {
-				addTimeRange(range);
+				addReference({
+					reference: { kind: "time-range", name: "时间范围", ...range },
+				});
 			}
 			setRangeMarking(false);
 		};

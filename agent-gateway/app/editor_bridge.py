@@ -180,7 +180,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_selection",
-        '获取当前编辑器选区的详细信息：选中的时间线元素（引用、轨道类型、元素类型、名称、秒级时间、文本内容）、选中的关键帧与蒙版点。用户说"选中的部分/这段"时，先调本工具确认指代。接受 "elements" 数组的命令也可传字符串 "$selection"，直接作用于当前选中。',
+        '获取当前编辑器实时选区的详细信息：选中的时间线元素（引用、轨道类型、元素类型、名称、秒级时间、文本内容）、选中的关键帧与蒙版点。仅在用户明确说"当前选区/现在选中的元素"且消息没有对应 E 编号引用时使用；普通指代优先解析消息中的编号快照。接受 "elements" 数组的命令也可传字符串 "$selection"，直接作用于当前选中。',
         {},
     )
     async def get_selection(args):
@@ -188,7 +188,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "get_user_marks",
-        "获取用户用于指代位置的可视化标注：canvasRects = 用户在预览画面上框选的矩形（每个带 \"C1\"、\"C2\" 等标注 id，直接显示在框上；坐标是 0~1 画布比例、左上角原点——与 masks.set_canvas_rect 同一坐标系，可直接作它的 rect 参数；内含框选时刻的播放头秒数；把它传给 get_preview_frame 的 rect 可拿该区域的原生分辨率特写——看清图标、文字等小细节的正确方式）；timeRanges = 用户在时间轴上拖选的时间范围（每个带 \"T1\"、\"T2\" 等标注 id，显示在色带上；单位秒）。每种都可标多个，用户用标注 id 指代（如 \"C1\"）；无标注时两者都是空数组。用完用 execute_command 的 marks.clear 子命令清除。",
+        "获取尚未发送的可视化标记（兼容工具）：canvasRects = 预览画面矩形（C1/C2 等编号、0~1 画布比例、框选时刻），timeRanges = 时间轴范围（T1/T2 等编号、单位秒）。若用户消息已带 C/T 编号快照，直接使用消息中的坐标和时间，无需调用本工具；无标记时返回空数组。可用 execute_command 的 marks.clear 清除尚未发送的标记。",
         {},
     )
     async def get_user_marks(args):
@@ -196,7 +196,7 @@ def build_editor_mcp_server(session_id: str):
 
     @tool(
         "execute_command",
-        '在打开的 OpenCut 编辑器中执行一条编辑器命令。所有编辑器操作（timeline.*、keyframes.*、effects.*、masks.*、media.*、selection.*、scenes.* 等）都是本工具的子命令——顶层工具只有工具列表里列出的那些，不要猜测未列出的顶层工具名（如 masks.list 必须走本工具）。用 list_commands 发现可用命令。所有时间参数单位是秒（时间线绝对时间）。每条命令都走编辑器的命令系统，修改实时应用到预览且可撤销。接受 "elements" 数组的命令可传字符串 "$selection" 作用于用户当前选中（无选中时失败）；用 get_selection 工具查看当前选中。',
+        '在打开的 OpenCut 编辑器中执行一条编辑器命令。所有编辑器操作（timeline.*、keyframes.*、effects.*、masks.*、media.*、selection.*、scenes.* 等）都是本工具的子命令——顶层工具只有工具列表里列出的那些，不要猜测未列出的顶层工具名（如 masks.list 必须走本工具）。用 list_commands 发现可用命令。所有时间参数单位是秒（时间线绝对时间）。每条命令都走编辑器的命令系统，修改实时应用到预览且可撤销。接受 "elements" 数组的命令可在用户明确要求实时选区时传字符串 "$selection" 作用于当前选中（无选中时失败）；E 编号引用必须改用快照中的 trackId+elementId，不得使用 "$selection"。',
         {
             "type": "object",
             "properties": {
