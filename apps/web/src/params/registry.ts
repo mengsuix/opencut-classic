@@ -1007,6 +1007,10 @@ elementParamRegistry.register({
 	key: "html",
 	definition: [...visualElementParams, ...visualAnimParams],
 });
+elementParamRegistry.register({
+	key: "code",
+	definition: [...visualElementParams, ...visualAnimParams],
+});
 elementParamRegistry.register({ key: "audio", definition: audioElementParams });
 elementParamRegistry.register({ key: "effect", definition: [] });
 

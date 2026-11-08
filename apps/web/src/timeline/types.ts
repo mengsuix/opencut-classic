@@ -58,7 +58,7 @@ export interface AudioTrack extends BaseTrack {
 
 export interface GraphicTrack extends BaseTrack {
 	type: "graphic";
-	elements: (StickerElement | GraphicElement | HtmlElement)[];
+	elements: (StickerElement | GraphicElement | HtmlElement | CodeElement)[];
 	hidden: boolean;
 }
 
@@ -177,6 +177,17 @@ export interface HtmlElement extends BaseTimelineElement {
 	masks?: Mask[];
 }
 
+export interface CodeElement extends BaseTimelineElement {
+	type: "code";
+	code: string;
+	codeParams: ParamValues;
+	intrinsicWidth?: number;
+	intrinsicHeight?: number;
+	hidden?: boolean;
+	effects?: Effect[];
+	masks?: Mask[];
+}
+
 export interface EffectElement extends BaseTimelineElement {
 	type: "effect";
 	effectType: string;
@@ -192,6 +203,7 @@ export type TimelineElement =
 	| StickerElement
 	| GraphicElement
 	| HtmlElement
+	| CodeElement
 	| EffectElement;
 
 export type ElementType = TimelineElement["type"];
@@ -205,6 +217,7 @@ export const MASKABLE_ELEMENT_TYPES = elementTypes(
 	"image",
 	"graphic",
 	"html",
+	"code",
 );
 
 export type MaskableElement = Extract<
@@ -226,6 +239,7 @@ export const VISUAL_ELEMENT_TYPES = elementTypes(
 	"sticker",
 	"graphic",
 	"html",
+	"code",
 );
 
 export type VisualElement = Extract<
@@ -244,6 +258,7 @@ export type CreateTextElement = Omit<TextElement, "id">;
 export type CreateStickerElement = Omit<StickerElement, "id">;
 export type CreateGraphicElement = Omit<GraphicElement, "id">;
 export type CreateHtmlElement = Omit<HtmlElement, "id">;
+export type CreateCodeElement = Omit<CodeElement, "id">;
 export type CreateEffectElement = Omit<EffectElement, "id">;
 export type CreateTimelineElement =
 	| CreateAudioElement
@@ -253,6 +268,7 @@ export type CreateTimelineElement =
 	| CreateStickerElement
 	| CreateGraphicElement
 	| CreateHtmlElement
+	| CreateCodeElement
 	| CreateEffectElement;
 
 export interface ElementDragState {

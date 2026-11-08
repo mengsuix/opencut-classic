@@ -7,6 +7,8 @@ import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { GraphicNode } from "./nodes/graphic-node";
 import { HtmlNode, resolveHtmlSize } from "./nodes/html-node";
+import { CodeRenderNode } from "./nodes/code-render-node";
+import { buildCodeEffectFromParams } from "@/code-render";
 import { ColorNode } from "./nodes/color-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import { EffectLayerNode } from "./nodes/effect-layer-node";
@@ -19,7 +21,10 @@ import {
 	readOpacityFromParams,
 } from "@/rendering";
 import { buildVisualAnimConfig } from "@/animation/visual-anim";
-import { computeTrackTransitions } from "@/timeline/transition";
+import {
+	buildTransitionFromParams,
+	computeTrackTransitions,
+} from "@/timeline/transition";
 import { TICKS_PER_SECOND } from "@/wasm";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
@@ -37,6 +42,95 @@ function getVisibleSortedElements({ track }: { track: TimelineTrack }) {
 		});
 }
 
+function codeContainerParams({
+	startTime,
+	duration,
+}: {
+	startTime: number;
+	duration: number;
+}) {
+	return {
+		duration,
+		timeOffset: startTime,
+		trimStart: 0,
+		trimEnd: 0,
+		transform: buildTransformFromParams({ params: {} }),
+		opacity: 1,
+	};
+}
+
+function wrapCodeEffects({
+	nodes,
+	elements,
+	visualNodes,
+}: {
+	nodes: AnyBaseNode[];
+	elements: ReturnType<typeof getVisibleSortedElements>;
+	visualNodes: Map<string, AnyBaseNode>;
+}) {
+	for (const element of elements) {
+		const { code, codeParams } = buildCodeEffectFromParams({
+			params: element.params,
+		});
+		if (!code.trim()) continue;
+		const source = visualNodes.get(element.id);
+		if (!source) continue;
+		const sourceIndex = nodes.indexOf(source);
+		if (sourceIndex < 0) continue;
+		const effect = new CodeRenderNode({
+			...codeContainerParams({
+				startTime: element.startTime,
+				duration: element.duration,
+			}),
+			mode: "effect",
+			code,
+			codeParams,
+			inputs: [source],
+		});
+		nodes[sourceIndex] = effect;
+		visualNodes.set(element.id, effect);
+	}
+}
+
+function wrapCustomTransitions({
+	nodes,
+	elements,
+	visualNodes,
+}: {
+	nodes: AnyBaseNode[];
+	elements: ReturnType<typeof getVisibleSortedElements>;
+	visualNodes: Map<string, AnyBaseNode>;
+}) {
+	for (let index = elements.length - 2; index >= 0; index--) {
+		const current = elements[index];
+		const next = elements[index + 1];
+		const config = buildTransitionFromParams({ params: current.params });
+		if (config.type !== "custom" || !config.code) continue;
+		const outgoing = visualNodes.get(current.id);
+		const incoming = visualNodes.get(next.id);
+		if (!outgoing || !incoming) continue;
+		const outgoingIndex = nodes.indexOf(outgoing);
+		const incomingIndex = nodes.indexOf(incoming);
+		if (outgoingIndex < 0 || incomingIndex !== outgoingIndex + 1) continue;
+		const custom = new CodeRenderNode({
+			...codeContainerParams({
+				startTime:
+					current.startTime +
+					current.duration -
+					config.duration * TICKS_PER_SECOND,
+				duration: config.duration * TICKS_PER_SECOND,
+			}),
+			mode: "transition",
+			code: config.code,
+			codeParams: config.codeParams ?? {},
+			inputs: [outgoing, incoming],
+		});
+		nodes[outgoingIndex] = custom;
+		nodes.splice(incomingIndex, 1);
+		visualNodes.set(current.id, custom);
+	}
+}
+
 function buildTrackNodes({
 	tracks,
 	mediaMap,
@@ -52,6 +146,7 @@ function buildTrackNodes({
 
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
+		const visualNodes = new Map<string, AnyBaseNode>();
 		const transitions =
 			track.type === "video"
 				? computeTrackTransitions({
@@ -61,6 +156,7 @@ function buildTrackNodes({
 				: null;
 
 		for (const element of elements) {
+			const previousNodeCount = nodes.length;
 			if (element.type === "effect") {
 				nodes.push(
 					new EffectLayerNode({
@@ -139,6 +235,9 @@ function buildTrackNodes({
 							}),
 						}),
 					);
+				}
+				if (mediaAsset.type === element.type) {
+					visualNodes.set(element.id, nodes[nodes.length - 1]);
 				}
 			}
 
@@ -241,7 +340,42 @@ function buildTrackNodes({
 					}),
 				);
 			}
+
+			if (element.type === "code") {
+				nodes.push(
+					new CodeRenderNode({
+						mode: "generator",
+						code: element.code,
+						codeParams: element.codeParams,
+						inputs: [],
+						duration: element.duration,
+						timeOffset: element.startTime,
+						trimStart: element.trimStart,
+						trimEnd: element.trimEnd,
+						transform: buildTransformFromParams({ params: element.params }),
+						animations: element.animations,
+						animIn: buildVisualAnimConfig({
+							params: element.params,
+							phase: "in",
+						}),
+						animOut: buildVisualAnimConfig({
+							params: element.params,
+							phase: "out",
+						}),
+						opacity: readOpacityFromParams({ params: element.params }),
+						blendMode: readBlendModeFromParams({ params: element.params }),
+						effects: element.effects ?? [],
+						masks: element.masks ?? [],
+					}),
+				);
+			}
+
+			if (nodes.length > previousNodeCount) {
+				visualNodes.set(element.id, nodes[nodes.length - 1]);
+			}
 		}
+		wrapCodeEffects({ nodes, elements, visualNodes });
+		wrapCustomTransitions({ nodes, elements, visualNodes });
 	}
 
 	return nodes;

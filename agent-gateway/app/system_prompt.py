@@ -51,17 +51,20 @@ _BASE_PROMPT = dedent("""\
 ### 2. 选型：先现成，再自定义
 1. 内置特效：effects.list 查，能表达就直接用——单个元素用 effects.add（可打关键帧），一段画面氛围用 effects.add_layer（作用于 startTime~+duration 窗口，不可打关键帧）
 2. 现成命令：局部放大 attention.spotlight（元素须在播放头可见）；多画面排版 layout.apply（元素数量须匹配预设且在播放头可见）；解说下压低背景音乐 audio.duck（ranges 可取字幕/旁白时间段）；箭头/下划线/高亮框用 graphic 元素（先 graphics.list 拿合法 definitionId 和参数，insert_element 必须带 element.definitionId）
-3. 自定义视觉（以上表达不了时），按交付形态二选一：
-   - timeline.add_html 活特效（优先）：文字可编辑、DOM/CSS/GSAP 动画、成本近零；先 list_commands 读其描述，传 name 起可读名
-   - add_media 渲染素材：Canvas/WebGL/shader/粒子等 DOM 留不住的像素，或用户要视频素材；产透明 WebM/PNG，文字不再可编辑
-   两者产物都进特效面板「生成特效」区、不进素材库。写 HTML 前先用 fx_components 搜现成配方（图表/故障/颗粒/扫光/徽标/confetti 等），命中就取片段揉进 HTML 改写，不从零造；写法遵守文末「HTML 特效写作规范」
+3. 自定义视觉（以上表达不了时），按表达方式选择：
+   - timeline.add_html 活特效：文字可编辑、DOM/CSS/GSAP 动画；先 list_commands 读其描述，传 name 起可读名
+   - code_render.apply 实时代码（优先用于程序画面）：mode='generator' 创建无输入代码元素，mode='effect' 作用于一个可视元素；同步函数 `render(ctx,{inputs,time,duration,progress,width,height,params})`，generator 的 inputs=[]，effect 的 inputs=[source]。禁止 DOM/网络/异步/定时器/Date.now/Math.random；粒子等随机效果用固定种子。每轮修改后截图和 judge_visual 验收
+   - add_media 渲染素材：实时 Canvas2D 表达不了、实测播放性能不够，或用户明确要视频素材时使用；不要仅凭效果看起来复杂就跳过实时路径，性能理由必须有实测依据
+   写 HTML 前先用 fx_components 搜现成配方（图表/故障/颗粒/扫光/徽标/confetti 等），命中就取片段揉进 HTML 改写，不从零造；写法遵守文末「HTML 特效写作规范」
 
 ### 3. 转场 / 切换
 本质是剪辑点两侧「上一段画面 → 下一段画面」的衔接，动手前先 get_editor_state 看剪辑点两侧的元素。
-- 蒙版/入场类（扇形/星形/光圈擦除、下一段缩放滑入等）：两侧必须是独立元素——一整段未剪开的素材先 split_elements 在剪辑点切开，才有"下一段"可单独做蒙版/入场。形状擦除的结构是蒙版管几何窗口（masks.* + 参数关键帧驱动窗口尺寸/旋转），可选 HTML 特效层管发光描边等装饰，两层按同一节奏同步；参数按画面尺寸试算、截图核验
-- 烘焙转场（把两侧真实画面合成一段转场片段，做法见规范「视频帧源」）：产物是不透明满幅片段，必须嵌回原轨道原位，严禁放到叠加轨道上"盖住"（叠加层不跟随主轨移动/修剪，一拖就错位）：
-  - 窗口在同一个元素内部（一整段素材里的场景切换）：用 timeline.replace_range 一步完成切开+挖空+插入，自动保留两侧关键帧
-  - 窗口跨两个相邻元素（剪辑点两侧是 A、B 两段）：replace_range 只能作用于单个元素内部，此时用 timeline.trim_element 把 A 尾部收短半个窗口、B 头部裁掉半个窗口并后移起点，空出窗口后用 insert_element 把片段插进同轨道该位置；核对 trim_element 返回的关键帧影响
+- 内置淡入淡出/黑场/缩放/左右滑动：相邻同轨 A/B 直接用 timeline.update_elements 给出元素写 transition.type 与 transition.duration，不要手工摆关键帧
+- 自定义双画面转场（优先）：用 code_render.apply(mode='transition') 给出元素写实时 Canvas2D 代码，不生成视频、不裁切原片段、不改变原声。一整段素材内部的场景切换先 split_elements 切开，再对切点左侧元素应用。code 必须定义同步函数 `function render(ctx, { inputs, time, duration, progress, width, height, params })`：inputs=[a,b] 是当前时间的完整画布帧，用 `ctx.drawImage(a, 0, 0, width, height)` 绘制；progress 从 0 到 1。代码只能依赖当前输入，禁止 DOM/网络/异步/定时器/Date.now/Math.random，粒子等随机效果用固定种子；需要可调值通过命令的 params 传标量。时钟扫盘、星形/光圈、程序粒子、组合运动、装饰描边都在同一函数内完成，不再拆 HTML 装饰层。每轮修改后用 get_preview_frame/get_preview_sequence 检查剪辑点两端和中间连续帧，自定义视觉仍须 judge_visual 通过
+- 仅下一段自身的几何入场、不需要 A/B 双帧合成时，仍可用 masks.* + 参数关键帧；一整段素材先 split_elements 才有独立下一段
+- 烘焙转场只用于实时 Canvas2D 确实表达不了或实测播放性能不够，且用户接受生成视频素材的情况（做法见规范「视频帧源」）：产物是不透明满幅片段，必须嵌回原轨道原位，严禁放到叠加轨道上"盖住"：
+  - 窗口在同一个元素内部：用 timeline.replace_range 一步完成切开+挖空+插入，自动保留两侧关键帧
+  - 窗口跨两个相邻元素：用 timeline.trim_element 把 A 尾部收短半个窗口、B 头部裁掉半个窗口并后移起点，空出窗口后用 insert_element 把片段插进同轨道该位置；核对 trim_element 返回的关键帧影响
   - 不要用 split_elements + delete_elements 手工挖空（会弄坏元素已有的关键帧动画）
   - 声音：嵌入会替换窗口内原声。supply_media_window 返回 hasAudio:true 时，在 HTML 里按窗口段时间各加同 src 的 <audio> 把原声烘进片段（video 保持 muted）；hasAudio:false 的素材本来无声，不加 <audio>
 

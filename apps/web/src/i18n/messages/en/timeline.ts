@@ -143,6 +143,7 @@ export const timeline = {
 	"timeline.typeText": "text",
 	"timeline.typeGraphic": "graphic",
 	"timeline.typeHtml": "HTML effect",
+	"timeline.typeCode": "code effect",
 	"timeline.typeEffect": "effect",
 	"timeline.typeImage": "image",
 	"timeline.typeSticker": "sticker",

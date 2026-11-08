@@ -199,6 +199,21 @@ function getElementBounds({
 		};
 	}
 
+	if (element.type === "code") {
+		const transform = resolveTransformAtTime({
+			baseTransform: buildTransformFromParams({ params: element.params }),
+			animations: element.animations,
+			localTime,
+		});
+		return getVisualElementBounds({
+			canvasWidth,
+			canvasHeight,
+			sourceWidth: element.intrinsicWidth ?? canvasWidth,
+			sourceHeight: element.intrinsicHeight ?? canvasHeight,
+			transform,
+		});
+	}
+
 	if (element.type === "text") {
 		const transform = resolveTransformAtTime({
 			baseTransform: buildTransformFromParams({ params: element.params }),

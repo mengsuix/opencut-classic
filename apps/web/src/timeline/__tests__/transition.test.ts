@@ -32,6 +32,34 @@ describe("buildTransitionFromParams", () => {
 		expect(config).toEqual({ type: "fade", duration: 1 });
 		expect(isActiveTransition(config)).toBe(true);
 	});
+
+	test("reads custom code and scalar params", () => {
+		const config = buildTransitionFromParams({
+			params: {
+				"transition.type": "custom",
+				"transition.duration": 1.5,
+				"transition.code": "function render() {}",
+				"transition.param.direction": "clockwise",
+				"transition.param.feather": 2,
+				"transition.param.glow": true,
+				"transition.param.cleared": "",
+			},
+		});
+		expect(config).toEqual({
+			type: "custom",
+			duration: 1.5,
+			code: "function render() {}",
+			codeParams: { direction: "clockwise", feather: 2, glow: true },
+		});
+		expect(isActiveTransition(config)).toBe(true);
+	});
+
+	test("does not activate custom transition without code", () => {
+		const config = buildTransitionFromParams({
+			params: { "transition.type": "custom", "transition.duration": 1 },
+		});
+		expect(isActiveTransition(config)).toBe(false);
+	});
 });
 
 describe("resolveTransitionOutgoing", () => {
@@ -229,4 +257,3 @@ describe("computeTrackTransitions", () => {
 		});
 	});
 });
-

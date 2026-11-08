@@ -24,6 +24,8 @@ const ELEMENT_PATCH_ROOT_KEYS = new Set([
 	"intrinsicWidth",
 	"intrinsicHeight",
 	"definitionId",
+	"code",
+	"codeParams",
 	"effectType",
 ]);
 

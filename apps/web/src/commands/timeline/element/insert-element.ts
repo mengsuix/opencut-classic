@@ -205,6 +205,11 @@ export class InsertElementCommand extends Command {
 			return false;
 		}
 
+		if (element.type === "code" && !element.code.trim()) {
+			console.error("Code element must have code");
+			return false;
+		}
+
 		if (element.type === "effect" && !element.effectType) {
 			console.error("Effect element must have effectType");
 			return false;

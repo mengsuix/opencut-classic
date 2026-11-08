@@ -90,13 +90,14 @@ export function resolveEffectiveAudioGain({
 
 	// A built-in transition out also fades the outgoing element's audio.
 	const transition = buildTransitionFromParams({ params: element.params });
-	const transitionGain = isActiveTransition(transition)
-		? clamp({
-				value: (durationSeconds - localTime) / transition.duration,
-				min: 0,
-				max: 1,
-			})
-		: 1;
+	const transitionGain =
+		isActiveTransition(transition) && transition.type !== "custom"
+			? clamp({
+					value: (durationSeconds - localTime) / transition.duration,
+					min: 0,
+					max: 1,
+				})
+			: 1;
 
 	return dBToLinear(resolvedDb) * fadeGain * transitionGain;
 }

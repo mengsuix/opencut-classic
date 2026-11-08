@@ -28,6 +28,13 @@ import {
 	resolveHtmlSize,
 } from "@/services/renderer/nodes/html-node";
 import { DEFAULT_NEW_ELEMENT_DURATION } from "@/timeline/creation";
+import {
+	CODE_EFFECT_CODE_KEY,
+	CODE_EFFECT_PARAMS_PREFIX,
+	MAX_CODE_RENDER_CODE_LENGTH,
+	MAX_CODE_RENDER_PARAMS,
+	MAX_CODE_RENDER_PARAMS_JSON_LENGTH,
+} from "@/code-render";
 import { effectsRegistry } from "@/effects";
 import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
 import { buildDefaultMaskInstance, getMaskDefinitionsForMenu } from "@/masks";
@@ -1651,6 +1658,209 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				placement: rawPlacement,
 			});
 			return insertAndSelect(editor, element, placement);
+		},
+	},
+
+	"code_render.apply": {
+		description:
+			"Apply live Canvas2D code as a generator, single-source effect, or adjacent A/B transition. code must define synchronous render(ctx, { inputs, time, duration, progress, width, height, params }). inputs is [] for generator, [source] for effect, [a,b] for transition; time/duration are local seconds. Code runs in a sandbox without DOM/network and must be deterministic. generator creates a code element on a graphic track; effect patches one visual element; transition patches the outgoing element. No video is generated and source audio is unchanged.",
+		args: {
+			mode: "'generator' | 'effect' | 'transition'",
+			trackId: "string? (required for effect/transition; optional graphic track for generator)",
+			elementId: "string? (target element for effect, outgoing element for transition)",
+			code: "JavaScript defining render(ctx, frame), max 50000 chars",
+			startTime: "seconds? (generator only, default 0)",
+			duration: "seconds? (required for generator; 0.05~10 for transition and no longer than either element)",
+			name: "string? (generator element name)",
+			params:
+				"optional flat object of up to 64 non-empty string/finite number/boolean values",
+		},
+		run: ({ editor, args }) => {
+			const mode = requireString(args.mode, "mode");
+			const code = requireString(args.code, "code");
+			if (!code.trim()) throw new Error("code must not be empty");
+			if (code.length > MAX_CODE_RENDER_CODE_LENGTH) {
+				throw new Error("code exceeds 50000 characters");
+			}
+			const trackId =
+				typeof args.trackId === "string" ? args.trackId : undefined;
+			const elementId =
+				typeof args.elementId === "string" ? args.elementId : undefined;
+			const duration =
+				args.duration === undefined
+					? undefined
+					: requireNumber(args.duration, "duration");
+			const rawParamsValue = args.params ?? {};
+			if (
+				!rawParamsValue ||
+				typeof rawParamsValue !== "object" ||
+				Array.isArray(rawParamsValue)
+			) {
+				throw new Error("params must be a flat object");
+			}
+			const entries = Object.entries(rawParamsValue);
+			if (entries.length > MAX_CODE_RENDER_PARAMS) {
+				throw new Error("params exceeds 64 entries");
+			}
+			if (
+				JSON.stringify(rawParamsValue).length >
+				MAX_CODE_RENDER_PARAMS_JSON_LENGTH
+			) {
+				throw new Error("params exceeds 16384 characters");
+			}
+			const codeParams: ParamValues = {};
+			for (const [key, value] of entries) {
+				if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(key)) {
+					throw new Error(`Invalid params key: ${key}`);
+				}
+				const validValue =
+					(typeof value === "string" && value.length > 0) ||
+					(typeof value === "number" && Number.isFinite(value)) ||
+					typeof value === "boolean";
+				if (!validValue) {
+					throw new Error(`Invalid params value for ${key}`);
+				}
+				if (
+					typeof value === "string" ||
+					typeof value === "number" ||
+					typeof value === "boolean"
+				) {
+					codeParams[key] = value;
+				}
+			}
+
+			if (mode === "generator") {
+				if (duration === undefined || duration <= 0) {
+					throw new Error("generator duration must be greater than 0");
+				}
+				const startTime =
+					args.startTime === undefined
+						? 0
+						: requireNumber(args.startTime, "startTime");
+				const element: CreateTimelineElement = {
+					type: "code",
+					name:
+						typeof args.name === "string" && args.name.trim()
+							? args.name
+							: "代码生成器",
+					startTime: mediaTimeFromSeconds({ seconds: startTime }),
+					duration: mediaTimeFromSeconds({ seconds: duration }),
+					trimStart: mediaTimeFromSeconds({ seconds: 0 }),
+					trimEnd: mediaTimeFromSeconds({ seconds: 0 }),
+					params: {},
+					code,
+					codeParams,
+				};
+				const placement: InsertElementParams["placement"] = trackId
+					? { mode: "explicit", trackId }
+					: { mode: "auto", trackType: "graphic" };
+				return { mode, ...insertAndSelect(editor, element, placement) };
+			}
+
+			if (mode === "effect") {
+				if (!trackId || !elementId) {
+					throw new Error("effect requires trackId and elementId");
+				}
+				const scene = editor.scenes.getActiveSceneOrNull();
+				const track = scene
+					? [scene.tracks.main, ...scene.tracks.overlay].find(
+							(item) => item.id === trackId,
+						)
+					: undefined;
+				const element = track?.elements.find((item) => item.id === elementId);
+				if (!element) throw new Error(`Element not found: ${elementId}`);
+				if (element.type === "effect") {
+					throw new Error("effect requires a visual element");
+				}
+				const effectParams: ParamValues = {
+					[CODE_EFFECT_CODE_KEY]: code,
+				};
+				for (const key of Object.keys(element.params)) {
+					if (key.startsWith(CODE_EFFECT_PARAMS_PREFIX)) effectParams[key] = "";
+				}
+				for (const [key, value] of Object.entries(codeParams)) {
+					effectParams[`${CODE_EFFECT_PARAMS_PREFIX}${key}`] = value;
+				}
+				editor.timeline.updateElements({
+					updates: [{ trackId, elementId, patch: { params: effectParams } }],
+				});
+				return { mode, trackId, elementId };
+			}
+
+			if (mode !== "transition") {
+				throw new Error(`Unsupported code_render mode: ${mode}`);
+			}
+			if (!trackId || !elementId || duration === undefined) {
+				throw new Error("transition requires trackId, elementId and duration");
+			}
+			if (duration < 0.05 || duration > 10) {
+				throw new Error("duration must be between 0.05 and 10 seconds");
+			}
+
+			const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+			if (!tracks) throw new Error("No active scene");
+			const track = [tracks.main, ...tracks.overlay].find(
+				(item) => item.id === trackId,
+			);
+			if (!track || track.type !== "video") {
+				throw new Error(`Video track not found: ${trackId}`);
+			}
+			const elements = track.elements
+				.slice()
+				.sort((a, b) => a.startTime - b.startTime);
+			const index = elements.findIndex((element) => element.id === elementId);
+			const outgoing = elements[index];
+			const incoming = elements[index + 1];
+			if (!outgoing || !incoming) {
+				throw new Error(
+					"Custom transition requires a following element on the same track",
+				);
+			}
+			if (
+				!["video", "image"].includes(outgoing.type) ||
+				!["video", "image"].includes(incoming.type)
+			) {
+				throw new Error("Custom transition only supports video/image elements");
+			}
+			const gap = incoming.startTime - (outgoing.startTime + outgoing.duration);
+			if (gap < 0 || gap > toTicks(1 / 30)) {
+				throw new Error("Elements must be adjacent to apply a transition");
+			}
+			if (
+				duration > toSeconds(outgoing.duration) ||
+				duration > toSeconds(incoming.duration)
+			) {
+				throw new Error("duration cannot be longer than either element");
+			}
+
+			const transitionParams: ParamValues = {
+				"transition.type": "custom",
+				"transition.duration": duration,
+				"transition.code": code,
+			};
+			for (const key of Object.keys(outgoing.params)) {
+				if (key.startsWith("transition.param.")) transitionParams[key] = "";
+			}
+			for (const [key, value] of entries) {
+				if (
+					typeof value === "string" ||
+					typeof value === "number" ||
+					typeof value === "boolean"
+				) {
+					transitionParams[`transition.param.${key}`] = value;
+				}
+			}
+			editor.timeline.updateElements({
+				updates: [{ trackId, elementId, patch: { params: transitionParams } }],
+			});
+			return {
+				mode,
+				trackId,
+				elementId,
+				incomingElementId: incoming.id,
+				type: "custom",
+				duration,
+			};
 		},
 	},
 

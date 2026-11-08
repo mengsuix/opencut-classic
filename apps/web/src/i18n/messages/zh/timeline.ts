@@ -131,6 +131,7 @@ export const timeline = {
 	"timeline.typeText": "文本",
 	"timeline.typeGraphic": "图形",
 	"timeline.typeHtml": "HTML 特效",
+	"timeline.typeCode": "代码特效",
 	"timeline.typeEffect": "特效",
 	"timeline.typeImage": "图片",
 	"timeline.typeSticker": "贴纸",

@@ -8,17 +8,18 @@ import { createCanvasSurface } from "../canvas-utils";
 import { BlurBackgroundNode } from "../nodes/blur-background-node";
 import { ColorNode } from "../nodes/color-node";
 import { EffectLayerNode } from "../nodes/effect-layer-node";
-import {
-	GraphicNode,
-	type ResolvedGraphicNodeState,
-} from "../nodes/graphic-node";
+import { GraphicNode } from "../nodes/graphic-node";
 import { HtmlNode } from "../nodes/html-node";
+import { CodeRenderNode } from "../nodes/code-render-node";
 import { ImageNode } from "../nodes/image-node";
 import { RootNode } from "../nodes/root-node";
 import { StickerNode } from "../nodes/sticker-node";
 import { renderTextToContext, TextNode } from "../nodes/text-node";
 import { VideoNode } from "../nodes/video-node";
-import type { ResolvedVisualSourceNodeState } from "../nodes/visual-node";
+import type {
+	ResolvedVisualNodeState,
+	ResolvedVisualSourceNodeState,
+} from "../nodes/visual-node";
 import type {
 	FrameDescriptor,
 	FrameItemDescriptor,
@@ -28,14 +29,32 @@ import type {
 	TextureUploadDescriptor,
 } from "./types";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
+import { renderCode } from "../code-render-runtime";
+import { wasmCompositor } from "./wasm-compositor";
+
+type RenderGuard = {
+	signal?: AbortSignal;
+	shouldRender?: () => boolean;
+};
+
+function assertRenderCurrent({ signal, shouldRender }: RenderGuard): void {
+	if (signal?.aborted) {
+		throw signal.reason ?? new DOMException("Render aborted", "AbortError");
+	}
+	if (shouldRender && !shouldRender()) {
+		throw new DOMException("Render superseded", "AbortError");
+	}
+}
 
 export async function buildFrameDescriptor({
 	node,
 	renderer,
+	signal,
+	shouldRender,
 }: {
 	node: AnyBaseNode;
 	renderer: CanvasRenderer;
-}): Promise<{
+} & RenderGuard): Promise<{
 	frame: FrameDescriptor;
 	textures: TextureUploadDescriptor[];
 }> {
@@ -48,6 +67,8 @@ export async function buildFrameDescriptor({
 		path: "root",
 		items,
 		textures,
+		signal,
+		shouldRender,
 	});
 
 	incrementCounter({ name: "frameItems", by: items.length });
@@ -72,13 +93,15 @@ async function collectNode({
 	path,
 	items,
 	textures,
+	signal,
+	shouldRender,
 }: {
 	node: AnyBaseNode;
 	renderer: CanvasRenderer;
 	path: string;
 	items: FrameItemDescriptor[];
 	textures: Map<string, TextureUploadDescriptor>;
-}): Promise<void> {
+} & RenderGuard): Promise<void> {
 	if (node instanceof RootNode) {
 		for (let index = 0; index < node.children.length; index++) {
 			await collectNode({
@@ -87,8 +110,23 @@ async function collectNode({
 				path: `${path}:${index}`,
 				items,
 				textures,
+				signal,
+				shouldRender,
 			});
 		}
+		return;
+	}
+
+	if (node instanceof CodeRenderNode) {
+		await collectCodeRenderNode({
+			node,
+			renderer,
+			path,
+			items,
+			textures,
+			signal,
+			shouldRender,
+		});
 		return;
 	}
 
@@ -206,6 +244,215 @@ async function collectNode({
 			textures,
 		});
 	}
+}
+
+async function collectCodeRenderNode({
+	node,
+	renderer,
+	path,
+	items,
+	textures,
+	signal,
+	shouldRender,
+}: {
+	node: CodeRenderNode;
+	renderer: CanvasRenderer;
+	path: string;
+	items: FrameItemDescriptor[];
+	textures: Map<string, TextureUploadDescriptor>;
+} & RenderGuard) {
+	if (!node.resolved) return;
+	const { progress, time, duration } = node.resolved;
+	const mode = node.params.mode;
+	if (mode === "transition" && (progress <= 0 || progress >= 1)) {
+		await collectNode({
+			node: progress <= 0 ? node.outgoing : node.incoming,
+			renderer,
+			path,
+			items,
+			textures,
+			signal,
+			shouldRender,
+		});
+		return;
+	}
+	if (mode === "effect" && (time < 0 || time >= duration)) {
+		await collectNode({
+			node: node.source,
+			renderer,
+			path,
+			items,
+			textures,
+			signal,
+			shouldRender,
+		});
+		return;
+	}
+
+	try {
+		assertRenderCurrent({ signal, shouldRender });
+		const snapshots = await Promise.all(
+			node.children.map((child, index) =>
+				renderNodeSnapshot({
+					node: child,
+					renderer,
+					path: `${path}:input-${index}`,
+					signal,
+					shouldRender,
+				}),
+			),
+		);
+		if (snapshots.some((snapshot) => !snapshot)) {
+			throw new Error("Code render requires all input frames");
+		}
+		const validSnapshots = snapshots.filter(
+			(snapshot): snapshot is NodeSnapshot => snapshot !== null,
+		);
+		const firstSnapshot = validSnapshots[0];
+		if (firstSnapshot) {
+			presentNodeSnapshot({
+				snapshot: firstSnapshot,
+				renderer,
+				signal,
+				shouldRender,
+			});
+		}
+		const result = await renderCode({
+			code: node.params.code,
+			width: renderer.width,
+			height: renderer.height,
+			inputs: validSnapshots.map((snapshot) => snapshot.canvas),
+			time,
+			duration,
+			progress,
+			params: node.params.codeParams,
+		});
+		const textureId = `${path}:code`;
+		textures.set(textureId, {
+			kind: "external",
+			id: textureId,
+			source: result.canvas,
+			width: renderer.width,
+			height: renderer.height,
+			contentHash: result.contentHash,
+		});
+
+		if (mode === "generator" && node.resolved.visual) {
+			const transform = computeVisualTransform({
+				renderer,
+				resolved: node.resolved.visual,
+				sourceWidth: renderer.width,
+				sourceHeight: renderer.height,
+				pixelExact: node.params.pixelExact,
+			});
+			const { mask, strokeLayer } = buildMaskArtifacts({
+				node,
+				renderer,
+				path,
+				transform,
+				textures,
+			});
+			items.push({
+				type: "layer",
+				textureId,
+				transform,
+				opacity: node.resolved.visual.opacity,
+				blendMode: node.params.blendMode ?? "normal",
+				effectPassGroups: node.resolved.visual.effectPasses,
+				mask,
+			});
+			if (strokeLayer) items.push(strokeLayer);
+			return;
+		}
+
+		items.push({
+			type: "layer",
+			textureId,
+			transform: fullCanvasTransform(renderer),
+			opacity: 1,
+			blendMode: "normal",
+			effectPassGroups: [],
+			mask: null,
+		});
+	} catch (error) {
+		if (error instanceof DOMException && error.name === "AbortError") throw error;
+		console.warn(`[code-render:${mode}] Rendering failed`, error);
+		if (mode !== "generator") {
+			await collectNode({
+				node: node.source,
+				renderer,
+				path: `${path}:fallback`,
+				items,
+				textures,
+				signal,
+				shouldRender,
+			});
+		}
+	}
+}
+
+type NodeSnapshot = {
+	canvas: OffscreenCanvas;
+	frame: FrameDescriptor;
+	textures: TextureUploadDescriptor[];
+};
+
+function presentNodeSnapshot({
+	snapshot,
+	renderer,
+	signal,
+	shouldRender,
+}: {
+	snapshot: NodeSnapshot;
+	renderer: CanvasRenderer;
+} & RenderGuard): void {
+	assertRenderCurrent({ signal, shouldRender });
+	wasmCompositor.ensureInitialized({
+		width: renderer.width,
+		height: renderer.height,
+	});
+	wasmCompositor.syncTextures(snapshot.textures);
+	wasmCompositor.render(snapshot.frame);
+}
+
+async function renderNodeSnapshot({
+	node,
+	renderer,
+	path,
+	signal,
+	shouldRender,
+}: {
+	node: AnyBaseNode;
+	renderer: CanvasRenderer;
+	path: string;
+} & RenderGuard): Promise<NodeSnapshot | null> {
+	const items: FrameItemDescriptor[] = [];
+	const textureMap = new Map<string, TextureUploadDescriptor>();
+	await collectNode({
+		node,
+		renderer,
+		path,
+		items,
+		textures: textureMap,
+		signal,
+		shouldRender,
+	});
+	if (items.length === 0) return null;
+	const snapshot: NodeSnapshot = {
+		canvas: new OffscreenCanvas(renderer.width, renderer.height),
+		frame: {
+			width: renderer.width,
+			height: renderer.height,
+			clear: { color: [0, 0, 0, 0] },
+			items,
+		},
+		textures: [...textureMap.values()],
+	};
+	presentNodeSnapshot({ snapshot, renderer, signal, shouldRender });
+	const ctx = snapshot.canvas.getContext("2d");
+	if (!ctx) throw new Error("Canvas 2D is unavailable");
+	ctx.drawImage(wasmCompositor.getCanvas(), 0, 0);
+	return snapshot;
 }
 
 async function collectVisualSourceNode({
@@ -344,7 +591,7 @@ function computeVisualTransform({
 	pixelExact,
 }: {
 	renderer: CanvasRenderer;
-	resolved: ResolvedVisualSourceNodeState | ResolvedGraphicNodeState;
+	resolved: ResolvedVisualNodeState;
 	sourceWidth: number;
 	sourceHeight: number;
 	pixelExact?: boolean;
@@ -389,7 +636,13 @@ function buildMaskArtifacts({
 	transform,
 	textures,
 }: {
-	node: VideoNode | ImageNode | StickerNode | GraphicNode | HtmlNode;
+	node:
+		| VideoNode
+		| ImageNode
+		| StickerNode
+		| GraphicNode
+		| HtmlNode
+		| CodeRenderNode;
 	renderer: CanvasRenderer;
 	path: string;
 	transform: QuadTransformDescriptor;
@@ -404,11 +657,15 @@ function buildMaskArtifacts({
 	}
 
 	const definition = getMaskDefinition(mask.type);
+	const localTime =
+		node instanceof CodeRenderNode
+			? (node.resolved?.visual?.localTime ?? 0)
+			: (node.resolved?.localTime ?? 0);
 	const maskParams = resolveMaskParamsAtTime({
 		maskId: mask.id,
 		params: mask.params,
 		animations: node.params.animations,
-		localTime: node.resolved?.localTime ?? 0,
+		localTime,
 	});
 
 	if (definition.isActive?.(maskParams) === false) {

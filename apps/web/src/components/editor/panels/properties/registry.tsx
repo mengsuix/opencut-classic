@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type {
+	CodeElement,
 	EffectElement,
 	GraphicElement,
 	HtmlElement,
@@ -324,6 +325,22 @@ function getHtmlConfig({
 	};
 }
 
+function getCodeConfig({
+	element,
+}: {
+	element: CodeElement;
+}): ElementPropertiesConfig {
+	return {
+		defaultTab: "transform",
+		tabs: [
+			buildTransformTab({ element }),
+			buildBlendingTab({ element }),
+			buildMasksTab({ element }),
+			buildClipEffectsTab({ element }),
+		],
+	};
+}
+
 function buildHtmlTab({
 	element,
 }: {
@@ -383,6 +400,8 @@ export function getPropertiesConfig({
 			return getGraphicConfig({ element });
 		case "html":
 			return getHtmlConfig({ element });
+		case "code":
+			return getCodeConfig({ element });
 		case "audio":
 			return getAudioConfig({ element });
 		case "effect":

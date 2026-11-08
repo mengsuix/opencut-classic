@@ -82,7 +82,8 @@ export class CanvasRenderer {
 		throwIfAborted(signal);
 		const { frame, textures } = await measureSpanAsync({
 			name: "buildFrame",
-			fn: () => buildFrameDescriptor({ node, renderer: this }),
+			fn: () =>
+				buildFrameDescriptor({ node, renderer: this, signal, shouldRender }),
 		});
 		throwIfAborted(signal);
 		// A newer render can supersede this one while it awaited resolve/build.

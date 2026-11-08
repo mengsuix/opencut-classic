@@ -44,6 +44,7 @@ import { resolveTransformAtTime } from "@/rendering/animation-values";
 import { videoCache } from "@/services/video-cache/service";
 import type { CanvasRenderer } from "./canvas-renderer";
 import type { AnyBaseNode } from "./nodes/base-node";
+import { CodeRenderNode } from "./nodes/code-render-node";
 import {
 	BlurBackgroundNode,
 	type BackdropSource,
@@ -132,6 +133,24 @@ async function resolveNode({
 		node.resolved = await resolveBlurBackgroundNode({ node, context });
 	} else if (node instanceof EffectLayerNode) {
 		node.resolved = resolveEffectLayerNode({ node, context });
+	} else if (node instanceof CodeRenderNode) {
+		const time =
+			(context.time - node.params.timeOffset) / TICKS_PER_SECOND;
+		const duration = node.params.duration / TICKS_PER_SECOND;
+		const progress = Math.min(1, Math.max(0, time / duration));
+		const visual =
+			node.params.mode === "generator"
+				? resolveVisualState({
+						params: node.params,
+						context,
+						sourceWidth: context.renderer.width,
+						sourceHeight: context.renderer.height,
+					})
+				: null;
+		node.resolved =
+			node.params.mode === "generator" && !visual
+				? null
+				: { progress, time, duration, visual };
 	}
 
 	throwIfAborted(context.signal);

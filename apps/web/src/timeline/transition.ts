@@ -5,6 +5,7 @@ import {
 } from "@/animation/visual-anim";
 import { clamp } from "@/utils/math";
 import { readNumberParam, readStringParam } from "@/text/param-readers";
+import { MAX_CODE_RENDER_PARAMS } from "@/code-render";
 
 /**
  * Built-in transitions between two adjacent same-track elements. Pure logic
@@ -26,7 +27,8 @@ export type TransitionType =
 	| "black"
 	| "zoom"
 	| "slide-left"
-	| "slide-right";
+	| "slide-right"
+	| "custom";
 
 export const TRANSITION_TYPES: readonly TransitionType[] = [
 	"none",
@@ -35,11 +37,15 @@ export const TRANSITION_TYPES: readonly TransitionType[] = [
 	"zoom",
 	"slide-left",
 	"slide-right",
+	"custom",
 ];
+
 export interface TransitionConfig {
 	type: TransitionType;
 	/** Seconds. */
 	duration: number;
+	code?: string;
+	codeParams?: ParamValues;
 }
 
 export function buildTransitionFromParams({
@@ -58,11 +64,30 @@ export function buildTransitionFromParams({
 		key: "transition.duration",
 		fallback: FALLBACK_TRANSITION_DURATION,
 	});
-	return { type, duration };
+	if (type !== "custom") return { type, duration };
+
+	const code = readStringParam({
+		params,
+		key: "transition.code",
+		fallback: "",
+	});
+	const codeParams = Object.fromEntries(
+		Object.entries(params)
+			.filter(
+				([key, value]) => key.startsWith("transition.param.") && value !== "",
+			)
+			.slice(0, MAX_CODE_RENDER_PARAMS)
+			.map(([key, value]) => [key.slice("transition.param.".length), value]),
+	);
+	return { type, duration, code, codeParams };
 }
 
 export function isActiveTransition(config: TransitionConfig): boolean {
-	return config.type !== "none" && config.duration > 0;
+	return (
+		config.type !== "none" &&
+		config.duration > 0 &&
+		(config.type !== "custom" || Boolean(config.code?.trim()))
+	);
 }
 
 const IDLE_STATE: VisualAnimState = {

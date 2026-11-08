@@ -8,7 +8,11 @@ import { useElementSelection } from "@/timeline/hooks/element/use-element-select
 import { TRANSITION_TYPES, type TransitionType } from "@/timeline/transition";
 import { cn } from "@/utils/ui";
 
-const TRANSITION_KEYS = TRANSITION_TYPES.filter((type) => type !== "none");
+type BuiltInTransitionType = Exclude<TransitionType, "none" | "custom">;
+
+const TRANSITION_KEYS = TRANSITION_TYPES.filter(
+	(type): type is BuiltInTransitionType => type !== "none" && type !== "custom",
+);
 
 const TRANSITION_LABEL_KEYS = {
 	none: "properties.transitionNone",
