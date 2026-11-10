@@ -113,6 +113,115 @@ def _error(message: str) -> dict:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
 
 
+# 采样意图预设：把"看结构 / 看细节 / 看运动"的帧数与范围规则从 prompt 收进代码，
+# 模型只需声明目的，不再背 9~16 / 9~12 / 24 帧与 ±1s 这类数值。
+# 显式 count/timestamps 始终优先于预设。
+_SEQUENCE_PURPOSE_COUNTS = {"overview": 9, "detail": 12, "motion": 24}
+_MOTION_HALF_WINDOW_SECONDS = 1.0
+
+
+def _apply_sequence_purpose(args: dict, payload: dict) -> str | None:
+    """把 purpose 预设落到 payload；返回错误文本或 None。"""
+    purpose = args.get("purpose")
+    if purpose is None:
+        return None
+    if purpose not in _SEQUENCE_PURPOSE_COUNTS:
+        return (
+            f"purpose 必须是 overview/detail/motion（收到 {purpose}）："
+            "overview 看结构、detail 看细节、motion 看运动过程"
+        )
+    if args.get("timestamps"):
+        return None
+    if "count" not in payload:
+        payload["count"] = _SEQUENCE_PURPOSE_COUNTS[purpose]
+    if purpose == "motion":
+        start, end = payload.get("start"), payload.get("end")
+        if start is None or end is None:
+            return "purpose=motion 需同时给 start/end 指定目标区间，会自动缩到区间中点 ±1s 并逐帧级采样"
+        if end - start > 2 * _MOTION_HALF_WINDOW_SECONDS:
+            mid = (start + end) / 2
+            payload["start"] = max(0.0, mid - _MOTION_HALF_WINDOW_SECONDS)
+            payload["end"] = mid + _MOTION_HALF_WINDOW_SECONDS
+    return None
+
+
+def _state_digest(state) -> dict | None:
+    """命令失败时附带的最新状态摘要：只保留轨道与元素的 id/时间，供对齐失效引用。"""
+    if not isinstance(state, dict):
+        return None
+    tracks: list[dict] = []
+
+    def visit(node) -> None:
+        if len(tracks) >= 20:
+            return
+        if isinstance(node, dict):
+            elements = node.get("elements")
+            if isinstance(elements, list) and "id" in node and "type" in node:
+                tracks.append(
+                    {
+                        "trackId": node.get("id"),
+                        "name": node.get("name"),
+                        "type": node.get("type"),
+                        "elements": [
+                            {
+                                k: element.get(k)
+                                for k in (
+                                    "id",
+                                    "type",
+                                    "name",
+                                    "startTime",
+                                    "duration",
+                                )
+                                if k in element
+                            }
+                            for element in elements
+                            if isinstance(element, dict)
+                        ],
+                    }
+                )
+                return
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(state.get("scenes", state))
+    return {"tracks": tracks}
+
+
+def _classify_command(command: str, args: dict) -> str:
+    verb = command.split(".", 1)[-1]
+    if verb.startswith(("list", "get", "read", "describe")) or verb == "status":
+        return "read"
+    if command == "code_render.apply" and args.get("mode") == "generator":
+        return "added"
+    if verb.startswith(("remove", "delete")) or verb in ("clear",):
+        return "removed"
+    if verb.startswith(("add", "insert", "create", "import", "duplicate")):
+        return "added"
+    return "modified"
+
+
+def _summarize_command_args(args: dict) -> str:
+    """变更清单只需要有界摘要，不能把 HTML/代码/base64 再灌回模型上下文。"""
+
+    def compact(value, depth=0):
+        if isinstance(value, dict) and depth < 4:
+            return {key: compact(item, depth + 1) for key, item in value.items()}
+        if isinstance(value, list) and depth < 4:
+            items = [compact(item, depth + 1) for item in value[:50]]
+            if len(value) > 50:
+                items.append(f"<省略 {len(value) - 50} 项>")
+            return items
+        if isinstance(value, str) and len(value) > 160:
+            return f"<省略 {len(value)} 字符>"
+        return value
+
+    text = json.dumps(compact(args), ensure_ascii=False)
+    return text if len(text) <= 2000 else text[:2000] + "…"
+
+
 def _evict_oldest_unpinned(handles: dict, pinned: set, max_n: int) -> None:
     """FIFO 淘汰最旧的未固定句柄；全部固定时允许超限（参考图是评判循环的锚点，不可淘汰）"""
     while len(handles) > max_n:
@@ -132,6 +241,8 @@ def build_editor_mcp_server(session_id: str):
     pinned_handles: set[str] = set()  # judge_visual 参考图句柄，不参与 FIFO 淘汰
     handle_seq = {"img": 0}
     MAX_IMAGE_HANDLES = 20
+    # 本次会话的编辑器命令日志：供 get_session_changes 生成汇报清单
+    change_log: list[dict] = []
 
     def _register_image(base64_data: str, mime: str) -> str:
         handle_seq["img"] += 1
@@ -219,7 +330,62 @@ def build_editor_mcp_server(session_id: str):
         cmd_args = args.get("args")
         if not isinstance(cmd_args, dict):
             cmd_args = {}
-        return await run(command, cmd_args)
+        args_summary = _summarize_command_args(cmd_args)
+        try:
+            result = await call_editor(session_id, command, cmd_args)
+        except Exception as e:
+            # 失败即附最新状态摘要，调用方无需凭旧状态猜测有效引用。
+            entry = {
+                "command": command,
+                "args": args_summary,
+                "ok": False,
+                "error": str(e),
+            }
+            change_log.append(entry)
+            digest = None
+            try:
+                digest = _state_digest(await call_editor(session_id, "state.get"))
+            except Exception:
+                digest = None
+            return _error(
+                json.dumps(
+                    {"error": str(e), "command": command, "stateDigest": digest},
+                    ensure_ascii=False,
+                )
+            )
+        category = _classify_command(command, cmd_args)
+        if category != "read":
+            change_log.append(
+                {
+                    "command": command,
+                    "args": args_summary,
+                    "ok": True,
+                    "category": category,
+                }
+            )
+        return _text(result)
+
+    @tool(
+        "get_session_changes",
+        "列出本次会话记录的内容变更，按 added/removed/modified 分组，失败的命令列在 failed。"
+        "参数是有界摘要，只读命令不计入变更。用于汇报前核对，不代表未记录的用户操作或非本次产物。",
+        {},
+    )
+    async def get_session_changes(args):
+        groups: dict[str, list] = {
+            "added": [],
+            "removed": [],
+            "modified": [],
+            "failed": [],
+        }
+        for entry in change_log:
+            item = {"command": entry["command"], "args": entry["args"]}
+            if not entry["ok"]:
+                item["error"] = entry.get("error")
+                groups["failed"].append(item)
+            else:
+                groups[entry["category"]].append(item)
+        return _text({"total": len(change_log), **groups})
 
     @tool(
         "get_preview_frame",
@@ -288,6 +454,11 @@ def build_editor_mcp_server(session_id: str):
                     "type": "number",
                     "description": "范围终点（秒，默认项目时长）",
                 },
+                "purpose": {
+                    "type": "string",
+                    "enum": ["overview", "detail", "motion"],
+                    "description": "采样意图预设，免去手算帧数：overview 看结构（9 帧）、detail 看细节（12 帧）、motion 看运动过程（24 帧，并把 start/end 缩到区间中点 ±1s，需显式给目标区间）。显式 count/timestamps 优先于预设。",
+                },
                 "count": {
                     "type": "number",
                     "description": "去重前抽样帧数（默认 9）。必须在 1~24 之间——超限会被拒绝而非截断；要更细就缩小 start/end 而不是加 count。",
@@ -310,6 +481,9 @@ def build_editor_mcp_server(session_id: str):
             value = args.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 payload[key] = value
+        purpose_error = _apply_sequence_purpose(args, payload)
+        if purpose_error:
+            return _error(purpose_error)
         cell_width = args.get("cellWidth")
         if isinstance(cell_width, (int, float)) and not isinstance(cell_width, bool):
             if cell_width < 120 or cell_width > 640:
@@ -385,6 +559,11 @@ def build_editor_mcp_server(session_id: str):
                     "type": "number",
                     "description": "仅视频：范围终点（秒，默认素材时长）",
                 },
+                "purpose": {
+                    "type": "string",
+                    "enum": ["overview", "detail", "motion"],
+                    "description": "仅视频：采样意图预设，overview 看结构（9 帧）、detail 看细节（12 帧）、motion 看运动过程（24 帧并缩到区间中点 ±1s，需显式给 start/end）。显式 count/timestamps 优先。",
+                },
                 "count": {
                     "type": "number",
                     "description": "仅视频：去重前抽样帧数（默认 9，最多 24——超限拒绝）",
@@ -415,6 +594,9 @@ def build_editor_mcp_server(session_id: str):
             value = args.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 payload[key] = value
+        purpose_error = _apply_sequence_purpose(args, payload)
+        if purpose_error:
+            return _error(purpose_error)
         count = args.get("count")
         if isinstance(count, (int, float)) and not isinstance(count, bool):
             if count < 1 or count > MAX_SEQUENCE_FRAMES:

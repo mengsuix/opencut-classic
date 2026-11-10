@@ -3,6 +3,7 @@ import {
 	mediaTimeFromSeconds,
 	mediaTimeToSeconds,
 	roundMediaTime,
+	subMediaTime,
 	type MediaTime,
 } from "@/wasm";
 import { DEFAULTS } from "@/timeline/defaults";
@@ -56,7 +57,11 @@ import {
 	isCompositeChannelData,
 	isLeafChannelData,
 } from "@/animation/channel-data";
-import type { RetimeConfig } from "@/timeline/types";
+import type { RetimeConfig, TimelineElement } from "@/timeline/types";
+import {
+	computeSplitCenterLayout,
+	isSameSourceCut,
+} from "./code-render-layout";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import {
 	ALL_FORMATS,
@@ -1186,6 +1191,49 @@ async function prewarmVideoSinks({
 	}
 }
 
+/**
+ * add_html 的静态校验：把写作规范里的硬性禁令（外部资源、定时器、墙钟/随机、
+ * 缺声明框）从 prompt 收进代码，在插入前就拒绝，而不是等渲染出来才发现不跟随时间线。
+ * 只校验新写的 HTML；presetId 复用走存量，不做追溯校验。
+ */
+const HTML_EFFECT_FORBIDDEN: Array<[RegExp, string]> = [
+	[/<link[\s/>]/i, "external stylesheets are not supported; use inline <style>"],
+	[/@import\b/i, "@import is not supported; use inline <style>"],
+	[
+		/url\(\s*['"]?https?:/i,
+		"external url() assets are not supported; embed data: URLs",
+	],
+	[
+		/<(img|image|source)[^>]*\bsrc\s*=\s*['"]?https?:/i,
+		"images must be data: URLs",
+	],
+	[
+		/<script[^>]*\bsrc\s*=\s*['"]?http:\/\//i,
+		"script src must be HTTPS",
+	],
+	[
+		/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,
+		"timers do not follow the timeline; use CSS @keyframes or ONE paused GSAP timeline on window.__timelines.main",
+	],
+	[
+		/\b(?:Date\.now|Math\.random)\s*\(/,
+		"wall-clock and random break deterministic seeking; use fixed seeds and time-driven state",
+	],
+];
+
+function validateHtmlEffectSource({ html }: { html: string }): void {
+	if (!/data-width="\d+"/.test(html) || !/data-height="\d+"/.test(html)) {
+		throw new Error(
+			'root element must declare data-width="<px>" and data-height="<px>"',
+		);
+	}
+	for (const [pattern, reason] of HTML_EFFECT_FORBIDDEN) {
+		if (pattern.test(html)) {
+			throw new Error(`Invalid HTML effect: ${reason}`);
+		}
+	}
+}
+
 export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	"commands.list": {
 		description: "List all available bridge commands with argument hints.",
@@ -1275,6 +1323,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				};
 			} else {
 				html = requireString(args.html, "html");
+				validateHtmlEffectSource({ html });
 				const size = resolveHtmlSize({ html });
 				intrinsicWidth = size.width;
 				intrinsicHeight = size.height;
@@ -1671,6 +1720,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			code: "JavaScript defining render(ctx, frame), max 50000 chars",
 			startTime: "seconds? (generator only, default 0)",
 			duration: "seconds? (required for generator; 0.05~10 for transition and no longer than either element)",
+			layout:
+				"transition only: 'auto' (default; detects contiguous halves of the same video and lays them out automatically) | 'cut' (keep both elements untouched) | 'split-center' (explicit source/timeline adjustment). Layout changes and any required following-element shift are applied in one undo step.",
 			name: "string? (generator element name)",
 			params:
 				"optional flat object of up to 64 non-empty string/finite number/boolean values",
@@ -1850,9 +1901,67 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					transitionParams[`transition.param.${key}`] = value;
 				}
 			}
-			editor.timeline.updateElements({
-				updates: [{ trackId, elementId, patch: { params: transitionParams } }],
-			});
+
+			const requestedLayout =
+				typeof args.layout === "string" ? args.layout : "auto";
+			if (!["auto", "cut", "split-center"].includes(requestedLayout)) {
+				throw new Error("layout must be 'auto', 'cut' or 'split-center'");
+			}
+			const sameSourceCut =
+				outgoing.type === "video" &&
+				incoming.type === "video" &&
+				isSameSourceCut({ outgoing, incoming });
+			if (requestedLayout === "cut" && sameSourceCut) {
+				throw new Error(
+					"A contiguous same-source cut needs layout='split-center' (or 'auto'); no changes were applied",
+				);
+			}
+			const layout =
+				requestedLayout === "auto"
+					? sameSourceCut
+						? "split-center"
+						: "cut"
+					: requestedLayout;
+
+			const updates: Array<{
+				trackId: string;
+				elementId: string;
+				patch: Partial<TimelineElement>;
+			}> = [{ trackId, elementId, patch: { params: transitionParams } }];
+			let adjustment: Record<string, unknown> | undefined;
+			if (layout === "split-center") {
+				if (outgoing.type !== "video" || incoming.type !== "video") {
+					throw new Error("split-center only supports video elements");
+				}
+				const computed = computeSplitCenterLayout({
+					outgoing,
+					incoming,
+					duration,
+				});
+				Object.assign(updates[0]!.patch, computed.outgoingPatch);
+				updates.push({
+					trackId,
+					elementId: incoming.id,
+					patch: computed.incomingPatch,
+				});
+				for (const following of elements.slice(index + 2)) {
+					updates.push({
+						trackId,
+						elementId: following.id,
+						patch: {
+							startTime: subMediaTime({
+								a: following.startTime,
+								b: computed.followingStartDelta,
+							}),
+						},
+					});
+				}
+				adjustment = {
+					...computed.adjustment,
+					shiftedFollowingElements: elements.length - index - 2,
+				};
+			}
+			editor.timeline.updateElements({ updates });
 			return {
 				mode,
 				trackId,
@@ -1860,6 +1969,8 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				incomingElementId: incoming.id,
 				type: "custom",
 				duration,
+				layout,
+				...(adjustment ? { adjustment } : {}),
 			};
 		},
 	},
