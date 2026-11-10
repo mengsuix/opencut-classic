@@ -674,7 +674,7 @@ def build_editor_mcp_server(session_id: str):
         "hasAudio：true 表示窗口段带原音轨（Opus），烘焙片段要嵌回原位替换时间线区段时，"
         "HTML 里 <video> 保持 muted、另加一个同 src 的 <audio data-start data-duration> "
         "接上原声；false 表示源素材无声，不要加 <audio>（渲染机会拒收无音轨的 audio）。"
-        "产物落位做法见系统提示「转场 / 切换」。",
+        "产物必须嵌回原轨道原位，不要放到叠加轨道遮盖。",
         {
             "type": "object",
             "properties": {
@@ -771,9 +771,8 @@ def build_editor_mcp_server(session_id: str):
         "（窗口已切好，不需要 #t=）。HyperFrames 托管媒体播放——绝不加 crossorigin、"
         "绝不调 play/pause/seek、也绝不自己把帧预解码进离屏 canvas；渲染机提取真实帧"
         "并合成。每个 video 包一层不带时间的 wrapper 做运动（lint 拒绝带时间的 video "
-        "嵌在带时间的祖先里；已实测的交叉淡化配方见系统提示「HTML 特效写作规范」的「视频帧源」一节）。"
-        "渲染出的烘焙片段是不透明满幅画面：必须嵌回原轨道原位（落位做法见系统提示"
-        "「转场 / 切换」），不要放叠加轨道盖住。",
+        "嵌在带时间的祖先里）。"
+        "渲染出的烘焙片段是不透明满幅画面：必须嵌回原轨道原位，不要放叠加轨道盖住。",
         {
             "type": "object",
             "properties": {
@@ -876,7 +875,7 @@ def build_editor_mcp_server(session_id: str):
                 "placement 用 {mode:'explicit', trackId}（显式落到刚建的 overlay 轨道，"
                 "不要放 main 轨道，不要省略 trackId 用 auto——image/video 元素只能放 video 类轨道）。"
                 "例外：烘焙转场片段（嵌入了 supply_media_window 真实画面的不透明满幅片段）不走"
-                "第二、三步，导入后嵌回原轨道原位（落位做法见系统提示「转场 / 切换」）"
+                "第二、三步，导入后嵌回原轨道原位，不要放到叠加轨道遮盖"
             )
         next_steps += (
             "。落位尺寸：若 HTML 的 data-width/data-height 与项目画布尺寸一致，"

@@ -94,6 +94,7 @@ import type { ParamValues } from "@/params";
 import { getBuiltInElementParams } from "@/params/registry";
 import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
+import { htmlAnimationWarnings, validateHtmlEffectSource } from "./html-validation";
 import { validateElementPatchRootKeys } from "./patch-validation";
 import { useAiChatStore } from "@/editor/ai/ai-chat-store";
 import { describeSelectedElements } from "@/editor/ai/reference-snapshot";
@@ -185,7 +186,7 @@ async function fetchGatewayMedia({
 }
 
 function requireNumber(value: unknown, name: string): number {
-	if (typeof value !== "number" || Number.isNaN(value)) {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
 		throw new Error(`Missing or invalid argument: ${name}`);
 	}
 	return value;
@@ -1191,49 +1192,6 @@ async function prewarmVideoSinks({
 	}
 }
 
-/**
- * add_html 的静态校验：把写作规范里的硬性禁令（外部资源、定时器、墙钟/随机、
- * 缺声明框）从 prompt 收进代码，在插入前就拒绝，而不是等渲染出来才发现不跟随时间线。
- * 只校验新写的 HTML；presetId 复用走存量，不做追溯校验。
- */
-const HTML_EFFECT_FORBIDDEN: Array<[RegExp, string]> = [
-	[/<link[\s/>]/i, "external stylesheets are not supported; use inline <style>"],
-	[/@import\b/i, "@import is not supported; use inline <style>"],
-	[
-		/url\(\s*['"]?https?:/i,
-		"external url() assets are not supported; embed data: URLs",
-	],
-	[
-		/<(img|image|source)[^>]*\bsrc\s*=\s*['"]?https?:/i,
-		"images must be data: URLs",
-	],
-	[
-		/<script[^>]*\bsrc\s*=\s*['"]?http:\/\//i,
-		"script src must be HTTPS",
-	],
-	[
-		/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,
-		"timers do not follow the timeline; use CSS @keyframes or ONE paused GSAP timeline on window.__timelines.main",
-	],
-	[
-		/\b(?:Date\.now|Math\.random)\s*\(/,
-		"wall-clock and random break deterministic seeking; use fixed seeds and time-driven state",
-	],
-];
-
-function validateHtmlEffectSource({ html }: { html: string }): void {
-	if (!/data-width="\d+"/.test(html) || !/data-height="\d+"/.test(html)) {
-		throw new Error(
-			'root element must declare data-width="<px>" and data-height="<px>"',
-		);
-	}
-	for (const [pattern, reason] of HTML_EFFECT_FORBIDDEN) {
-		if (pattern.test(html)) {
-			throw new Error(`Invalid HTML effect: ${reason}`);
-		}
-	}
-}
-
 export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 	"commands.list": {
 		description: "List all available bridge commands with argument hints.",
@@ -1347,10 +1305,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				presetId: savedPresetId,
 				intrinsicWidth,
 				intrinsicHeight,
-				startTime: toTicks(Number(args.startTime ?? 0)),
+				startTime: toTicks(
+					args.startTime == null ? 0 : requireNumber(args.startTime, "startTime"),
+				),
 				duration:
 					args.duration != null
-						? toTicks(Number(args.duration))
+						? toTicks(requireNumber(args.duration, "duration"))
 						: DEFAULT_NEW_ELEMENT_DURATION,
 				params,
 			} as unknown as CreateTimelineElement;
@@ -1375,7 +1335,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					],
 				});
 			}
-			const warnings = largeAnimatedHtmlWarnings({ html });
+			const warnings = [
+				...largeAnimatedHtmlWarnings({ html }),
+				...htmlAnimationWarnings({ html }),
+			];
 			return {
 				...inserted,
 				...(presetId ? {} : { presetId: savedPresetId }),
@@ -1486,7 +1449,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const trackId = requireString(args.trackId, "trackId");
 			const elementId = requireString(args.elementId, "elementId");
 			const patch: Record<string, unknown> = {};
+			let warnings: string[] = [];
 			if (typeof args.html === "string") {
+				validateHtmlEffectSource({ html: args.html });
+				warnings = htmlAnimationWarnings({ html: args.html });
 				const size = resolveHtmlSize({ html: args.html });
 				patch.html = args.html;
 				patch.intrinsicWidth = size.width;
@@ -1507,6 +1473,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			return {
 				updated: true,
 				...(presetUpdated ? { presetUpdated: true } : {}),
+				...(warnings.length > 0 ? { warnings } : {}),
 			};
 		},
 	},
