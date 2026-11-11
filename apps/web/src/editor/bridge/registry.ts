@@ -577,7 +577,7 @@ function readElementNumberParam({
 }
 
 /**
- * Canvas 分数矩形（0~1，左上原点），与 get_user_marks 的 canvasRects 同坐标系。
+ * Canvas 分数矩形（0~1，左上原点），与 marks.get 的 canvasRects 同坐标系。
  */
 function parseCanvasRectArg(
 	value: unknown,
@@ -3211,7 +3211,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"preview.capture": {
 		description:
-			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead. Pass rect ({left, top, right, bottom} as canvas fractions 0~1 — e.g. a canvasRect from get_user_marks) to crop the output to that region at native resolution for inspecting fine details (small icons, text) that a full-frame downscale would blur.",
+			"Capture a preview frame as a downscaled JPEG data URL. Renders at the given time (seconds) or the current playhead. Pass rect ({left, top, right, bottom} as canvas fractions 0~1 — e.g. a canvasRect from marks.get) to crop the output to that region at native resolution for inspecting fine details (small icons, text) that a full-frame downscale would blur.",
 		args: {
 			time: "seconds?",
 			rect: "{left, top, right, bottom}? (canvas fractions 0~1; crop to that region at native resolution)",

@@ -276,19 +276,6 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
             return _error(str(e))
 
     @tool(
-        "editor_status",
-        "检查是否有 OpenCut 编辑器页面连接到本桥接，以及当前打开的是哪个项目。",
-        {},
-    )
-    async def editor_status(args):
-        return _text(
-            {
-                "connected": _editor_sockets.get(session_id) is not None,
-                **_editor_info.get(session_id, {}),
-            }
-        )
-
-    @tool(
         "list_commands",
         "列出 execute_command 可用的全部编辑器命令及参数提示。所有时间值单位是秒。",
         {},
@@ -303,22 +290,6 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
     )
     async def get_editor_state(args):
         return await run("state.get")
-
-    @tool(
-        "get_selection",
-        '获取当前编辑器实时选区的详细信息：选中的时间线元素（引用、轨道类型、元素类型、名称、秒级时间、文本内容）、选中的关键帧与蒙版点。仅在用户明确说"当前选区/现在选中的元素"且消息没有对应 E 编号引用时使用；普通指代优先解析消息中的编号快照。接受 "elements" 数组的命令也可传字符串 "$selection"，直接作用于当前选中。',
-        {},
-    )
-    async def get_selection(args):
-        return await run("selection.describe")
-
-    @tool(
-        "get_user_marks",
-        "获取尚未发送的可视化标记（兼容工具）：canvasRects = 预览画面矩形（C1/C2 等编号、0~1 画布比例、框选时刻），timeRanges = 时间轴范围（T1/T2 等编号、单位秒）。若用户消息已带 C/T 编号快照，直接使用消息中的坐标和时间，无需调用本工具；无标记时返回空数组。可用 execute_command 的 marks.clear 清除尚未发送的标记。",
-        {},
-    )
-    async def get_user_marks(args):
-        return await run("marks.get")
 
     @tool(
         "execute_command",
@@ -382,7 +353,7 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
 
     @tool(
         "get_preview_frame",
-        "截取当前预览画面的一帧，返回降采样图（长边 1280）。可选传 time（秒）渲染指定时刻而不是当前播放头位置。用于修改后的视觉核验。要看清细节（小图标、文字、用户框选的区域）时传 rect——0~1 画布比例矩形，如 get_user_marks 的 canvasRects 条目——输出改为按该区域原生分辨率裁剪，不再降采样。目标是区域内的小子元素（图标、星形、徽标、小字）时，先截整个区域，再把 rect 收紧到该元素本身让它充满画面——只有几十原生像素宽的子元素在更大的裁剪图里无法辨认形状；禁止对着模糊亮点猜形状。",
+        "截取当前预览画面的一帧，返回降采样图（长边 1280）。可选传 time（秒）渲染指定时刻而不是当前播放头位置。用于修改后的视觉核验。要看清细节（小图标、文字、用户框选的区域）时传 rect——0~1 画布比例矩形，如 marks.get 的 canvasRects 条目——输出改为按该区域原生分辨率裁剪，不再降采样。目标是区域内的小子元素（图标、星形、徽标、小字）时，先截整个区域，再把 rect 收紧到该元素本身让它充满画面——只有几十原生像素宽的子元素在更大的裁剪图里无法辨认形状；禁止对着模糊亮点猜形状。",
         {
             "type": "object",
             "properties": {
@@ -392,7 +363,7 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
                 },
                 "rect": {
                     "type": "object",
-                    "description": "可选 {left, top, right, bottom}，0~1 画布比例（与 get_user_marks canvasRects 同一坐标系）；把截图裁剪到该区域并按原生分辨率输出",
+                    "description": "可选 {left, top, right, bottom}，0~1 画布比例（与 marks.get canvasRects 同一坐标系）；把截图裁剪到该区域并按原生分辨率输出",
                 },
             },
         },
@@ -1040,11 +1011,8 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
         name="opencut",
         version="1.0.0",
         tools=[
-            editor_status,
             list_commands,
             get_editor_state,
-            get_selection,
-            get_user_marks,
             execute_command,
             get_preview_frame,
             get_preview_sequence,
