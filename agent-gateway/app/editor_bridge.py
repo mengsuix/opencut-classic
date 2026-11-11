@@ -231,7 +231,21 @@ def _evict_oldest_unpinned(handles: dict, pinned: set, max_n: int) -> None:
         handles.pop(victim)
 
 
-def build_editor_mcp_server(session_id: str):
+def format_change_summary(change_log: list[dict]) -> str:
+    """由实际命令日志生成交付摘要；失败操作单独列出，不计入成功变更。"""
+    labels = (("added", "新增"), ("modified", "修改"), ("removed", "删除"))
+    parts = [
+        f"{label} {sum(1 for entry in change_log if entry.get('ok') and entry.get('category') == key)} 项"
+        for key, label in labels
+        if any(entry.get("ok") and entry.get("category") == key for entry in change_log)
+    ]
+    failed = sum(1 for entry in change_log if not entry.get("ok"))
+    if failed:
+        parts.append(f"{failed} 项失败（未应用）")
+    return "\n\n实际执行记录：" + "、".join(parts) + "。" if parts else ""
+
+
+def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = None):
     """为某个 session 构建 in-process MCP server（工具闭包绑定 session_id）"""
 
     # 图片句柄缓存：模型能"看"图但无法在工具参数里复述图片原文，
@@ -241,8 +255,9 @@ def build_editor_mcp_server(session_id: str):
     pinned_handles: set[str] = set()  # judge_visual 参考图句柄，不参与 FIFO 淘汰
     handle_seq = {"img": 0}
     MAX_IMAGE_HANDLES = 20
-    # 本次会话的编辑器命令日志：供 get_session_changes 生成汇报清单
-    change_log: list[dict] = []
+    # 本轮编辑器命令日志：最终回复由 gateway 自动附加摘要，不依赖模型主动核对。
+    if change_log is None:
+        change_log = []
 
     def _register_image(base64_data: str, mime: str) -> str:
         handle_seq["img"] += 1
@@ -364,28 +379,6 @@ def build_editor_mcp_server(session_id: str):
                 }
             )
         return _text(result)
-
-    @tool(
-        "get_session_changes",
-        "列出本次会话记录的内容变更，按 added/removed/modified 分组，失败的命令列在 failed。"
-        "参数是有界摘要，只读命令不计入变更。用于汇报前核对，不代表未记录的用户操作或非本次产物。",
-        {},
-    )
-    async def get_session_changes(args):
-        groups: dict[str, list] = {
-            "added": [],
-            "removed": [],
-            "modified": [],
-            "failed": [],
-        }
-        for entry in change_log:
-            item = {"command": entry["command"], "args": entry["args"]}
-            if not entry["ok"]:
-                item["error"] = entry.get("error")
-                groups["failed"].append(item)
-            else:
-                groups[entry["category"]].append(item)
-        return _text({"total": len(change_log), **groups})
 
     @tool(
         "get_preview_frame",

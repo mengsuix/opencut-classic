@@ -34,7 +34,7 @@ from claude_agent_sdk._errors import (
 )
 
 from . import config, db
-from .editor_bridge import build_editor_mcp_server
+from .editor_bridge import build_editor_mcp_server, format_change_summary
 from .system_prompt import EDITOR_SYSTEM_PROMPT
 
 logger = logging.getLogger("agent-gateway.agent")
@@ -97,6 +97,8 @@ class _SessionState:
     # 是否有已发出 query、尚未收到 ResultMessage 的回合（由消息泵在 Result 入队后清除）。
     # 断流回合可能正卡在长工具调用上、队列暂时为空，残留判断必须看它而不是看队列。
     turn_open: bool = False
+    change_log: list[dict] = field(default_factory=list)
+
     def __post_init__(self):
         if self.last_activity == 0.0:
             self.last_activity = self.created_at or time.time()
@@ -149,13 +151,16 @@ class AgentService:
         agent_env = dict(config.AGENT_ENV)
         # CLI 会话数据落盘位置固定，Gateway 重启后 resume 才能找回上下文
         agent_env["CLAUDE_CONFIG_DIR"] = str(config_dir)
+        change_log: list[dict] = []
 
         options = ClaudeAgentOptions(
             system_prompt=EDITOR_SYSTEM_PROMPT,
             cwd=str(data_dir),
             model=config.AGENT_MODEL,
             tools=OPENCUT_MCP_TOOLS,
-            mcp_servers={"opencut": build_editor_mcp_server(session_id)},
+            mcp_servers={
+                "opencut": build_editor_mcp_server(session_id, change_log=change_log)
+            },
             env=agent_env,
             # 服务端自动化场景无确认通道，工具面已由 tools 限定为编辑器 MCP 工具
             permission_mode="bypassPermissions",
@@ -176,6 +181,7 @@ class AgentService:
             user_id=user_id,
             created_at=time.time(),
             client=client,
+            change_log=change_log,
         )
         self._sessions[session_id] = state
 
@@ -281,6 +287,7 @@ class AgentService:
                 if dropped:
                     logger.info(f"[Agent] [{session_id[:8]}] 丢弃上一轮残留消息: {dropped} 条")
 
+                state.change_log.clear()
                 state.turn_open = True
                 await state.client.query(message)
 
@@ -379,6 +386,9 @@ class AgentService:
                 state.total_cost_usd += cost_usd
                 state.last_activity = time.time()
 
+                summary = format_change_summary(state.change_log)
+                if summary:
+                    yield StreamEvent(event="text", data={"text": summary})
                 yield StreamEvent(
                     event="result",
                     data={
@@ -487,6 +497,7 @@ class AgentService:
                 await state.messages.put(msg)
                 if isinstance(msg, ResultMessage):
                     state.turn_open = False
+                    turn_text.append(format_change_summary(state.change_log))
                     await flush_segment()
                     saw_delta = False
         except asyncio.CancelledError:
