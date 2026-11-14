@@ -48,9 +48,14 @@ OPENCUT_MCP_TOOLS = [
     "mcp__opencut__read_media",
     "mcp__opencut__supply_media_window",
     "mcp__opencut__judge_visual",
+    "mcp__opencut__judge_route",
     "mcp__opencut__add_media",
     "mcp__opencut__fx_components",
 ]
+
+
+class PendingTurnError(RuntimeError):
+    pass
 
 
 @dataclass
@@ -396,6 +401,10 @@ class AgentService:
                     },
                 )
 
+            except PendingTurnError as e:
+                yield StreamEvent(
+                    event="error", data={"error": str(e), "recoverable": True}
+                )
             except (CLINotFoundError, CLIJSONDecodeError) as e:
                 state.is_active = False
                 yield StreamEvent(event="error", data={"error": f"{type(e).__name__}: {e}"})
@@ -540,10 +549,7 @@ class AgentService:
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                logger.warning(
-                    f"[Agent] [{state.session_id[:8]}] 上一轮打断后未结束，可能有旧消息混入本轮"
-                )
-                return dropped
+                raise PendingTurnError("上一轮操作仍未结束，本次消息未发送，请稍后重试并核对编辑器状态")
             try:
                 msg = await asyncio.wait_for(state.messages.get(), timeout=remaining)
             except TimeoutError:

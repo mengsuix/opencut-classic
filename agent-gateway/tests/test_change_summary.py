@@ -17,14 +17,14 @@ class ChangeSummaryTest(unittest.TestCase):
         ]
         self.assertEqual(
             format_change_summary(log),
-            "\n\n实际执行记录：新增 1 项、修改 2 项、删除 1 项、1 项失败（未应用）。",
+            "\n\n实际执行记录：新增 1 项、修改 2 项、删除 1 项、1 项失败（需核对状态）。",
         )
 
     def test_failed_operation_is_not_counted_as_success(self):
         log = [{"ok": False, "category": "modified", "error": "rejected"}]
         self.assertEqual(
             format_change_summary(log),
-            "\n\n实际执行记录：1 项失败（未应用）。",
+            "\n\n实际执行记录：1 项失败（需核对状态）。",
         )
 
 

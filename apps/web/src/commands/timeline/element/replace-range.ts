@@ -213,6 +213,7 @@ export class ReplaceRangeCommand extends Command {
 					...rest,
 					id: insertedElementId,
 					mediaId: this.mediaId,
+					sourceDuration: this.sourceDuration,
 					startTime: this.rangeStart,
 					duration: midVisibleDuration,
 					trimStart: ZERO_MEDIA_TIME,

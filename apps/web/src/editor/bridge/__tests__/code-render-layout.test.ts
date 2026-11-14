@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { VideoElement } from "@/timeline/types";
+import type { MediaTime } from "@/wasm";
 
 const TICKS = 1000;
 mock.module("@/wasm", () => ({
@@ -15,7 +16,7 @@ mock.module("@/wasm", () => ({
 	minMediaTime: ({ a, b }: { a: number; b: number }) => Math.min(a, b),
 }));
 
-const { computeSplitCenterLayout, isSameSourceCut } =
+const { resolveCodeTransitionLayout, isSameSourceCut } =
 	await import("../code-render-layout");
 
 function video({
@@ -40,26 +41,36 @@ function video({
 		type: "video",
 		mediaId: "media-1",
 		name: id,
-		startTime: startTime * TICKS,
-		duration: duration * TICKS,
-		trimStart: trimStart * TICKS,
-		trimEnd: trimEnd * TICKS,
-		sourceDuration: sourceDuration * TICKS,
+		startTime: (startTime * TICKS) as MediaTime,
+		duration: (duration * TICKS) as MediaTime,
+		trimStart: (trimStart * TICKS) as MediaTime,
+		trimEnd: (trimEnd * TICKS) as MediaTime,
+		sourceDuration: (sourceDuration * TICKS) as MediaTime,
 		...(rate === undefined ? {} : { retime: { rate } }),
 		params: {},
 	};
 }
 
-function expectSourceWindowMatchesDuration(element: VideoElement): void {
-	const rate = element.retime?.rate ?? 1;
-	const sourceSpan =
-		element.sourceDuration! - element.trimStart - element.trimEnd;
-	expect(sourceSpan / rate).toBeCloseTo(element.duration);
-}
+const outgoing = video({
+	id: "a",
+	startTime: 5,
+	duration: 7.7333,
+	trimStart: 24.45,
+	trimEnd: 10,
+	sourceDuration: 42.1833,
+});
+const incoming = video({
+	id: "b",
+	startTime: 12.7333,
+	duration: 5,
+	trimStart: 32.1833,
+	trimEnd: 5,
+	sourceDuration: 42.1833,
+});
 
 describe("isSameSourceCut", () => {
 	test("uses the source axis for constant-rate video", () => {
-		const outgoing = video({
+		const a = video({
 			id: "a",
 			startTime: 0,
 			duration: 5,
@@ -68,7 +79,7 @@ describe("isSameSourceCut", () => {
 			sourceDuration: 20,
 			rate: 2,
 		});
-		const incoming = video({
+		const b = video({
 			id: "b",
 			startTime: 5,
 			duration: 5,
@@ -77,127 +88,85 @@ describe("isSameSourceCut", () => {
 			sourceDuration: 20,
 			rate: 2,
 		});
-		expect(isSameSourceCut({ outgoing, incoming })).toBe(true);
+		expect(isSameSourceCut({ outgoing: a, incoming: b })).toBe(true);
 	});
 });
 
-describe("computeSplitCenterLayout", () => {
-	test("keeps source windows consistent and reports the following-element shift", () => {
-		const outgoing = video({
-			id: "a",
-			startTime: 0,
-			duration: 5,
-			trimStart: 0,
-			trimEnd: 5,
-		});
-		const incoming = video({
-			id: "b",
-			startTime: 5,
-			duration: 5,
-			trimStart: 5,
-			trimEnd: 0,
-		});
-		const result = computeSplitCenterLayout({
+describe("resolveCodeTransitionLayout", () => {
+	test("centers a same-source cut without modifying clips", () => {
+		const before = structuredClone({ outgoing, incoming });
+		const result = resolveCodeTransitionLayout({
 			outgoing,
 			incoming,
-			duration: 2,
+			duration: 1,
 		});
-		const nextOutgoing = { ...outgoing, ...result.outgoingPatch };
-		const nextIncoming = { ...incoming, ...result.incomingPatch };
+		expect(result.layout).toBe("center");
+		expect(result.startTime).toBeCloseTo(12.2333 * TICKS);
+		expect(result.endTime).toBeCloseTo(13.2333 * TICKS);
+		expect({ outgoing, incoming }).toEqual(before);
+	});
 
-		expect(nextOutgoing.duration).toBe(4000);
-		expect(nextOutgoing.trimEnd).toBe(6000);
-		expect(nextIncoming.startTime).toBe(4000);
-		expect(nextIncoming.trimStart).toBe(6000);
-		expect(nextIncoming.duration).toBe(4000);
-		expect(result.followingStartDelta).toBe(2000);
-		expectSourceWindowMatchesDuration(nextOutgoing);
-		expectSourceWindowMatchesDuration(nextIncoming);
+	test("accepts a non-destructive cut for the same source", () => {
+		const result = resolveCodeTransitionLayout({
+			outgoing,
+			incoming,
+			duration: 1,
+			layout: "cut",
+		});
+		expect(result.layout).toBe("cut");
+		expect(result.startTime).toBeCloseTo(11.7333 * TICKS);
+		expect(result.endTime).toBeCloseTo(12.7333 * TICKS);
+	});
+
+	test("keeps split-center as a non-destructive alias", () => {
 		expect(
-			nextIncoming.startTime +
-				nextIncoming.duration +
-				result.followingStartDelta,
-		).toBe(incoming.startTime + incoming.duration);
+			resolveCodeTransitionLayout({
+				outgoing,
+				incoming,
+				duration: 1,
+				layout: "split-center",
+			}),
+		).toEqual(
+			resolveCodeTransitionLayout({
+				outgoing,
+				incoming,
+				duration: 1,
+				layout: "center",
+			}),
+		);
 	});
 
-	test("consumes incoming tail handles before shortening duration", () => {
-		const outgoing = video({
-			id: "a",
-			startTime: 0,
-			duration: 5,
-			trimStart: 0,
-			trimEnd: 5,
-		});
-		const incoming = video({
-			id: "b",
-			startTime: 5,
-			duration: 3,
-			trimStart: 5,
-			trimEnd: 2,
-		});
-		const result = computeSplitCenterLayout({
-			outgoing,
-			incoming,
-			duration: 2,
-		});
-		const nextIncoming = { ...incoming, ...result.incomingPatch };
-
-		expect(nextIncoming.trimEnd).toBe(1000);
-		expect(nextIncoming.duration).toBe(3000);
-		expect(result.followingStartDelta).toBe(1000);
-		expectSourceWindowMatchesDuration(nextIncoming);
+	test("keeps cut as auto for different sources", () => {
+		expect(
+			resolveCodeTransitionLayout({
+				outgoing,
+				incoming: { ...incoming, mediaId: "another" },
+				duration: 1,
+			}).layout,
+		).toBe("cut");
 	});
 
-	test("converts timeline seconds to source seconds at 2x speed", () => {
-		const outgoing = video({
-			id: "a",
-			startTime: 0,
-			duration: 5,
-			trimStart: 0,
-			trimEnd: 10,
-			sourceDuration: 20,
-			rate: 2,
-		});
-		const incoming = video({
-			id: "b",
-			startTime: 5,
-			duration: 5,
-			trimStart: 10,
-			trimEnd: 0,
-			sourceDuration: 20,
-			rate: 2,
-		});
-		const result = computeSplitCenterLayout({
-			outgoing,
-			incoming,
-			duration: 2,
-		});
-		const nextOutgoing = { ...outgoing, ...result.outgoingPatch };
-		const nextIncoming = { ...incoming, ...result.incomingPatch };
-
-		expect(nextOutgoing.trimEnd).toBe(12000);
-		expect(nextIncoming.trimStart).toBe(12000);
-		expectSourceWindowMatchesDuration(nextOutgoing);
-		expectSourceWindowMatchesDuration(nextIncoming);
+	test("supports centered transitions for image inputs", () => {
+		const a = { ...outgoing, type: "image" as const };
+		const b = { ...incoming, type: "image" as const };
+		expect(
+			resolveCodeTransitionLayout({
+				outgoing: a,
+				incoming: b,
+				duration: 1,
+				layout: "center",
+			}).startTime,
+		).toBeCloseTo(12.2333 * TICKS);
 	});
 
-	test("rejects an outgoing element that cannot contain the adjusted transition", () => {
-		const outgoing = video({
-			id: "a",
-			startTime: 0,
-			duration: 1.2,
-			trimStart: 0,
-			trimEnd: 8.8,
-		});
-		const incoming = video({
-			id: "b",
-			startTime: 1.2,
-			duration: 2,
-			trimStart: 1.2,
-			trimEnd: 6.8,
-		});
+	test("rejects unknown layouts without changing clips", () => {
 		expect(() =>
-			computeSplitCenterLayout({ outgoing, incoming, duration: 1 }),
-		).toThrow(/1.5 times/);
+			resolveCodeTransitionLayout({
+				outgoing,
+				incoming,
+				duration: 1,
+				layout: "other",
+			}),
+		).toThrow(/layout/);
 	});
 });

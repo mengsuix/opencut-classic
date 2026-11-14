@@ -46,6 +46,23 @@ export interface TransitionConfig {
 	duration: number;
 	code?: string;
 	codeParams?: ParamValues;
+	layout?: "cut" | "center";
+}
+
+export function getCustomTransitionWindow({
+	outgoingStartTime,
+	outgoingDuration,
+	duration,
+	layout = "cut",
+}: {
+	outgoingStartTime: number;
+	outgoingDuration: number;
+	duration: number;
+	layout?: "cut" | "center";
+}) {
+	const cutTime = outgoingStartTime + outgoingDuration;
+	const startTime = cutTime - (layout === "center" ? duration / 2 : duration);
+	return { startTime, endTime: startTime + duration };
 }
 
 export function buildTransitionFromParams({
@@ -79,7 +96,8 @@ export function buildTransitionFromParams({
 			.slice(0, MAX_CODE_RENDER_PARAMS)
 			.map(([key, value]) => [key.slice("transition.param.".length), value]),
 	);
-	return { type, duration, code, codeParams };
+	const layout = params["transition.layout"] === "center" ? "center" : "cut";
+	return { type, duration, code, codeParams, layout };
 }
 
 export function isActiveTransition(config: TransitionConfig): boolean {
@@ -235,7 +253,7 @@ export function transitionLeadInTicks({
 	transitionIn?: TransitionConfig;
 	ticksPerSecond: number;
 }): number {
-	return transitionIn && isActiveTransition(transitionIn)
+	return transitionIn && transitionIn.type !== "custom" && isActiveTransition(transitionIn)
 		? transitionIn.duration * ticksPerSecond
 		: 0;
 }

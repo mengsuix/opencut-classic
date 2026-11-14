@@ -30,7 +30,7 @@ ROUTE_JUDGE_SYSTEM_PROMPT = """\
 - 自定义 A/B 双画面转场优先 code_render(mode='transition')；HTML 活元素不能直接读取实时 A/B 帧，
   不应作为双画面合成主路径。mask 只适用于不需要 A/B 合成的单侧几何窗口
 - 可编辑文字、DOM 排版、CSS/GSAP 动画优先 html；像素合成、程序动画优先 code_render
-- Canvas/WebGL/shader 等 DOM 序列化留不住的像素，或用户明确要固定视频/图片素材时，可选 add_media
+- DOM 序列化留不住 Canvas 像素不是烘焙理由，先用实时 code_render；只有实时后端确实不支持的 WebGL/shader 等能力、实测性能不足，或用户明确要固定视频/图片素材时，才选 add_media
 - 严格按用户需求判，不自行增加视觉要求或把方案升级成更复杂形态
 
 # 输出协议（严格遵守）

@@ -46,11 +46,13 @@ async def upload_media_window(request: Request, authorization: str | None = Head
     ext = CONTENT_TYPE_EXTS.get(request.headers.get("content-type", ""))
     if ext is None:
         raise HTTPException(status_code=415, detail="仅支持 video/webm 或 video/mp4")
-    body = await request.body()
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="超过 64MB 上限")
+        body.extend(chunk)
     if not body:
         raise HTTPException(status_code=400, detail="空上传")
-    if len(body) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="超过 64MB 上限")
     file_name = f"m-{int(time.time())}-{uuid.uuid4().hex[:8]}{ext}"
     (_media_dir() / file_name).write_bytes(body)
     base_url = config.MEDIA_INTERNAL_BASE_URL or f"http://127.0.0.1:{config.GATEWAY_PORT}"

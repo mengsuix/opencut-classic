@@ -13,6 +13,7 @@ type ElementUpdateField = keyof TimelineElement | string;
 export interface ElementUpdateContext {
 	tracks: SceneTracks;
 	trackId: string;
+	deferMainStartNormalization?: boolean;
 }
 
 interface ElementUpdateRuleResult {
@@ -101,7 +102,10 @@ const enforceRules: ElementUpdateRule[] = [
 				element.startTime < ZERO_MEDIA_TIME
 					? ZERO_MEDIA_TIME
 					: element.startTime;
-			if (context.trackId !== context.tracks.main.id) {
+			if (
+				context.trackId !== context.tracks.main.id ||
+				context.deferMainStartNormalization
+			) {
 				return {
 					element: {
 						...element,

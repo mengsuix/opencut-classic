@@ -299,10 +299,11 @@ export function getParamNumericRange({
 		return undefined;
 	}
 
+	const multiplier = param.displayMultiplier ?? 1;
 	return {
-		min: param.min,
-		max: param.max,
-		step: param.step,
+		min: param.min / multiplier,
+		max: param.max === undefined ? undefined : param.max / multiplier,
+		step: param.step / multiplier,
 	};
 }
 
@@ -315,13 +316,14 @@ export function coerceParamValue({
 }): ParamValue | null {
 	switch (param.type) {
 		case "number": {
-			if (typeof value !== "number" || Number.isNaN(value)) {
+			if (typeof value !== "number" || !Number.isFinite(value)) {
 				return null;
 			}
 
-			const steppedValue = snapToStep({ value, step: param.step });
-			const maxValue = param.max ?? Number.POSITIVE_INFINITY;
-			return Math.min(maxValue, Math.max(param.min, steppedValue));
+			const range = getParamNumericRange({ param })!;
+			const steppedValue = snapToStep({ value, step: range.step ?? param.step });
+			return Math.min(range.max ?? Number.POSITIVE_INFINITY,
+				Math.max(range.min ?? Number.NEGATIVE_INFINITY, steppedValue));
 		}
 		case "boolean":
 			return typeof value === "boolean" ? value : null;

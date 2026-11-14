@@ -1,22 +1,7 @@
-import {
-	getSourceTimeAtClipTime,
-	getTimelineDurationForSourceSpan,
-	hasTimeRemap,
-} from "@/retime/resolve";
-import type { RetimeConfig, VideoElement } from "@/timeline/types";
-import {
-	addMediaTime,
-	mediaTimeFromSeconds,
-	mediaTimeToSeconds,
-	roundMediaTime,
-	subMediaTime,
-	TICKS_PER_SECOND,
-	type MediaTime,
-} from "@/wasm";
-
-const toTicks = (seconds: number): MediaTime =>
-	mediaTimeFromSeconds({ seconds });
-const toSeconds = (time: MediaTime): number => mediaTimeToSeconds({ time });
+import { getSourceTimeAtClipTime } from "@/retime/resolve";
+import type { ImageElement, VideoElement } from "@/timeline/types";
+import { getCustomTransitionWindow } from "@/timeline/transition";
+import { TICKS_PER_SECOND } from "@/wasm";
 
 export function isSameSourceCut({
 	outgoing,
@@ -38,82 +23,39 @@ export function isSameSourceCut({
 	);
 }
 
-export function computeSplitCenterLayout({
+export function resolveCodeTransitionLayout({
 	outgoing,
 	incoming,
 	duration,
+	layout = "auto",
 }: {
-	outgoing: VideoElement;
-	incoming: VideoElement;
+	outgoing: VideoElement | ImageElement;
+	incoming: VideoElement | ImageElement;
 	duration: number;
+	layout?: string;
 }) {
-	if (
-		hasTimeRemap({ animations: outgoing.animations }) ||
-		hasTimeRemap({ animations: incoming.animations })
-	) {
-		throw new Error(
-			"split-center does not support time-remapped elements; use a constant playback rate",
-		);
+	if (!["auto", "cut", "center", "split-center"].includes(layout)) {
+		throw new Error("layout must be 'auto', 'cut', 'center' or 'split-center'");
 	}
-
-	const half = duration / 2;
-	const outDuration = toSeconds(outgoing.duration);
-	const inDuration = toSeconds(incoming.duration);
-	if (outDuration < duration + half) {
-		throw new Error(
-			"split-center needs the outgoing element to be at least 1.5 times the transition duration",
-		);
-	}
-
-	const sourceHalf = (retime: RetimeConfig | undefined) =>
-		toSeconds(
-			roundMediaTime({
-				time: getSourceTimeAtClipTime({
-					clipTime: toTicks(half),
-					retime,
-				}),
-			}),
-		);
-	const outSourceHalf = sourceHalf(outgoing.retime);
-	const inSourceHalf = sourceHalf(incoming.retime);
-	const inTrimStart = toSeconds(incoming.trimStart);
-	const inTrimEnd = toSeconds(incoming.trimEnd);
-	const consumedTail = Math.min(inTrimEnd, inSourceHalf);
-	const tailShortage = toSeconds(
-		roundMediaTime({
-			time: getTimelineDurationForSourceSpan({
-				sourceSpan: toTicks(inSourceHalf - consumedTail),
-				retime: incoming.retime,
-			}),
-		}),
-	);
-	const timelineShortenedBy = half + tailShortage;
-
+	const sameSourceCut =
+		outgoing.type === "video" &&
+		incoming.type === "video" &&
+		isSameSourceCut({ outgoing, incoming });
+	const resolvedLayout =
+		layout === "auto"
+			? sameSourceCut
+				? "center"
+				: "cut"
+			: layout === "center" || layout === "split-center"
+				? "center"
+				: "cut";
 	return {
-		outgoingPatch: {
-			duration: toTicks(outDuration - half),
-			trimEnd: addMediaTime({
-				a: outgoing.trimEnd,
-				b: toTicks(outSourceHalf),
-			}),
-		},
-		incomingPatch: {
-			trimStart: toTicks(inTrimStart + inSourceHalf),
-			trimEnd: toTicks(inTrimEnd - consumedTail),
-			startTime: subMediaTime({ a: incoming.startTime, b: toTicks(half) }),
-			duration: toTicks(inDuration - tailShortage),
-		},
-		followingStartDelta: toTicks(timelineShortenedBy),
-		adjustment: {
-			layout: "split-center",
-			half,
-			timelineShortenedBy,
-			outgoingDuration: outDuration - half,
-			incomingStartTime: toSeconds(incoming.startTime) - half,
-			incomingTrimStart: inTrimStart + inSourceHalf,
-			...(tailShortage > 0
-				? { incomingDurationShortenedBy: tailShortage }
-				: {}),
-		},
+		layout: resolvedLayout,
+		...getCustomTransitionWindow({
+			outgoingStartTime: outgoing.startTime,
+			outgoingDuration: outgoing.duration,
+			duration: duration * TICKS_PER_SECOND,
+			layout: resolvedLayout,
+		}),
 	};
 }

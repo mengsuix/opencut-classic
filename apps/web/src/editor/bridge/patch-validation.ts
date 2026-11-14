@@ -2,9 +2,7 @@
 // (e.g. a nested "transform" object or root "x"/"y") would be silently
 // merged yet never read by the renderer, so reject it explicitly.
 const ELEMENT_PATCH_ROOT_KEYS = new Set([
-	"id",
 	"name",
-	"type",
 	"duration",
 	"startTime",
 	"trimStart",

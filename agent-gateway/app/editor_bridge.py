@@ -241,7 +241,7 @@ def format_change_summary(change_log: list[dict]) -> str:
     ]
     failed = sum(1 for entry in change_log if not entry.get("ok"))
     if failed:
-        parts.append(f"{failed} 项失败（未应用）")
+        parts.append(f"{failed} 项失败（需核对状态）")
     return "\n\n实际执行记录：" + "、".join(parts) + "。" if parts else ""
 
 
@@ -708,8 +708,9 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
         "媒体素材。与 timeline.add_html 平级——按产物形态选型：add_html 产活特效元素"
         "（文字经 data-param 可编辑、编辑器内 DOM/CSS/GSAP 动画、成本近零）；add_media "
         "产固定像素——透明背景 VP9-alpha WebM 视频（或 PNG），作为生成特效素材导入"
-        "（显示在特效面板的生成区，不进素材库）——用于 Canvas/WebGL/shader/粒子等 "
-        "DOM 序列化留不住像素的视觉，或需要渲染好的视频素材时。"
+        "（显示在特效面板的生成区，不进素材库）——仅用于实时后端无法表达、实测性能不足，"
+        "或用户明确需要固定媒体素材的情况。Canvas2D 像素合成与 A/B 转场优先 code_render，"
+        "不因 DOM 序列化留不住 Canvas 像素就改用本工具。"
         "迭代流程：先写 HTML，再用 format \"frames\"（动画）或 \"image\"（静态）迭代——"
         "每轮秒级、无头、透明背景、零工程污染；预览图带回 imageHandle 字段，可直接喂给 "
         "judge_visual。frames/image 通过评审后才渲染 format \"video\"（1~3 分钟），并按"
@@ -787,6 +788,8 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
 
         if result["kind"] == "frames":
             images, handles = _attach_previews(result.get("previewPaths") or [])
+            if not images:
+                return _error("渲染没有生成可读取的预览图，无法进行视觉验收，请重试或核对渲染错误")
             payload = {
                 "jobId": result["jobId"],
                 "kind": "frames",
@@ -799,8 +802,10 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
                     "拼成一张联系表，每格上方标注时间点），不是参考图；已登记 imageHandle，"
                     "可直接传 judge_visual 的 imageHandles 与参考图对比。"
                     "与目标不一致就改 HTML 后仍以 format:'frames' 重新渲染（秒级）继续迭代，"
-                    "不要直接 render video。确认达标后再改用 format:'video' 正式渲染"
-                    "（约 1~3 分钟），并按返回的 next 步骤导入素材库插入时间轴。"
+                    "预览不决定交付路径：若交付活 HTML 特效，通过后将同一份 HTML 交给 "
+                    "timeline.add_html，不渲染 video；只有已选定固定媒体素材交付时，才用 "
+                    "format:'video' 正式渲染并导入。实时 code_render 转场继续在编辑器内实现，"
+                    "用 get_preview_frame/get_preview_sequence 核验。"
                 ),
             }
             return {
@@ -821,7 +826,8 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
         )
         if result["kind"] == "image":
             next_steps = (
-                "确认附带预览图与目标一致后再插入："
+                "确认附带预览图与目标一致后：若交付活 HTML 特效，直接将同一份 HTML 交给 "
+                "timeline.add_html，不导入固定图片；只有已选定固定图片交付时执行以下步骤："
                 '第一步：execute_command 执行 media.import（参数 name + url + ephemeral:true，产物进特效面板生成区、不进素材库），记录返回的 asset id；'
                 '第二步：execute_command 执行 timeline.add_track（参数 type:"video"）新建 overlay 视频轨道，记录返回的 trackId；'
                 "第三步：execute_command 执行 timeline.insert_element，element 为 "
@@ -947,8 +953,8 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
         "独立视觉评委：一次独立的 LLM 调用，检查效果图是否满足你写的 requirement，"
         "返回 pass/fail 与逐条理由。用作自定义视觉（HTML 特效、复刻样式）向用户汇报完成前的"
         "验收门禁——你自己的截图检查是初审，它是终审。"
-        "图片来源：效果图来自 add_media 的 frames/image 预览（无头渲染——迭代期首选，"
-        "零工程污染）或 get_preview_frame（画布合成图——插入后的最终合成核验）；参考图先用 "
+        "图片来源：实时 code_render/活特效用 get_preview_frame/get_preview_sequence 获取"
+        "画布合成图；固定素材或 HTML 离线预览可用 add_media 的 frames/image。参考图先用 "
         "read_media/get_preview_frame 读取——它们的 JSON 结果里有 imageHandle 字段；效果图"
         "句柄传 imageHandles（1~4 个），任务涉及源图时其句柄传 referenceHandles（0~4 个）。"
         "参考图句柄一经在此使用即固定、永不淘汰，同一张参考图可锚定多轮迭代。"
@@ -1100,9 +1106,11 @@ async def editor_websocket_endpoint(websocket: WebSocket) -> None:
                     "projectName": message.get("projectName"),
                 }
             elif msg_type == "response":
-                entry = _pending.pop(message.get("id"), None)
-                if not entry:
+                request_id = message.get("id")
+                entry = _pending.get(request_id)
+                if not entry or entry[2] is not websocket:
                     continue
+                _pending.pop(request_id)
                 fut, timer, _ = entry
                 timer.cancel()
                 if fut.done():

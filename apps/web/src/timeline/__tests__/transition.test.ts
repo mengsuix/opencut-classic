@@ -50,6 +50,7 @@ describe("buildTransitionFromParams", () => {
 			duration: 1.5,
 			code: "function render() {}",
 			codeParams: { direction: "clockwise", feather: 2, glow: true },
+			layout: "cut",
 		});
 		expect(isActiveTransition(config)).toBe(true);
 	});

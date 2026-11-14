@@ -35,6 +35,9 @@ export class UpdateElementsCommand extends Command {
 		this.savedState = editor.scenes.getActiveScene().tracks;
 		let updatedTracks = this.savedState;
 		const timeChangedElementIdsByTrackId = new Map<string, Set<string>>();
+		const mainStartUpdates = new Set(this.updates
+			.filter(({ trackId, patch }) => trackId === updatedTracks.main.id && "startTime" in patch)
+			.map(({ elementId }) => elementId));
 
 		for (const updateEntry of this.updates) {
 			const currentTrack = findTrackInSceneTracks({
@@ -54,6 +57,7 @@ export class UpdateElementsCommand extends Command {
 				context: {
 					tracks: updatedTracks,
 					trackId: updateEntry.trackId,
+					deferMainStartNormalization: this.updates.length > 1,
 				},
 			});
 
@@ -79,6 +83,22 @@ export class UpdateElementsCommand extends Command {
 			});
 		}
 
+		const firstMainElement = updatedTracks.main.elements
+			.slice().sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id))[0];
+		if (firstMainElement && mainStartUpdates.has(firstMainElement.id)) {
+			updatedTracks = updateElementInSceneTracks({
+				tracks: updatedTracks,
+				trackId: updatedTracks.main.id,
+				elementId: firstMainElement.id,
+				update: (element) => applyElementUpdate({
+					element,
+					patch: { startTime: element.startTime },
+					context: { tracks: updatedTracks, trackId: updatedTracks.main.id },
+				}),
+			});
+			timeChangedElementIdsByTrackId.set(updatedTracks.main.id,
+				new Set([...(timeChangedElementIdsByTrackId.get(updatedTracks.main.id) ?? []), firstMainElement.id]));
+		}
 		assertNoOverlappingTimeChanges({
 			tracks: updatedTracks,
 			changedElementIdsByTrackId: timeChangedElementIdsByTrackId,

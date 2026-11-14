@@ -3,7 +3,7 @@ import {
 	mediaTimeFromSeconds,
 	mediaTimeToSeconds,
 	roundMediaTime,
-	subMediaTime,
+	TICKS_PER_SECOND,
 	type MediaTime,
 } from "@/wasm";
 import { DEFAULTS } from "@/timeline/defaults";
@@ -15,10 +15,13 @@ import {
 	type TrackType,
 } from "@/timeline";
 import { getTimelineDurationForSourceSpan } from "@/retime";
-import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
+import { InsertElementCommand, type InsertElementParams } from "@/commands/timeline/element/insert-element";
+import { AddTrackCommand } from "@/commands/timeline/track/add-track";
+import { BatchCommand } from "@/commands/batch-command";
+import { cloneAnimations } from "@/animation";
 import { floatToFrameRate } from "@/fps/utils";
 import { buildRemoveHtmlPresetCommand } from "@/commands";
-import { collectHtmlPresetInstances } from "@/timeline/element-utils";
+import { collectHtmlPresetInstances, isMaskableElement } from "@/timeline/element-utils";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
 import { buildScene } from "@/services/renderer/scene-builder";
 import type { AnyBaseNode } from "@/services/renderer/nodes/base-node";
@@ -57,11 +60,8 @@ import {
 	isCompositeChannelData,
 	isLeafChannelData,
 } from "@/animation/channel-data";
-import type { RetimeConfig, TimelineElement } from "@/timeline/types";
-import {
-	computeSplitCenterLayout,
-	isSameSourceCut,
-} from "./code-render-layout";
+import type { RetimeConfig } from "@/timeline/types";
+import { resolveCodeTransitionLayout } from "./code-render-layout";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import {
 	ALL_FORMATS,
@@ -90,7 +90,8 @@ import type {
 import type { ExportOptions } from "@/export";
 import { storageService } from "@/services/storage/service";
 import { TEXT_PRESETS, getTextPreset } from "@/text/presets";
-import type { ParamValues } from "@/params";
+import { getParamNumericRange, type ParamDefinition, type ParamValues } from "@/params";
+import { resolveAnimationTarget } from "@/timeline/animation-targets";
 import { getBuiltInElementParams } from "@/params/registry";
 import { GATEWAY_URL, getGatewayToken } from "@/editor/ai/agent-client";
 import { coerceAutoPlacement, normalizeGraphicElementInput } from "./insert-validation";
@@ -125,7 +126,16 @@ const TIME_PATCH_KEYS = new Set([
 	"duration",
 	"trimStart",
 	"trimEnd",
+	"sourceDuration",
 ]);
+
+function serializeParamDefinitions({ params }: { params: readonly ParamDefinition[] }) {
+	return sanitizeJson(params.map(param => {
+		if (param.type !== "number") return param;
+		const { displayMultiplier: _displayMultiplier, ...raw } = param;
+		return { ...raw, ...getParamNumericRange({ param }) };
+	}));
+}
 
 function convertTimePatch(
 	patch: Record<string, unknown>,
@@ -241,10 +251,16 @@ function serializeAnimationsForBridge(
 			const channel = data as AnimationChannel;
 			return {
 				...channel,
-				keys: channel.keys.map((key) => ({
-					...key,
-					time: toSeconds((key.time + elementStartTime) as MediaTime),
-				})),
+				keys: channel.keys.map((key) => {
+					const leftHandle = "leftHandle" in key ? key.leftHandle : undefined;
+					const rightHandle = "rightHandle" in key ? key.rightHandle : undefined;
+					return {
+						...key,
+						time: toSeconds((key.time + elementStartTime) as MediaTime),
+						...(leftHandle ? { leftHandle: { ...leftHandle, dt: toSeconds(leftHandle.dt) } } : {}),
+						...(rightHandle ? { rightHandle: { ...rightHandle, dt: toSeconds(rightHandle.dt) } } : {}),
+					};
+				}),
 			};
 		}
 		if (isCompositeChannelData(data as ChannelData | undefined)) {
@@ -567,7 +583,7 @@ function readElementNumberParam({
 	key,
 	fallback,
 }: {
-	element: Record<string, unknown>;
+	element: { params?: unknown };
 	key: string;
 	fallback: number;
 }): number {
@@ -1232,7 +1248,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 
 	"timeline.add_html": {
 		description:
-						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as add_media) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — those stay with add_media. Animated HTML is NOT cropped, so data-width/data-height IS the element's pixel size on the canvas: size the box to the effect itself — it must hold every frame of the motion (travel distance included) but stay no larger, and use the project canvas size only when the effect really fills the frame — then position it with transform.positionX/positionY. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use add_media only for Canvas/WebGL/shader/particle visuals whose pixels never touch the DOM. Keep the document small: animated HTML is re-rasterized every preview frame at full document cost — stay under ~1000 DOM elements / ~200KB (measured ~30fps at 1000 elements, ~20fps at 3000); prefer fewer nodes over large backgrounds, split complex visuals into multiple elements, and use static HTML when no animation is needed. Every insertion with new HTML is auto-saved as a reusable effect preset (Effects panel, generated section) — pass a short readable name; inserting via presetId does not create a new preset.",
+						"Add a live HTML effect element. The editor rasterizes the HTML into the compositor, so it behaves like any other effect element (move/scale/duration/blend) while its text stays editable. Requirements: a COMPLETE self-contained HTML document (no external stylesheets, images or fonts), root element carrying data-width=\"<px>\" and data-height=\"<px>\" (e.g. 1920/1080); transparent background unless a background is wanted. Declare editable text with data-param=\"key\" on the element whose text should be user-editable, e.g. <div data-param=\"title\">Default</div>; pass initial values via params. Static HTML is cropped to its painted content and placed at 1:1 pixel size, so build the content at the size you want it to appear — data-width/data-height only define the layout box, and blank margins are trimmed away. The effect tracks the element's own transform, so position it with transform.positionX/positionY. HTML containing CSS @keyframes is animated in the editor: animations are deterministically sought to source time (local clip time plus trimStart), so trimming or splitting continues rather than replays; honouring delay, easing, finite iterations and ::before/::after. Use finite duration/iteration-count and animation-fill-mode:both. Scripts ARE supported (inline or HTTPS CDN such as GSAP): they run in a sandboxed cross-origin iframe, and the editor drives animation time deterministically — register ONE paused GSAP timeline as window.__timelines[\"main\"] (same contract as add_media) and it is sought to source time every frame; scripts may also build DOM at runtime (e.g. splitting text into characters). No timers/wall-clock for animation state, no hover/scroll triggers; images/fonts stay data:-only. Canvas/WebGL pixels never survive DOM serialization — use code_render for live Canvas2D drawing; add_media is only a fallback when live backends cannot express the result or fixed media delivery is required. Animated HTML is NOT cropped, so data-width/data-height IS the element's pixel size on the canvas: size the box to the effect itself — it must hold every frame of the motion (travel distance included) but stay no larger, and use the project canvas size only when the effect really fills the frame — then position it with transform.positionX/positionY. data-param slots stay editable, and html.save_preset saves source plus slots for reuse in both cases. Prefer this for editable text, CSS and GSAP/DOM animation; use code_render for live pixel effects and A/B transitions. Use add_media only for confirmed live-backend limitations or fixed media delivery. Keep the document small: animated HTML is re-rasterized every preview frame at full document cost — stay under ~1000 DOM elements / ~200KB (measured ~30fps at 1000 elements, ~20fps at 3000); prefer fewer nodes over large backgrounds, split complex visuals into multiple elements, and use static HTML when no animation is needed. Every insertion with new HTML is auto-saved as a reusable effect preset (Effects panel, generated section) — pass a short readable name; inserting via presetId does not create a new preset.",
 		args: {
 			html: "string? (complete self-contained HTML document; required unless presetId is given)",
 			presetId:
@@ -1624,7 +1640,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					id: definition.id,
 					name: definition.name,
 					keywords: definition.keywords,
-					params: sanitizeJson(definition.params),
+					params: serializeParamDefinitions({ params: definition.params }),
 				})),
 			};
 		},
@@ -1688,7 +1704,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			startTime: "seconds? (generator only, default 0)",
 			duration: "seconds? (required for generator; 0.05~10 for transition and no longer than either element)",
 			layout:
-				"transition only: 'auto' (default; detects contiguous halves of the same video and lays them out automatically) | 'cut' (keep both elements untouched) | 'split-center' (explicit source/timeline adjustment). Layout changes and any required following-element shift are applied in one undo step.",
+				"transition only: 'auto' (default; same-source continuous cuts use center, other cuts use cut) | 'center' (duration/2 on either side of the cut) | 'cut' (duration before the cut) | 'split-center' (alias of center). All layouts preserve clip times, trims, source audio and following-element positions. A holds its last frame after its end; B holds its first frame before its start. The result reports startTime/endTime in timeline seconds.",
 			name: "string? (generator element name)",
 			params:
 				"optional flat object of up to 64 non-empty string/finite number/boolean values",
@@ -1869,66 +1885,16 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				}
 			}
 
-			const requestedLayout =
-				typeof args.layout === "string" ? args.layout : "auto";
-			if (!["auto", "cut", "split-center"].includes(requestedLayout)) {
-				throw new Error("layout must be 'auto', 'cut' or 'split-center'");
-			}
-			const sameSourceCut =
-				outgoing.type === "video" &&
-				incoming.type === "video" &&
-				isSameSourceCut({ outgoing, incoming });
-			if (requestedLayout === "cut" && sameSourceCut) {
-				throw new Error(
-					"A contiguous same-source cut needs layout='split-center' (or 'auto'); no changes were applied",
-				);
-			}
-			const layout =
-				requestedLayout === "auto"
-					? sameSourceCut
-						? "split-center"
-						: "cut"
-					: requestedLayout;
-
-			const updates: Array<{
-				trackId: string;
-				elementId: string;
-				patch: Partial<TimelineElement>;
-			}> = [{ trackId, elementId, patch: { params: transitionParams } }];
-			let adjustment: Record<string, unknown> | undefined;
-			if (layout === "split-center") {
-				if (outgoing.type !== "video" || incoming.type !== "video") {
-					throw new Error("split-center only supports video elements");
-				}
-				const computed = computeSplitCenterLayout({
-					outgoing,
-					incoming,
-					duration,
-				});
-				Object.assign(updates[0]!.patch, computed.outgoingPatch);
-				updates.push({
-					trackId,
-					elementId: incoming.id,
-					patch: computed.incomingPatch,
-				});
-				for (const following of elements.slice(index + 2)) {
-					updates.push({
-						trackId,
-						elementId: following.id,
-						patch: {
-							startTime: subMediaTime({
-								a: following.startTime,
-								b: computed.followingStartDelta,
-							}),
-						},
-					});
-				}
-				adjustment = {
-					...computed.adjustment,
-					shiftedFollowingElements: elements.length - index - 2,
-				};
-			}
-			editor.timeline.updateElements({ updates });
+			const { layout, startTime, endTime } = resolveCodeTransitionLayout({
+				outgoing,
+				incoming,
+				duration,
+				layout: typeof args.layout === "string" ? args.layout : "auto",
+			});
+			transitionParams["transition.layout"] = layout;
+			editor.timeline.updateElements({
+				updates: [{ trackId, elementId, patch: { params: transitionParams } }],
+			});
 			return {
 				mode,
 				trackId,
@@ -1937,7 +1903,9 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				type: "custom",
 				duration,
 				layout,
-				...(adjustment ? { adjustment } : {}),
+				startTime: startTime / TICKS_PER_SECOND,
+				endTime: endTime / TICKS_PER_SECOND,
+				adjustment: { timelineShortenedBy: 0, shiftedFollowingElements: 0 },
 			};
 		},
 	},
@@ -2080,6 +2048,12 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			const asset = editor.media
 				.getAssets()
 				.find((item) => item.id === mediaId);
+			if (!asset || !["video", "audio", "image"].includes(asset.type) || asset.type !== element.type) {
+				throw new Error("replace_range requires an asset of the same media type as the original element");
+			}
+			if (typeof asset.duration === "number" && asset.duration + 1e-6 < rangeEnd - rangeStart) {
+				throw new Error("Replacement media is shorter than the requested range");
+			}
 			const beforeIds = keyframeIdsOf(element);
 			const { inserted, right } = editor.timeline.replaceRange({
 				trackId,
@@ -3447,20 +3421,30 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 						keyframe.elementId,
 						"keyframes[].elementId",
 					);
+					const propertyPath = requireString(keyframe.propertyPath, "keyframes[].propertyPath");
+					const tracks = editor.scenes.getActiveSceneOrNull()?.tracks;
+					const element = tracks && [tracks.main, ...tracks.overlay, ...tracks.audio]
+						.find(track => track.id === trackId)?.elements.find(item => item.id === elementId);
+					if (!element) throw new Error(`Element not found: ${elementId} on track ${trackId}`);
+					const target = resolveAnimationTarget({ element, path: propertyPath });
+					if (!target) throw new Error(`Unknown or non-keyframable property: ${propertyPath}`);
+					const rawValue = keyframe.value;
+					if (typeof rawValue !== "number" && typeof rawValue !== "string" && typeof rawValue !== "boolean") {
+						throw new Error(`Invalid keyframe value for ${propertyPath}`);
+					}
+					const value = target.coerceValue({ value: rawValue });
+					if (value === null) throw new Error(`Invalid keyframe value for ${propertyPath}`);
 					return {
 						trackId,
 						elementId,
-						propertyPath: requireString(
-							keyframe.propertyPath,
-							"keyframes[].propertyPath",
-						),
+						propertyPath,
 						time: requireLocalKeyframeTicks({
 							editor,
 							trackId,
 							elementId,
 							seconds: requireNumber(keyframe.time, "keyframes[].time"),
 						}),
-						value: keyframe.value as never,
+						value,
 						interpolation: requireInterpolation(
 							keyframe.interpolation,
 							KEYFRAME_INTERPOLATIONS,
@@ -3614,7 +3598,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				type: definition.type,
 				name: definition.name,
 				keywords: definition.keywords,
-				params: sanitizeJson(definition.params),
+				params: serializeParamDefinitions({ params: definition.params }),
 			})),
 		}),
 	},
@@ -3627,9 +3611,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				["video", "image", "text", "sticker", "graphic", "html", "audio"] as const
 			).map((elementType) => ({
 				elementType,
-				params: sanitizeJson(
-					getBuiltInElementParams({ type: elementType }),
-				),
+				params: serializeParamDefinitions({ params: getBuiltInElementParams({ type: elementType }) }),
 			})),
 			keyframePaths: [
 				...ANIMATION_PROPERTY_PATHS,
@@ -3818,7 +3800,7 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			masks: getMaskDefinitionsForMenu().map((definition) => ({
 				type: definition.type,
 				name: definition.name,
-				params: sanitizeJson(definition.params),
+				params: serializeParamDefinitions({ params: definition.params }),
 			})),
 		}),
 	},
@@ -3834,12 +3816,15 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				maskType: requireString(args.maskType, "maskType") as MaskType,
 			});
 			const existing = getElementMasks(editor, trackId, elementId);
+			if (existing.length > 0) {
+				throw new Error("Only one mask per element is supported; update or remove the existing mask first");
+			}
 			editor.timeline.updateElements({
 				updates: [
 					{
 						trackId,
 						elementId,
-						patch: { masks: [...existing, mask] } as never,
+						patch: { masks: [mask] } as never,
 					},
 				],
 			});
@@ -4146,7 +4131,10 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 				trackId,
 				elementId,
 			});
-			const source = findElement(editor, trackId, elementId);
+			const tracks = editor.scenes.getActiveSceneOrNull()!.tracks;
+			const sourceTrack = [tracks.main, ...tracks.overlay].find(track => track.id === trackId);
+			const source = sourceTrack?.elements.find(element => element.id === elementId);
+			if (!source || !sourceTrack || !isMaskableElement(source)) throw new Error("Spotlight requires a maskable visual element");
 
 			const focusX = centerX * canvasSize.width;
 			const focusY = centerY * canvasSize.height;
@@ -4154,14 +4142,6 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 			// shift by (focus - centre) * (1 - zoom).
 			const deltaX = (focusX - bounds.cx) * (1 - zoom);
 			const deltaY = (focusY - bounds.cy) * (1 - zoom);
-
-			const duplicated = editor.timeline.duplicateElements({
-				elements: [{ trackId, elementId }],
-			});
-			const copy = duplicated[0];
-			if (!copy) {
-				throw new Error("Failed to duplicate the element for the spotlight");
-			}
 
 			const baseScaleX = readElementNumberParam({
 				element: source,
@@ -4212,29 +4192,30 @@ export const BRIDGE_COMMANDS: Record<string, BridgeCommandDef> = {
 					...(feather > 0 ? { feather } : {}),
 				},
 			} as Mask;
-			const copyElement = findElement(editor, copy.trackId, copy.elementId);
-			const existingMasks = (copyElement.masks as Mask[] | undefined) ?? [];
-
-			editor.timeline.updateElements({
-				updates: [
-					{
-						trackId: copy.trackId,
-						elementId: copy.elementId,
-						patch: {
-							params: {
-								"transform.scaleX": baseScaleX * zoom,
-								"transform.scaleY": baseScaleY * zoom,
-								"transform.positionX": basePositionX + deltaX,
-								"transform.positionY": basePositionY + deltaY,
-							},
-							masks: [...existingMasks, nextMask],
-						} as never,
+			const addTrack = new AddTrackCommand({ type: sourceTrack.type, index: 0 });
+			const insert = new InsertElementCommand({
+				element: {
+					...source,
+					name: `${source.name} (spotlight)`,
+					animations: cloneAnimations({ animations: source.animations, shouldRegenerateKeyframeIds: true }),
+					params: {
+						...source.params,
+						"transform.scaleX": baseScaleX * zoom,
+						"transform.scaleY": baseScaleY * zoom,
+						"transform.positionX": basePositionX + deltaX,
+						"transform.positionY": basePositionY + deltaY,
+						"transition.type": "none",
+						muted: true,
 					},
-				],
+					masks: [nextMask],
+				},
+				placement: { mode: "explicit", trackId: addTrack.getTrackId() },
 			});
+			editor.command.execute({ command: new BatchCommand([addTrack, insert]) });
+			if (!insert.getTrackId()) throw new Error("Failed to insert the spotlight");
 
 			return {
-				spotlight: copy,
+				spotlight: { trackId: insert.getTrackId(), elementId: insert.getElementId() },
 				zoom,
 				focus: { centerX, centerY },
 				region: { size, shape },

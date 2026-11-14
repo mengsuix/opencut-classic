@@ -127,11 +127,12 @@ def _image_block(mime: str, b64_data: str) -> dict:
 
 
 def _parse_pass(text: str) -> bool:
-    """评委输出协议解析：前 5 行内出现 PASS: ... true 视为通过"""
+    """只接受 PASS 冒号后的第一个布尔 token，缺失或非法时不通过。"""
     for line in text.splitlines()[:5]:
         s = line.strip().upper()
         if s.startswith("PASS:"):
-            return "TRUE" in s
+            value = s.split(":", 1)[1].strip().split(maxsplit=1)
+            return bool(value) and value[0] == "TRUE"
     return False
 
 

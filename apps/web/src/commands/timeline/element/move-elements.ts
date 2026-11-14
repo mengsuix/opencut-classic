@@ -121,11 +121,8 @@ export class MoveElementCommand extends Command {
 				startTime: element.startTime,
 				duration: element.duration,
 			}));
-			const movingElementIds = new Set(
-				targetMoves.map((element) => element.id),
-			);
 			const stationaryElements = targetTrack.elements.filter(
-				(element) => !movingElementIds.has(element.id),
+				(element) => !movedElementIds.has(element.id),
 			);
 			if (
 				!canPlaceTimeSpansOnTrack({

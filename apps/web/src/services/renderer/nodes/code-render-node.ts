@@ -8,6 +8,7 @@ export type CodeRenderNodeParams = VisualNodeParams & {
 	mode: CodeRenderMode;
 	code: string;
 	codeParams: ParamValues;
+	inputTimeRanges?: Array<{ startTime: number; endTime: number }>;
 };
 
 export type ResolvedCodeRenderNodeState = {
@@ -27,6 +28,19 @@ export class CodeRenderNode extends BaseNode<
 	}: CodeRenderNodeParams & { inputs: AnyBaseNode[] }) {
 		super(params);
 		for (const input of inputs) this.add(input);
+	}
+
+	getInputTime({ index, time }: { index: number; time: number }): number {
+		const range = this.params.inputTimeRanges?.[index];
+		if (
+			this.params.mode !== "transition" ||
+			!range ||
+			time <= this.params.timeOffset ||
+			time >= this.params.timeOffset + this.params.duration
+		) {
+			return time;
+		}
+		return Math.max(range.startTime, Math.min(time, range.endTime - 1));
 	}
 
 	get source() {

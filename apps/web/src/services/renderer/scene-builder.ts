@@ -24,6 +24,8 @@ import { buildVisualAnimConfig } from "@/animation/visual-anim";
 import {
 	buildTransitionFromParams,
 	computeTrackTransitions,
+	getCustomTransitionWindow,
+	isActiveTransition,
 } from "@/timeline/transition";
 import { TICKS_PER_SECOND } from "@/wasm";
 
@@ -105,24 +107,33 @@ function wrapCustomTransitions({
 		const current = elements[index];
 		const next = elements[index + 1];
 		const config = buildTransitionFromParams({ params: current.params });
-		if (config.type !== "custom" || !config.code) continue;
+		const gap = next.startTime - (current.startTime + current.duration);
+		if (
+			config.type !== "custom" || !config.code || !isActiveTransition(config) ||
+			gap < 0 || gap > MAX_TRANSITION_GAP_TICKS
+		) continue;
 		const outgoing = visualNodes.get(current.id);
 		const incoming = visualNodes.get(next.id);
 		if (!outgoing || !incoming) continue;
 		const outgoingIndex = nodes.indexOf(outgoing);
 		const incomingIndex = nodes.indexOf(incoming);
 		if (outgoingIndex < 0 || incomingIndex !== outgoingIndex + 1) continue;
+		const duration = config.duration * TICKS_PER_SECOND;
+		const { startTime } = getCustomTransitionWindow({
+			outgoingStartTime: current.startTime,
+			outgoingDuration: current.duration,
+			duration,
+			layout: config.layout,
+		});
 		const custom = new CodeRenderNode({
-			...codeContainerParams({
-				startTime:
-					current.startTime +
-					current.duration -
-					config.duration * TICKS_PER_SECOND,
-				duration: config.duration * TICKS_PER_SECOND,
-			}),
+			...codeContainerParams({ startTime, duration }),
 			mode: "transition",
 			code: config.code,
 			codeParams: config.codeParams ?? {},
+			inputTimeRanges: [current, next].map((element) => ({
+				startTime: element.startTime,
+				endTime: element.startTime + element.duration,
+			})),
 			inputs: [outgoing, incoming],
 		});
 		nodes[outgoingIndex] = custom;

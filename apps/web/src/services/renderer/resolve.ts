@@ -75,6 +75,7 @@ type ResolveContext = {
 	signal?: AbortSignal;
 	cancelVideoDecode: boolean;
 	requestId: symbol;
+	snapshotVideo?: boolean;
 };
 
 export function throwIfAborted(signal?: AbortSignal): void {
@@ -155,7 +156,21 @@ async function resolveNode({
 
 	throwIfAborted(context.signal);
 	await Promise.all(
-		node.children.map((child) => resolveNode({ node: child, context })),
+		node.children.map((child, index) =>
+			resolveNode({
+				node: child,
+				context:
+					node instanceof CodeRenderNode && node.params.mode === "transition"
+						? {
+								...context,
+								time: node.getInputTime({ index, time: context.time }),
+								snapshotVideo: context.snapshotVideo ||
+									(context.time > node.params.timeOffset &&
+										context.time < node.params.timeOffset + node.params.duration),
+							}
+						: context,
+			}),
+		),
 	);
 	throwIfAborted(context.signal);
 }
@@ -321,11 +336,11 @@ async function resolveVideoNode({
 	const frame = await videoCache.getFrameAt({
 		mediaId: node.params.mediaId,
 		file: node.params.file,
-		time: mediaTimeToSeconds({
-			time: roundMediaTime({ time: sourceTimeTicks }),
-		}),
+		time: context.snapshotVideo
+			? sourceTimeTicks / TICKS_PER_SECOND
+			: mediaTimeToSeconds({ time: roundMediaTime({ time: sourceTimeTicks }) }),
 		signal: context.signal,
-		prefetch: !context.cancelVideoDecode,
+		prefetch: !context.cancelVideoDecode && !context.snapshotVideo,
 		requestId: context.requestId,
 	});
 	// A superseded render must not publish its (stale) resolved state: the
@@ -346,9 +361,15 @@ async function resolveVideoNode({
 		return null;
 	}
 
+	let source = frame.canvas;
+	if (context.snapshotVideo) {
+		const snapshot = new OffscreenCanvas(source.width, source.height);
+		snapshot.getContext("2d")!.drawImage(source, 0, 0);
+		source = snapshot;
+	}
 	return {
 		...visualState,
-		source: frame.canvas,
+		source,
 		sourceWidth: frame.canvas.width,
 		sourceHeight: frame.canvas.height,
 		// 帧时间戳作为纹理内容标识：pool 化的 canvas 会跨帧复用（对象 identity
