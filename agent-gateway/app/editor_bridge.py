@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import auth, config, db, fx_catalog, fx_render, visual_judge
+from . import auth, config, db, fx_catalog, fx_render, route_judge, visual_judge
 # 注：fx_render 是内部渲染模块（HyperFrames 封装），agent 侧暴露的工具名为 add_media。
 
 logger = logging.getLogger("agent-gateway.bridge")
@@ -914,6 +914,35 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
         return _error("需要 query（搜索）或 name（取片段原文）之一")
 
     @tool(
+        "judge_route",
+        "独立选型裁判：自定义视觉或转场实施前，把用户需求与已知约束交给裁判，由裁判独立选择"
+        "实现路径并给出理由；主 agent 不先拟选路径，也不要求把各路线都试做一遍。"
+        "requirement 只写用户目标、使用场景、硬性约束和已知事实，不写你倾向的实现方式。"
+        "返回 path 为 builtin/html/code_render/mask/add_media/mixed。按裁判选择的路径实施；"
+        "若工具或编辑器状态提供新的约束，把新事实补充进 requirement 后重新选型。"
+        "裁判不评估最终画面，视觉验收仍使用 judge_visual。",
+        {
+            "type": "object",
+            "properties": {
+                "requirement": {
+                    "type": "string",
+                    "description": "用户目标、使用场景、硬性约束和已知事实；不要写预选实现路径",
+                },
+            },
+            "required": ["requirement"],
+        },
+    )
+    async def judge_route_tool(args):
+        requirement = args.get("requirement")
+        if not isinstance(requirement, str) or not requirement.strip():
+            return _error("缺少必填参数: requirement")
+        try:
+            path, verdict = await route_judge.judge(requirement.strip())
+        except Exception as e:
+            return _error(f"选型裁判调用失败: {type(e).__name__}: {e}")
+        return _text({"path": path, "verdict": verdict})
+
+    @tool(
         "judge_visual",
         "独立视觉评委：一次独立的 LLM 调用，检查效果图是否满足你写的 requirement，"
         "返回 pass/fail 与逐条理由。用作自定义视觉（HTML 特效、复刻样式）向用户汇报完成前的"
@@ -1018,6 +1047,7 @@ def build_editor_mcp_server(session_id: str, change_log: list[dict] | None = Non
             get_preview_sequence,
             read_media,
             supply_media_window,
+            judge_route_tool,
             judge_visual_tool,
             add_media_tool,
             fx_components_tool,
