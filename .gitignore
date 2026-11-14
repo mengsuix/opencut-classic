@@ -33,3 +33,6 @@ extra/
 *.mov
 
 extra/deploy/env
+
+# 部署配置含明文凭据，本地维护不入库（模板见 deploy/env.example）
+deploy/env
